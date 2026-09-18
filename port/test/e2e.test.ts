@@ -16,13 +16,13 @@ const DB_DIR = DIR + "/tmp-db";
 const DATA_DIR = DIR + "/data";
 
 /**
- * The Attr/… + Map/… data package (the client-install files the original
- * loads through its IDF layer).  One bomber + one 8-player map is enough to
- * exercise the room stage end to end.
+ * The IDF data package (FxServer.idd/.idx — the files the original loads
+ * through CFastFile/CIDFMan).  One bomber + one 8-player map is enough to
+ * exercise the room stage end to end.  The layout mirrors the production
+ * directory: FxServer.idd/.idx sit next to the .cfg.
  */
 function writeGameDataPackage(): void {
-  mkdirSync(DATA_DIR + "/Attr", { recursive: true });
-  mkdirSync(DATA_DIR + "/Map", { recursive: true });
+  mkdirSync(DATA_DIR, { recursive: true });
   // Attr/BomberAttr: [u32 len]["test"][attr1][attr2][attr3][attr4][speed]
   //                  [attr6][bombCount][attr8][bombPower][attr10]
   const bomber = Buffer.alloc(4 + 4 + 10 * 4);
@@ -39,8 +39,10 @@ function writeGameDataPackage(): void {
   o = bomber.writeUInt32LE(0, o); // attr8
   o = bomber.writeUInt32LE(1, o); // def bomb power
   o = bomber.writeUInt32LE(0, o); // attr10
-  require("node:fs").writeFileSync(DATA_DIR + "/Attr/BomberAttr", bomber);
-  // Map/room1.map: version 1000 + the 17 template dwords (maxTeam 8,
+  // Attr/ItemAttr: the 8-byte header + an empty id→item map section.
+  const itemAttr = Buffer.alloc(12);
+  itemAttr.writeUInt32LE(0, 8); // mapCount
+  // Map/room1: version 1000 + the 17 template dwords (maxTeam 8,
   // maxPlayer 8, no level/premium gate)
   const map = Buffer.alloc(18 * 4);
   map.writeUInt32LE(1000, 0); // version
@@ -61,7 +63,30 @@ function writeGameDataPackage(): void {
   map.writeUInt32LE(0, 60); // +116
   map.writeUInt32LE(0, 64); // +120
   map.writeUInt32LE(0, 68); // +84
-  require("node:fs").writeFileSync(DATA_DIR + "/Map/room1.map", map);
+  // the package: FxServer.idx = [u32 count]{[u32 nameLen][name][u32 off][u32 len]}
+  const entries = [
+    { name: "Attr/BomberAttr", data: bomber },
+    { name: "Attr/ItemAttr", data: itemAttr },
+    { name: "Map/room1", data: map },
+  ];
+  const idxParts: Buffer[] = [Buffer.alloc(4)];
+  idxParts[0]!.writeUInt32LE(entries.length, 0);
+  const iddParts: Buffer[] = [];
+  let offset = 0;
+  for (const e of entries) {
+    const head = Buffer.alloc(12 + e.name.length);
+    head.writeUInt32LE(e.name.length, 0);
+    head.write(e.name, 4, "latin1");
+    head.writeUInt32LE(offset, 4 + e.name.length);
+    head.writeUInt32LE(e.data.length, 8 + e.name.length);
+    idxParts.push(head);
+    iddParts.push(Buffer.from(e.data));
+    offset += e.data.length;
+  }
+  require("node:fs").writeFileSync(DATA_DIR + "/FxServer.idx", Buffer.concat(idxParts));
+  require("node:fs").writeFileSync(DATA_DIR + "/FxServer.idd", Buffer.concat(iddParts));
+  // the game server cfg — the package base is dirname(cfg) + "/FxServer"
+  require("node:fs").copyFileSync(DIR + "/game0.cfg", DATA_DIR + "/game.cfg");
 }
 
 /** A minimal game client implementing the CClientSocket wire protocol. */
@@ -215,8 +240,6 @@ let center: CxCenter;
 
 let loginSN = 0;
 
-process.env.FXGS_DATA_DIR = DATA_DIR;
-
 beforeAll(async () => {
   rmSync(DB_DIR, { recursive: true, force: true });
   rmSync(DATA_DIR, { recursive: true, force: true });
@@ -352,7 +375,7 @@ describe("login flow", () => {
     // re-broadcast then populates the LS channel cache.  The real game server
     // (FXGS, game0.cfg) takes the fake's place: same identification bytes
     // (class 10, idx 0, game version 7, client version 3).
-    await gameMain(DIR + "/game0.cfg", DB_DIR);
+    await gameMain(DATA_DIR + "/game.cfg", DB_DIR);
     await Bun.sleep(400);
   });
 
