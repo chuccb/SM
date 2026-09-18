@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { CxCenter } from "./center/Center.ts";
 import { main as loginMain } from "./login/Login.ts";
 import { main as gameMain } from "./gameserver/GameServer.ts";
+import { main as relayMain } from "./relay/Relay.ts";
 
 const only = process.argv.includes("--only") ? process.argv[process.argv.indexOf("--only") + 1] : null;
 const dbDir = join(import.meta.dir, "..", "db");
@@ -25,6 +26,13 @@ if (!only || only === "center") {
   await center.Listen();
   center.ListenMonitor();
   center.StartTimer();
+}
+
+if (!only || only === "relay") {
+  const cfgFile = process.argv.includes("--cfg")
+    ? process.argv[process.argv.indexOf("--cfg") + 1]!
+    : join(import.meta.dir, "..", "..", "Relay", "Relay_000.cfg");
+  await relayMain(cfgFile.startsWith("/") ? cfgFile : join(import.meta.dir, "..", cfgFile));
 }
 
 if (!only || only === "game") {
