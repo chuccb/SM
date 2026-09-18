@@ -6,7 +6,7 @@ import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { CServerConfig } from "../src/core/Config.ts";
 import { CxCenter } from "../src/center/Center.ts";
 import { main as loginMain } from "../src/login/Login.ts";
-import { main as gameMain } from "../src/gameserver/GameServer.ts";
+import { CRC32, main as gameMain } from "../src/gameserver/GameServer.ts";
 import { SimpleStreamEncrypt3, SimpleStreamDecrypt3 } from "../src/core/StreamCipher.ts";
 import { mkdirSync, rmSync } from "node:fs";
 import { inflateSync } from "node:zlib";
@@ -83,6 +83,7 @@ function writeGameDataPackage(): void {
     iddParts.push(Buffer.from(e.data));
     offset += e.data.length;
   }
+  testMapCrc = CRC32(0, new Uint8Array(map), map.byteLength) >>> 0;
   require("node:fs").writeFileSync(DATA_DIR + "/FxServer.idx", Buffer.concat(idxParts));
   require("node:fs").writeFileSync(DATA_DIR + "/FxServer.idd", Buffer.concat(iddParts));
   // the game server cfg — the package base is dirname(cfg) + "/FxServer"
@@ -233,6 +234,7 @@ function concat(a: Uint8Array, b: Uint8Array): Uint8Array {
 
 // gsConvertTable mirror (encode/decode per the first received checkcode-derived type)
 import { gsConvertTableEncode, gsConvertTableDecode } from "../src/core/PacketHeaderConverter.ts";
+import { BuildFrame } from "../src/gameserver/MTUDP.ts";
 const gsEncode = (k: number, id: number) => gsConvertTableEncode[k & 0xf]![id & 0xff]!;
 const gsDecode = (k: number, t: number) => gsConvertTableDecode[k & 0xf]![t & 0xff]!;
 
@@ -734,6 +736,9 @@ async function enterGame(name: string): Promise<{ ls: TestClient; gs: TestClient
 let roomChief: TestClient | null = null;
 let roomMember: TestClient | null = null;
 let roomLobby: TestClient | null = null; // tester02, parked in the lobby
+let roomSerial = 0; // the room's +148 serial (the UDP check echoes it)
+let roomMemberSN = 0; // tester03's global serial
+let testMapCrc = 0; // the CRC32 the GS computed over the test map blob
 
 describe("game server room flow (FXGS)", () => {
   test("tester02 walks the entry path and sees the empty room list (83)", async () => {
@@ -767,6 +772,7 @@ describe("game server room flow (FXGS)", () => {
     expect(r2(res)).toBe(0); // room idx 0
     const serial = r4(res);
     expect(serial).toBeGreaterThan(0);
+    roomSerial = serial;
     // SendSessionInfoPacket: 105 (slot 0, self), 107 for the 7 empty slots, 112
     const p105 = await chief.recv(105);
     expect(r1(p105)).toBe(0); // slot 0
@@ -806,7 +812,7 @@ describe("game server room flow (FXGS)", () => {
   });
 
   test("join (81): the joiner gets the room 105s + 112 + game type", async () => {
-    const { gs } = await enterGame("tester03");
+    const { gs, sn } = await enterGame("tester03");
     gs.send(83, (e) => {});
     await gs.recv(15);
     const p83 = await gs.recv(83);
@@ -829,6 +835,7 @@ describe("game server room flow (FXGS)", () => {
     const res = await gs.recv(81);
     expect(r1(res)).toBe(0); // joined
     roomMember = gs;
+    roomMemberSN = sn;
     // SendSessionInfoPacket — slot 0 (the chief, not self)
     const p105a = await gs.recv(105);
     expect(r1(p105a)).toBe(0); // slot
@@ -1010,6 +1017,87 @@ describe("game server room flow (FXGS)", () => {
     // the member gets the same launch packet (no 115)
     const p116b = await member.recv(116);
     expect(r4(p116b)).toBeGreaterThan(0);
+  });
+
+  test("the MTUDP launch handshake: type 1 (mapCRC+attrs) then type 11 (peer info) → 150 + 120", async () => {
+    const chief = roomChief!;
+    const member = roomMember!;
+    chief.pending.length = 0;
+    member.pending.length = 0;
+    const udp = await Bun.udpSocket({});
+    const sendCheck = async (gserial: number, type: number): Promise<void> => {
+      // the type-1 body: [type][E4 gserial][E2 idx][E4 serial][2×(E4 ip][E2 port)]
+      //                  [E4 x][E4 mapCRC][bomber][bc][bp][speed]
+      const payload = new Uint8Array(type === 1 ? 35 : 23);
+      const dv = new DataView(payload.buffer);
+      const be32 = (at: number, v: number): void => dv.setUint32(at, v >>> 0, false);
+      const be16 = (at: number, v: number): void => dv.setUint16(at, v & 0xffff, false);
+      payload[0] = type;
+      be32(1, gserial);
+      be16(5, 0); // session idx
+      be32(7, roomSerial);
+      be32(11, 0x7f000001); // 127.0.0.1 (network order)
+      be16(15, 40001);
+      be32(17, 0x7f000001);
+      be16(21, 40002);
+      if (type === 1) {
+        be32(23, 0); // the dword the session ignores
+        be32(27, testMapCrc);
+        payload[31] = 0; // bomber
+        payload[32] = 1; // bomb count
+        payload[33] = 1; // bomb power
+        payload[34] = 5; // speed
+      }
+      await udp.send(BuildFrame(payload), 14849, "127.0.0.1");
+    };
+    await sendCheck(loginSN, 1);
+    await sendCheck(roomMemberSN, 1);
+    await Bun.sleep(120);
+    await sendCheck(loginSN, 11);
+    const p120a = await chief.recv(120);
+    await sendCheck(roomMemberSN, 11);
+    const p120b = await chief.recv(120);
+    // each alive-with-a-player slot reads [E1 1][3×(E4 ip][E2 port)][E4 joinTime].
+    // host[0] is the OBSERVED source address (the ephemeral send port);
+    // hosts[1..2] are the self-reported 40001/40002.  The writer's gate is
+    // the slot's player, so the first broadcast still announces slot 1 —
+    // with the zero hosts its handshake has not merged yet.
+    const readSlot = (p: CReceived, merged: boolean): void => {
+      expect(r1(p)).toBe(1); // alive
+      if (!merged) {
+        expect(r4(p)).toBe(0);
+        expect(r2(p)).toBe(0);
+        expect(r4(p)).toBe(0);
+        expect(r2(p)).toBe(0);
+        expect(r4(p)).toBe(0);
+        expect(r2(p)).toBe(0);
+      } else {
+        expect(r4(p)).toBe(0x7f000001); // observed ip
+        expect(r2(p)).toBeGreaterThan(0); // observed port (ephemeral)
+        expect(r4(p)).toBe(0x7f000001);
+        expect(r2(p)).toBe(40001);
+        expect(r4(p)).toBe(0x7f000001);
+        expect(r2(p)).toBe(40002);
+      }
+      expect(r4(p)).toBeGreaterThan(0); // the AddUser join time
+    };
+    readSlot(p120a, true); // slot 0 — merged by tester01's type 11
+    readSlot(p120a, false); // slot 1 — announced, hosts not yet merged
+    readSlot(p120b, true); // slot 0
+    readSlot(p120b, true); // slot 1 — merged by tester03's type 11
+    // the second type 11 completed the handshake → DeferStartGame fires the 150
+    const p150c = await chief.recv(150);
+    await Bun.sleep(300);
+    const p150m = member.pending.find((q) => q.id === 150)!.n;
+    member.pending.splice(member.pending.findIndex((q) => q.id === 150), 1);
+    for (const p150 of [p150c, p150m]) {
+      expect(r4(p150)).toBe(0); // the +12736 seed dword (never written)
+      const seq = r4(p150);
+      expect(seq).toBeGreaterThan(0); // serial ^ version
+      expect(r4(p150)).toBe(0); // ghostStart (tmpl+60) × 1000
+      expect(r4(p150)).toBe(0); // ghostFreq (tmpl+64) × 1000
+    }
+    udp.close();
   });
 
   test("the member leaving drops a 106 and hands the chief crown over", async () => {

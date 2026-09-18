@@ -36,6 +36,7 @@ import { CPacketSocket } from "../core/CPacketSocket.ts";
 import { CReceivedPacket, CSendPacket } from "../core/Packet.ts";
 import { CDBMan } from "../db/DBMan.ts";
 import { CData, CIDFMan } from "./CData.ts";
+import { HOSTHANDLE, SplitDatagram, UDPPacketLen, UDPPacketType } from "./MTUDP.ts";
 import { CLocalSocket } from "../lib/CenterLink.ts";
 import { CM_ReceivedPacket, MC_ReceivedPacket, SVRCLASS_GAME } from "../lib/S2S.ts";
 import {
@@ -102,6 +103,7 @@ export const GS_ClientSend = {
   OnPlayEmotion: 118, // CBaseSession::OnPlayEmotion (SendPacketExclude self)
   OnBangPok: 122, // CListSession::DoBangPok (empty body)
   OnRequestUDPRelayRes: 54, // OnNotifyUDPLoss/OnRequestUDPRelay → the target [E1 senderSlot]
+  OnUDPPeerInfo: 120, // CGameSession::OnUDPPeerInfo — the peer matrix broadcast
   OnStartGame2: 150, // CGameSession::DoStartGame [E4 seed][E4 seq][E4 ghostStartMs][E4 ghostFreqMs]
   OnBombIgniteRes: 153, // CGameSession::OnBombIgnite [E1 slot][E1 pos][E1 attr][E2 bombId]
   OnBombKickThrowRes: 154, // CGameSession::OnBombKickThrow [E1 slot][E2 bombId][E1 pos]
@@ -318,6 +320,7 @@ export class CUser {
   account: _USERACCOUNT;
   dyn: _USERDYNINFO;
   m_pSocket: CClientSocket | null;
+  m_nFree = 0; // +20 (CSafeObject::m_nFree — 0 while the user object is live)
   m_nSlotIdx = -1; // +490
   m_nGlobalSerialNo = 0; // +491 (CUser::SetGlobalSerialNo)
   m_nGuildSN = 0; // +493 (CUser::SetGuildSerialNo; filled from the p7 tail)
@@ -1876,6 +1879,69 @@ export class CUdpLossRegulator {
       if (slot < 8) this.m_rgLoss[8 * slot + target] = 1;
     }
   }
+
+  /** CUdpLossRegulator::DeferRegulateConnection (416595) — 8 s after the first 187. */
+  DeferRegulateConnection(session: CGameSession): void {
+    if (this.m_fInit !== 0 && CGameClock.Now() - this.m_dwInitTime > 0x1f40) this.RegulateConnection(session);
+  }
+
+  /**
+   * CUdpLossRegulator::RegulateConnection (4160D3) — kick the peer with the
+   * most loss reports (ties: the fewest self reports), then reset.
+   */
+  RegulateConnection(session: CGameSession): void {
+    const valid = new Int32Array(8);
+    for (let slot = 0; slot < 8; slot++) {
+      const user = session.m_rgPlayer[slot];
+      if (user && user.m_pSocket?.GetUser(0) === user) valid[slot] = 1;
+    }
+    for (;;) {
+      const cnt = new Int32Array(8);
+      const both = new Int32Array(8);
+      for (let a = 0; a < 8; a++) {
+        if (!valid[a] || !session.m_rgPlayer[a]) continue;
+        for (let k = 0; k < 8; k++) {
+          if (valid[k] && session.m_rgPlayer[k] && this.m_rgLoss[8 * a + k]! !== 0) {
+            cnt[a]++;
+            both[a]++;
+            both[k]++;
+          }
+        }
+      }
+      let best = -1;
+      let bestBoth = 0;
+      let bestCnt = 0x7fffffff;
+      for (let m = 0; m < 8; m++) {
+        if (!valid[m]) continue;
+        if (both[m]! > bestBoth || (both[m] === bestBoth && bestCnt > cnt[m]!)) {
+          bestCnt = cnt[m]!;
+          best = m;
+          bestBoth = both[m]!;
+        }
+      }
+      if (best === -1) break;
+      for (let k = 0; k < 8; k++) {
+        this.m_rgLoss[8 * best + k] = 0; // the row
+        this.m_rgLoss[8 * k + best] = 0; // the column
+      }
+      const user = session.m_rgPlayer[best]!;
+      const ip = user.m_pSocket ? GetInfoStr(user.m_pSocket) : "";
+      console.error(
+        `[GS] User[${ip}:${user.GetName()}] (${user.m_pSocket?.GetUserCount() ?? 0}P) banned from game session (${session.m_nIdx}) while <PLAYING> by udp loss`,
+      );
+      CGameSessionTable.ms_pInstance!.DestroyPlayer(user.m_pSocket!, 0);
+      if (user.m_nFree === 0) {
+        const socket = user.m_pSocket;
+        if (socket && socket.GetUserCount() === 0) {
+          socket.SendPacket(new CSendPacket(GS_ClientSend.OnUdpLossBan));
+          socket.m_nPoolType = 4;
+        }
+      }
+    }
+    this.m_fInit = 0;
+    this.m_dwInitTime = 0;
+    this.m_rgLoss.fill(0);
+  }
 }
 
 // ============================ CGameSession ============================
@@ -1928,6 +1994,8 @@ export class CGameSession {
   m_rgLapCount = new Int32Array(8); // +12696 (per-slot lap byte)
   /** +12940 — the UDP-alive flags (OnUDPPeerInfo sets, DestroyPlayer clears). */
   m_rgUdpAlive = new Uint8Array(8);
+  /** +12948 — the per-slot join times (CGameSession::AddUser; the UDP sweep reads them). */
+  m_rgJoinTime = new Int32Array(8);
   /** +988 — per-slot UDP peer hosts (3 × {ip dword, port u16, pad}); the UDP unit reads these. */
   m_rgUdpHost: Uint8Array[] = [0, 1, 2, 3, 4, 5, 6, 7].map(() => new Uint8Array(24));
   m_dwStartSeed = 0; // +12736 (the DoStartGame seed dword)
@@ -2314,6 +2382,117 @@ export class CGameSession {
     this.m_rgSlotState[p + 2] = (this.m_rgSlotState[p + 2]! ^ (color ^ this.m_rgSlotState[p + 2]!)) & 0x1f;
     this.m_nCurPlayerNum++;
     this.m_fModified |= 4;
+    // CGameSession::AddUser tail (41AF4B)
+    this.m_aBomberIdx[slot] = -1; // or [esi+edi*4+2D34h], -1
+    this.m_rgUdpAlive[slot] = 0; // byte [edi+esi+328Ch] = 0
+    this.m_rgJoinTime[slot] = CGameClock.Now(); // [esi+edi*4+3294h] = timeGetTime()
+  }
+
+  /**
+   * CGameSession::OnUDPPeerInfo (41CE45) — a UDP handshake arrived: merge the
+   * self-reported hosts into the slot's HOSTHANDLE list and broadcast the
+   * peer matrix (120) to every TCP socket of the room.
+   */
+  OnUDPPeerInfo(user: CUser, host: HOSTHANDLE, hosts: number[], ports: number[]): void {
+    const socket = user.m_pSocket;
+    if (!socket) return;
+    if (user.GetSessionIdx() !== this.m_nIdx) return;
+    if (user.GetSessionSerialNo() !== this.m_nSerialNo) return;
+    const count = socket.GetUserCount();
+    for (let i = 0; i < count; i++) {
+      const u: CUser | null = socket.GetUser(i);
+      if (!u) continue;
+      const slot = u.m_nSlotIdx;
+      if (!this.m_rgPlayer[slot]) return;
+      if (this.m_rgUdpAlive[slot] === 1) return;
+      this.m_rgUdpAlive[slot] = 1;
+    }
+    for (let i = 0; i < count; i++) {
+      const u = socket.GetUser(i)!;
+      if (!this.CheckValidPlayer(u) || u.m_nSlotIdx >= 8) return;
+    }
+    for (let i = 0; i < count; i++) {
+      const slot = socket.GetUser(i)!.m_nSlotIdx;
+      const base = this.m_rgUdpHost[slot]!;
+      base[0] = (host.ip >>> 24) & 0xff;
+      base[1] = (host.ip >>> 16) & 0xff;
+      base[2] = (host.ip >>> 8) & 0xff;
+      base[3] = host.ip & 0xff;
+      base[4] = (host.port >>> 8) & 0xff;
+      base[5] = host.port & 0xff;
+      let filled = 1; // host[0] occupies the first 8 bytes
+      for (let j = 0; j < 2; j++) {
+        if (hosts[j] === 0) continue;
+        let found = false;
+        for (let k = 0; k < filled; k++) {
+          const ip = ((base[8 * k]! << 24) | (base[8 * k + 1]! << 16) | (base[8 * k + 2]! << 8) | base[8 * k + 3]!) >>> 0;
+          const port = (base[8 * k + 4]! << 8) | base[8 * k + 5]!;
+          if (ip === hosts[j] && port === ports[j]) {
+            found = true;
+            break;
+          }
+        }
+        if (!found && filled < 3) {
+          const at = 8 * filled;
+          base[at] = (hosts[j]! >>> 24) & 0xff;
+          base[at + 1] = (hosts[j]! >>> 16) & 0xff;
+          base[at + 2] = (hosts[j]! >>> 8) & 0xff;
+          base[at + 3] = hosts[j]! & 0xff;
+          base[at + 4] = (ports[j]! >>> 8) & 0xff;
+          base[at + 5] = ports[j]! & 0xff;
+          filled++;
+        }
+      }
+    }
+    const packet = new CSendPacket(GS_ClientSend.OnUDPPeerInfo);
+    for (let slot = 0; slot < 8; slot++) {
+      if (this.m_rgPlayer[slot]) {
+        packet.Encode1(1);
+        const base = this.m_rgUdpHost[slot]!;
+        for (let k = 0; k < 3; k++) {
+          const at = 8 * k;
+          const ip = ((base[at]! << 24) | (base[at + 1]! << 16) | (base[at + 2]! << 8) | base[at + 3]!) >>> 0;
+          const port = (base[at + 4]! << 8) | base[at + 5]!;
+          packet.Encode4(ip);
+          packet.Encode2(port);
+        }
+        packet.Encode4(this.m_rgJoinTime[slot]! >>> 0);
+      } else {
+        packet.Encode1(0);
+        this.m_rgUdpHost[slot]!.fill(0);
+      }
+    }
+    this.SendPacket(packet);
+    if (this.m_fPlaying !== 0 && this.m_nGamePhase === 0) this.DeferStartGame();
+  }
+
+  /**
+   * The launch-phase UDP-loss sweep inside CGameSession::Update (the phase-0
+   * branch): a player that never completed the UDP handshake within 25 s of
+   * joining gets kicked with an empty 195 and the socket parked on stage 4.
+   * (The <WAITING>/30 s variant in the original is dead code there: the sweep
+   * only runs while m_fPlaying is set.)
+   */
+  private SweepUdpLossOnLaunching(): void {
+    for (let slot = 0; slot < 8; slot++) {
+      const user = this.m_rgPlayer[slot];
+      if (!user) continue;
+      if (this.m_rgUdpAlive[slot] !== 0) continue;
+      if (CGameClock.Now() - this.m_rgJoinTime[slot]! <= 25000) continue;
+      const ip = user.m_pSocket ? GetInfoStr(user.m_pSocket) : "";
+      console.error(
+        `[GS] User[${ip}:${user.GetName()}] (${user.m_pSocket?.GetUserCount() ?? 0}P) banned from game session (${this.m_nIdx}) while <STARTING> by udp loss`,
+      );
+      this.DumpLog();
+      CGameSessionTable.ms_pInstance!.DestroyPlayer(user.m_pSocket!, 0);
+      if (user.m_nFree === 0) {
+        const socket = user.m_pSocket;
+        if (socket && socket.GetUserCount() === 0) {
+          socket.SendPacket(new CSendPacket(GS_ClientSend.OnUdpLossBan));
+          socket.m_nPoolType = 4;
+        }
+      }
+    }
   }
 
   /** CBaseSession::AddUser(socket, selects, i) — pick slot/bomber/color. */
@@ -2742,8 +2921,8 @@ export class CGameSession {
     const time = Date.now();
     this.m_dwLastTickTime = time;
     if (this.m_nGamePhase === 0) {
-      // launching: the 25 s UDP-loss sweep for sockets that never completed
-      // the UDP handshake lives here (+12948 peer times) — UDP transport unit.
+      // launching: kick the sockets that never completed the UDP handshake
+      this.SweepUdpLossOnLaunching();
       return;
     }
     if (this.m_nGamePhase === 2) {
@@ -2764,7 +2943,7 @@ export class CGameSession {
       this.m_nGamePhase = 2;
       return;
     }
-    // CUdpLossRegulator::DeferRegulateConnection — the UDP transport unit
+    this.m_UdpLossRegulator.DeferRegulateConnection(this);
     const ctx = this.m_pCtx;
     const elapsed = time - this.m_nBombTickTime;
     this.m_nBombTickTime = time;
@@ -5027,6 +5206,51 @@ export class CGameSessionTable {
     socket.SendPacket(res);
   }
 
+  /**
+   * CGameSessionTable::OnUDPPeerInfo (421EE5) — the type-11 MTUDP check.
+   * The serial argument is the session's +148 serial.
+   */
+  OnUDPPeerInfo(
+    idx: number,
+    serial: number,
+    user: CUser,
+    host: HOSTHANDLE,
+    hosts: number[],
+    ports: number[],
+  ): void {
+    if (idx >= 0xff) {
+      console.error("[GS] Invalid game session slot index (OnUDPPeerInfo)");
+      user.m_pSocket?.PostClosePacket();
+      return;
+    }
+    const session = this.m_apGameSession[idx];
+    if (session && session.fValid !== 0 && session.m_nSerialNo === serial) {
+      session.OnUDPPeerInfo(user, host, hosts, ports);
+    }
+  }
+
+  /**
+   * CGameSessionTable::OnReadyForImmediateStart (421E72) — the type-1 MTUDP
+   * check.  The session re-reads the map CRC and the per-user attributes from
+   * the packet body at the offset the dispatcher left it at.
+   */
+  OnReadyForImmediateStart(
+    idx: number,
+    serial: number,
+    user: CUser,
+    body: CReceivedPacket,
+  ): void {
+    if (idx >= 0xff) {
+      console.error("[GS] Invalid game session slot index (OnReadyForImmediateStart)");
+      user.m_pSocket?.PostClosePacket();
+      return;
+    }
+    const session = this.m_apGameSession[idx];
+    if (session && session.fValid !== 0 && session.m_nSerialNo === serial) {
+      session.OnReadyForImmediateStart(body, user.m_pSocket!);
+    }
+  }
+
   /** CBaseSessionTable vtbl+12 ClearModifiedFlag (420CC0) — flags[idx] = 0. */
   ClearModifiedFlag(n: number): void {
     this.m_acTableFlags[n] = 0;
@@ -6087,6 +6311,48 @@ export class CCenterProcess {
 // ============================ boot ============================
 
 /** CFxServerApp::SetUp — the process entry. */
+/**
+ * CUDPPacketDispatcher::OnUDPPacket (416619) — one MTUDP frame body.
+ * type 1 = the OnReadyForImmediateStart check (35 bytes), type 11 =
+ * OnUDPPeerInfo (23 bytes); anything else reports and drops.
+ */
+export function OnUDPPacket(payload: Uint8Array, host: HOSTHANDLE): void {
+  const type = payload[0];
+  if (type === UDPPacketType.OnReadyForImmediateStart) {
+    if (payload.length !== UDPPacketLen[type]) {
+      console.error(`[GS] Invalid CheckUDPPacket from the Host ${host.ip},${host.port}`);
+      return;
+    }
+    const dv = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+    const user = CLocalUserTable.ms_pInstance!.FindUserFromGlobalSerialNo(dv.getUint32(1, false));
+    if (!user) return;
+    const idx = dv.getUint16(5, false);
+    const serial = dv.getUint32(7, false);
+    // hosts[2]/ports[2] at 11..22 and the dword at 23 are passed by the
+    // original but only re-read from the body by the session: rewind to 27.
+    const body = new CReceivedPacket();
+    body.SetRcvPacket(payload.subarray(27), payload.length - 27);
+    CGameSessionTable.ms_pInstance!.OnReadyForImmediateStart(idx, serial, user, body);
+    return;
+  }
+  if (type === UDPPacketType.OnUDPPeerInfo) {
+    if (payload.length !== UDPPacketLen[type]) {
+      console.error(`[GS] Invalid CheckUDPPacket from the Host ${host.ip},${host.port}`);
+      return;
+    }
+    const dv = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+    const user = CLocalUserTable.ms_pInstance!.FindUserFromGlobalSerialNo(dv.getUint32(1, false));
+    if (!user) return;
+    const idx = dv.getUint16(5, false);
+    const serial = dv.getUint32(7, false);
+    const hosts = [dv.getUint32(11, false), dv.getUint32(17, false)];
+    const ports = [dv.getUint16(15, false), dv.getUint16(21, false)];
+    CGameSessionTable.ms_pInstance!.OnUDPPeerInfo(idx, serial, user, host, hosts, ports);
+    return;
+  }
+  console.error(`[GS] Invalid CheckUDPPacket from the Host ${host.ip},${host.port}`);
+}
+
 export async function main(cfgFile: string, dbDir: string): Promise<void> {
   const cfg = new CServerConfig();
   cfg.Init(cfgFile);
@@ -6143,6 +6409,30 @@ export async function main(cfgFile: string, dbDir: string): Promise<void> {
     },
   });
   console.log(`[GS] listening on :${port}`);
+
+  // MTUDPBase::StartupBase (42E828) — the UDP peer socket on ServerPort + 1,
+  // and CUDPPacketDispatcher::Proc (41678B) — frame-split each datagram and
+  // route the launch-handshake check packets.
+  const udpServer = Bun.udpSocket({
+    hostname: "0.0.0.0",
+    port: port + 1,
+    socket: {
+      data: (_socket, data, port, address) => {
+        // network order: BE Encode4 puts a.b.c.d back on the wire
+        const host: HOSTHANDLE = {
+          ip: String(address)
+            .split(".")
+            .reduce((acc: number, o) => ((acc << 8) | (Number(o) & 0xff)) >>> 0, 0),
+          port: Number(port),
+        };
+        for (const frame of SplitDatagram(new Uint8Array(data as Buffer), host)) {
+          OnUDPPacket(frame.payload, frame.host);
+        }
+      },
+    },
+  });
+  console.log(`[GS] MTUDP initialized succefully (udp :${port + 1})`);
+  void udpServer;
 
   // the periodic CUserPool::OnTimer sweeps (once a second, like the timer thread)
   setInterval(() => {
