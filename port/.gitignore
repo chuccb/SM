@@ -1,6 +1,7 @@
 node_modules/
 /db/
 /tmp-db/
+/test/data/
 *.db
 *.db-shm
 *.db-wal

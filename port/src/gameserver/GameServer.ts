@@ -44,6 +44,7 @@ import {
   CLIENTSOCKET_SEQ,
   CLIENTSOCKET_SEQ_DELTA,
   GS_ReceivedPacket,
+  SESSION_ReceivedPacket,
 } from "../lib/PacketIDs.ts";
 import { CDynInfoCalculator_GetLevel, kLevelTableSize } from "../login/LevelTable.ts";
 
@@ -83,8 +84,24 @@ export const GS_ClientSend = {
   OnSessionDestroyed: 87, // CListSession::MakeDestroyedPacket
   OnCreateSessionRes: 80, // [E1 result][E2 idx][E4 serial][E1 gameType]
   OnJoinSessionRes: 81, // [E1 result]
+  OnGameTypeMod: 92, // CGameSession::SendGameTypeMod (empty body)
+  OnGameTypeNormal: 93, // CGameSession::SendGameTypeNormal (empty body)
   OnSetPlayer: 105, // CBaseSession::MakeSetPlayerPacket
-  OnSessionCurPlayer: 112, // CGameSession::SendSessionInfoPacket tail
+  OnResetPlayer: 106, // CBaseSession::SendResetPlayer [E1 slot][E4 serial]
+  OnSetSlotState: 107, // CBaseSession::MakeSetSlotStatePacket [E1 slot][EBuffer 3]
+  OnSelectColorRes: 108, // CBaseSession::OnSelectColor [E1 (slot<<4)|color]
+  OnSelectBomberRes: 109, // CBaseSession::OnSelectBomber [E1 (slot<<4)|bomber]
+  OnOpenCloseSlotRes: 110, // CListSession::DoOpenCloseSlot [E1 (slot<<4)|closed]
+  OnBanVoteRequest: 113, // CListSession::OnHostAskBanPlayer [E4 serial][EStr name]
+  OnBanPlayerRes: 114, // CListSession::DeferBanPlayer [E1 code][EStr name?]
+  OnSessionMapIdx: 112, // CGameSession::SendSessionInfoPacket tail [E2 mapIdx]
+  OnStartGameRes: 115, // CGameSession::OnRequestStartGame [E1 CanStartGame]
+  OnStartGame: 116, // CGameSession::LaunchGameStage
+  OnChangeTitle: 117, // CBaseSession::DoChangeTitle [EStr title]
+  OnPlayEmotion: 118, // CBaseSession::OnPlayEmotion (SendPacketExclude self)
+  OnBangPok: 122, // CListSession::DoBangPok (empty body)
+  OnAirplaneItemProb: 173, // CGameSession::SendAirplaneItemProb
+  OnHackingKick: 196, // CGameSession::OnHackingSuspected [E1 slot]
 } as const;
 
 /** p7 client-check constants (CConnectPool::OnConnEstablished). */
@@ -526,6 +543,8 @@ export class CClientSocket extends CPacketSocket {
   m_nUserCount = 0; // +456
   m_anBeforeJoinSession: number[] = []; // +476..+496 (5-deep ring)
   m_dwIdleTime = Date.now() - 5000;
+  /** The CBaseSession::PutPacket queue (this+56); FlushPacket drains it. */
+  m_pendingPackets: CSendPacket[] = [];
 
   constructor() {
     super(CPacketSocket.dwRcvBufferSize, CPacketSocket.dwSndBufferSize, {
@@ -591,9 +610,37 @@ export class CClientSocket extends CPacketSocket {
     return this.m_apUser.findIndex((u) => u && u.m_nGlobalSerialNo === n);
   }
 
+  /** CClientSocket::IsAttatchedUser — does this socket own the user? */
+  IsAttatchedUser(user: CUser): boolean {
+    return this.m_apUser.includes(user);
+  }
+
   /** CClientSocket::HasAuthority — always 0 without the operator link. */
   static HasAuthority(_a1: number): number {
     return 0;
+  }
+
+  /** CBaseSession::PutPacket target (CClientSocket vtbl+56) — queue a copy
+   *  of the session's shared packet.  (CPacketSocket::PutPacket above is the
+   *  encode-into-send-buffer primitive the base socket uses.) */
+  QueuePacket(packet: CSendPacket): void {
+    const copy = new CSendPacket(packet.m_nPacketType, packet.m_nCipherDegree);
+    copy.EncodeBuffer(packet.m_pBlock.subarray(1, packet.m_uOffset)); // skip the type byte
+    this.m_pendingPackets.push(copy);
+  }
+
+  /** CClientSocket vtbl+64 — send everything the sessions queued. */
+  FlushPendingPackets(): void {
+    if (this.m_pendingPackets.length === 0) return;
+    const queue = this.m_pendingPackets;
+    this.m_pendingPackets = [];
+    for (const p of queue) this.SendPacket(p);
+  }
+
+  /** CClientSocket vtbl+76 — one last packet, then destroy the connection. */
+  SendPacketAndDestroy(packet: CSendPacket): void {
+    this.SendPacket(packet);
+    this.Close();
   }
 
   PostClosePacket(): void {
@@ -1096,55 +1143,782 @@ export class CConnectPool extends CUserPool {
 
 /** CGameSession — one room (lobby-stage fidelity; the in-play stage is the
  *  next unit).  Fields are named after the original's accessors. */
-export class CGameSession {
-  m_nIdx = 0; // +144 (GetIdx)
-  m_nSerialNo = 0; // +148 (GetSerialNo — rand() at create)
-  fValid = 0; // +140
-  m_nGameType = 0; // +844 (game type byte)
-  m_nMapIdx = 0; // +852
-  m_nCurPlayerNum = -1; // +850 (u16, -1 until the first join)
-  m_nMaxPlayerNum = 8; // +833
-  m_nTeamPlayerNum = 0; // +832 (cur players byte)
-  m_fModified = 0; // +856 (MakeModifiedPacket flag bits)
-  m_fPlaying = 0; // +852
-  m_strPassword = ""; // +834
-  m_nOwnerSocketSerial = 0;
-  m_rgPlayer: (CUser | null)[] = new Array(8).fill(null);
-  m_nPlayerCount = 0;
+// ============================ game data tables ============================
 
-  /** CListSession::MakeSimpleInfoPacket (packet 83 body). */
-  MakeSimpleInfoPacket(packet: CSendPacket): void {
-    packet.Encode2(this.m_nIdx);
-    packet.Encode4(this.m_nSerialNo);
-    packet.EncodeStr(this.strTitle());
-    packet.Encode1(this.m_nGameType);
-    packet.Encode1(this.hasPassword() ? 1 : 0);
-    packet.Encode1(this.m_fPlaying);
-    packet.Encode2(this.m_nCurPlayerNum === -1 ? 0 : this.m_nCurPlayerNum);
-    packet.Encode1(this.m_nTeamPlayerNum);
-    packet.Encode1(this.m_nMaxPlayerNum);
+/**
+ * SimpleCipher (FxServer.exe.c:16189) — the self-inverse byte chain that
+ * obfuscates the names inside Attr/ItemAttr: byte i is XORed with a key that
+ * starts at 0xA5 and then becomes (key * (i+1) + key / (i+1)) & 0xFF.
+ */
+function SimpleCipher(buf: Uint8Array, n64: number): void {
+  let key = 0xa5;
+  for (let i = 0; i < n64; i++) {
+    buf[i] = (buf[i] ^ key) & 0xff;
+    key = (key * (i + 1) + Math.floor(key / (i + 1))) & 0xff;
+  }
+}
+
+/** CItemAttr (Attr/ItemAttr) — the name table SendAirplaneItemProb needs. */
+export class CItemAttr {
+  static ms_pInstance: CItemAttr | null = null;
+
+  /** index → the decoded "Item/..." name (CItemAttr +12, stride 164). */
+  m_vtName: string[] = [];
+
+  constructor() {
+    CItemAttr.ms_pInstance = this;
   }
 
-  strTitle(): string {
-    return `Room ${this.m_nIdx + 1}`;
+  Load(dir: string): void {
+    let data: Uint8Array;
+    try {
+      data = require("node:fs").readFileSync(require("node:path").join(dir, "ItemAttr"));
+    } catch {
+      return; // no data package installed — the table stays empty
+    }
+    const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
+    let at = 0;
+    at += 8; // two header dwords (+102428 / +102432)
+    const mapCount = dv.getUint32(at, true);
+    at += 4;
+    at += mapCount * 60; // the id→item map section (15 dwords each)
+    // the main section: [E4 len][ciphered name][E4 len][ciphered image]…, idx = load order
+    let idx = 0;
+    while (at + 8 <= data.byteLength) {
+      const len = dv.getUint32(at, true);
+      at += 4;
+      if (len <= 0 || len >= 64 || at + len > data.byteLength) break;
+      const name = data.subarray(at, at + len);
+      SimpleCipher(name, 64 <= len ? 64 : len);
+      this.m_vtName[idx] = new TextDecoder().decode(name).replace(/\0.*$/, "");
+      at += len;
+      at += 4;
+      const len2 = dv.getUint32(at, true);
+      at += 4 + len2;
+      at += 3 * 4 + 5 * 4;
+      idx++;
+    }
+  }
+
+  /** CItemAttr::GetItemidx — the "Item/" prefix is stripped before comparing. */
+  GetItemidx(name: string): number {
+    let s = name;
+    if (s.toLowerCase().startsWith("item/item")) s = s.slice(9);
+    else if (s.toLowerCase().startsWith("item/")) s = s.slice(5);
+    const lower = s.toLowerCase();
+    return this.m_vtName.findIndex((n) => n.toLowerCase() === lower);
+  }
+}
+
+/** CBomberAttr (Attr/BomberAttr) — 296 bytes per bomber, FxServer.exe.c:54336. */
+export interface BomberAttrEntry {
+  strName: string; // +0
+  nAttr1: number; // +256
+  nAttr2: number; // +260
+  nAttr3: number; // +264
+  nAttr4: number; // +268
+  nDefSpeed: number; // +272 (clamped to 10)
+  nAttr6: number; // +276
+  nDefBombCount: number; // +280
+  nAttr8: number; // +284
+  nDefBombPower: number; // +288
+  nAttr10: number; // +292
+}
+
+export class CBomberAttr {
+  static ms_pInstance: CBomberAttr | null = null;
+
+  m_nTotalCount = 0; // +4 (GetTotalCount; GetRandomBomberIdx returns it too)
+  m_nHiddenCount = 0; // +8 (GetNormalCount = TotalCount - HiddenCount)
+  m_vtAttr: BomberAttrEntry[] = []; // 296-byte records from +12
+
+  constructor() {
+    CBomberAttr.ms_pInstance = this;
+  }
+
+  Load(dir: string): void {
+    let data: Uint8Array;
+    try {
+      data = require("node:fs").readFileSync(require("node:path").join(dir, "BomberAttr"));
+    } catch {
+      return; // no data package installed — the table stays empty
+    }
+    const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
+    let at = 0;
+    const decoder = new TextDecoder();
+    while (at + 4 <= data.byteLength) {
+      const len = dv.getUint32(at, true);
+      at += 4;
+      if (len <= 0 || len >= 54 || at + len + 36 > data.byteLength) break;
+      const name = decoder.decode(data.subarray(at, at + len)).replace(/\0.*$/, "");
+      at += len;
+      const attr: BomberAttrEntry = {
+        strName: name,
+        nAttr1: dv.getUint32(at, true),
+        nAttr2: dv.getUint32(at + 4, true),
+        nAttr3: dv.getUint32(at + 8, true),
+        nAttr4: dv.getUint32(at + 12, true),
+        nDefSpeed: Math.min(dv.getUint32(at + 16, true), 10),
+        nAttr6: dv.getUint32(at + 20, true),
+        nDefBombCount: dv.getUint32(at + 24, true),
+        nAttr8: dv.getUint32(at + 28, true),
+        nDefBombPower: dv.getUint32(at + 32, true),
+        nAttr10: dv.getUint32(at + 36, true),
+      };
+      at += 40;
+      if (attr.nAttr1 !== 0) this.m_nHiddenCount++;
+      this.m_nTotalCount++;
+      this.m_vtAttr.push(attr);
+    }
+  }
+
+  GetNormalCount(): number {
+    return this.m_nTotalCount - this.m_nHiddenCount;
+  }
+
+  GetTotalCount(): number {
+    return this.m_nTotalCount;
+  }
+
+  GetRandomBomberIdx(): number {
+    return this.m_nTotalCount;
+  }
+
+  /** CBomberAttr::IsValidSelectIdx — [0, NormalCount) plus the random index. */
+  IsValidSelectIdx(idx: number): boolean {
+    return (idx >= 0 && idx < this.GetNormalCount()) || idx === this.m_nTotalCount;
+  }
+
+  GetDefSpeed(idx: number): number {
+    return this.m_vtAttr[idx]?.nDefSpeed ?? 0;
+  }
+
+  GetDefBombCount(idx: number): number {
+    return this.m_vtAttr[idx]?.nDefBombCount ?? 0;
+  }
+
+  GetDefBombPower(idx: number): number {
+    return this.m_vtAttr[idx]?.nDefBombPower ?? 0;
+  }
+}
+
+/** CGameMapTmpl — one entry of CGameMapTmplList (LoadMap, FxServer.exe.c:13640). */
+export class CGameMapTmpl {
+  m_nIdx = 0; // +0 (the load order)
+  m_strName = ""; // +16 (the "Map/…" path minus the prefix)
+  m_nVersion = 1000; // +28 (file dword 0, clamped up to 1000)
+  m_nMaxTeam = 8; // +32 (GetMapMaxTeam; 8 when the file is pre-1000)
+  m_nOld = 1; // +36
+  m_nLevelLimit = 0; // +52 (GetMapLevelLimit, minus the premium discount)
+  m_nMaxPlayer = 8; // +48 (GetMapMaxPlayer)
+  m_nPremiumOnly = 0; // +56 (GetMapPremiumOnly)
+  m_dwCRC = 0; // +88 (CRC32 of the whole file)
+  m_nThemeIdx = -1; // +80 (CheckGetThemeIdx)
+  m_fLadderMap = 0; // +92
+  m_fPracticeMap = 0; // +96 (IsPracticeMap; "PraticeMapGroup" in the original)
+  m_fReBirthMap = 0; // +100
+  m_nMissionType = 0; // +108 (MissionInfo head; > 0 → IsMissionMap)
+  m_nLapTileCount = 0; // +112
+  m_nLapTime = 0; // +116
+  m_nLapBonus = 0; // +120
+  m_nArg84 = 0; // +84
+  m_nArg60 = 0; // +60
+  m_nArg64 = 0; // +64
+  m_dwPlayTime = 0; // +72 (LaunchGameStage → +12776)
+  m_dwArg76 = 0; // +76
+}
+
+/** CGameMapTmplList — the "Map/…" templates plus the theme groups. */
+export class CGameMapTmplList {
+  static ms_pInstance: CGameMapTmplList | null = null;
+
+  m_nMapCount = 0; // +4 (GetMapCount)
+  m_apGameMapTmpl: CGameMapTmpl[] = []; // +8 (the tmpl pointers)
+  m_apTheme: { strName: string; m_nMaxTeam: number }[] = []; // +1292 (CheckGetThemeIdx)
+
+  constructor() {
+    CGameMapTmplList.ms_pInstance = this;
+  }
+
+  /** CGameMapTmplList::LoadMapGroupInfo (Attr/MapGroup). */
+  LoadMapGroupInfo(data: Uint8Array, groups: Map<string, string[]>): void {
+    const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
+    let at = 0;
+    const decoder = new TextDecoder();
+    const groupCount = dv.getUint32(at, true);
+    at += 4;
+    for (let g = 0; g < groupCount && at + 4 <= data.byteLength; g++) {
+      const nameLen = dv.getUint32(at, true);
+      at += 4;
+      if (nameLen >= 0x80) break;
+      const groupName = decoder.decode(data.subarray(at, at + nameLen)).replace(/\0.*$/, "");
+      at += nameLen;
+      const mapCount = dv.getUint32(at, true);
+      at += 4;
+      const maps: string[] = [];
+      for (let m = 0; m < mapCount && at + 4 <= data.byteLength; m++) {
+        const len = dv.getUint32(at, true);
+        at += 4;
+        if (len >= 0x80) break;
+        maps.push(decoder.decode(data.subarray(at, at + len)).replace(/\0.*$/, ""));
+        at += len;
+      }
+      groups.set(groupName, maps);
+    }
+  }
+
+  /** CGameMapTmplList::CreateTmplList — dir holds one file per "Map/…" entry. */
+  CreateTmplList(mapDir: string, dataDir: string): void {
+    this.m_apGameMapTmpl = [];
+    this.m_apTheme = [];
+    let groupData: Uint8Array | null = null;
+    try {
+      groupData = require("node:fs").readFileSync(require("node:path").join(dataDir, "MapGroup"));
+    } catch {
+      groupData = null;
+    }
+    const groups = new Map<string, string[]>();
+    if (groupData) this.LoadMapGroupInfo(groupData, groups);
+    const fs = require("node:fs");
+    let files: string[] = [];
+    try {
+      files = fs.readdirSync(mapDir).sort();
+    } catch {
+      files = [];
+    }
+    for (const file of files) {
+      const content: Uint8Array = fs.readFileSync(require("node:path").join(mapDir, file));
+      const name = `Map/${file.replace(/\.[^.]*$/, "")}`;
+      const themeIdx = this.CheckGetThemeIdx(name);
+      const tmpl = new CGameMapTmpl();
+      this.LoadMap(tmpl, name, content, themeIdx, groups);
+      // the theme's +12 keeps the widest max team of its maps
+      if (themeIdx >= 0) {
+        const theme = this.m_apTheme[themeIdx]!;
+        if (theme.m_nMaxTeam < tmpl.m_nMaxTeam) theme.m_nMaxTeam = tmpl.m_nMaxTeam;
+      }
+      tmpl.m_nIdx = this.m_nMapCount++;
+      this.m_apGameMapTmpl.push(tmpl);
+    }
+    if (this.m_nMapCount > 0) console.log(`[GS] Game map template list created.`);
+  }
+
+  /** CGameMapTmpl::LoadMap — the template fields straight from the map file. */
+  LoadMap(tmpl: CGameMapTmpl, name: string, content: Uint8Array, themeIdx: number, groups: Map<string, string[]>): void {
+    tmpl.m_strName = name.slice(4);
+    tmpl.m_nThemeIdx = themeIdx;
+    tmpl.m_fLadderMap = this.IsMapInGroup("LadderMapGroup", tmpl.m_strName, groups) ? 1 : 0;
+    tmpl.m_fPracticeMap = this.IsMapInGroup("PraticeMapGroup", tmpl.m_strName, groups) ? 1 : 0;
+    tmpl.m_fReBirthMap = this.IsMapInGroup("ReBirthMapGroup", tmpl.m_strName, groups) ? 1 : 0;
+    tmpl.m_dwCRC = CRC32(0, content, content.byteLength) >>> 0;
+    const dv = new DataView(content.buffer, content.byteOffset, content.byteLength);
+    if (content.byteLength < 8) return;
+    const version = dv.getUint32(0, true);
+    tmpl.m_nVersion = version < 1000 ? 1000 : version;
+    let at = 4;
+    if (version < 1000) {
+      tmpl.m_nMaxTeam = 8;
+      tmpl.m_nOld = 1;
+    } else {
+      if (at + 16 > content.byteLength) return;
+      tmpl.m_nMaxTeam = dv.getUint32(at, true);
+      tmpl.m_nOld = dv.getUint32(at + 4, true);
+      at += 8;
+      at += 8; // dwords 3 and 4 → +40 / +44
+    }
+    const need = at + 8 * 4 + 4 * 4 + 4;
+    if (content.byteLength < need) return;
+    tmpl.m_nMaxPlayer = dv.getUint32(at, true);
+    tmpl.m_nLevelLimit = dv.getUint32(at + 4, true);
+    tmpl.m_nPremiumOnly = dv.getUint32(at + 8, true);
+    tmpl.m_nArg60 = dv.getUint32(at + 12, true);
+    tmpl.m_nArg64 = dv.getUint32(at + 16, true);
+    tmpl.m_dwPlayTime = dv.getUint32(at + 24, true);
+    tmpl.m_dwArg76 = dv.getUint32(at + 28, true);
+    tmpl.m_nMissionType = dv.getUint32(at + 32, true);
+    tmpl.m_nLapTileCount = dv.getUint32(at + 36, true);
+    tmpl.m_nLapTime = dv.getUint32(at + 40, true);
+    tmpl.m_nLapBonus = dv.getUint32(at + 44, true);
+    tmpl.m_nArg84 = dv.getUint32(at + 48, true);
+  }
+
+  /** CGameMapTmplList::CheckGetThemeIdx — "Map/xx_y" has no theme (-1). */
+  CheckGetThemeIdx(name: string): number {
+    if (name[4] === "_") return -1;
+    const themeName = `Theme/${name.slice(4, name.length - 2)}`;
+    const at = this.m_apTheme.findIndex((t) => t.strName.toLowerCase() === themeName.toLowerCase());
+    if (at >= 0) return at;
+    this.m_apTheme.push({ strName: themeName, m_nMaxTeam: 0 });
+    return this.m_apTheme.length - 1;
+  }
+
+  /** CGameMapTmplList::IsMapInGroup — exact or trailing-'?' wildcard match. */
+  IsMapInGroup(groupName: string, mapName: string, groups: Map<string, string[]>): boolean {
+    const maps = groups.get(groupName);
+    if (!maps) return false;
+    const lower = mapName.toLowerCase();
+    for (const m of maps) {
+      if (m.endsWith("?")) {
+        const stem = m.slice(0, -1).toLowerCase();
+        if (lower.startsWith(stem)) return true;
+      } else if (m.toLowerCase() === lower) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  GetMapCount(): number {
+    return this.m_nMapCount;
+  }
+
+  GetMapMaxPlayer(idx: number): number {
+    return this.m_apGameMapTmpl[idx]?.m_nMaxPlayer ?? 0;
+  }
+
+  GetMapMaxTeam(idx: number): number {
+    return this.m_apGameMapTmpl[idx]?.m_nMaxTeam ?? 0;
+  }
+
+  GetMapThemeIdx(idx: number): number {
+    return this.m_apGameMapTmpl[idx]?.m_nThemeIdx ?? -1;
+  }
+
+  GetMapPremiumOnly(idx: number): number {
+    return this.m_apGameMapTmpl[idx]?.m_nPremiumOnly ?? 0;
+  }
+
+  IsPracticeMap(idx: number): number {
+    return this.m_apGameMapTmpl[idx]?.m_fPracticeMap ?? 0;
+  }
+
+  IsMissionMap(idx: number): number {
+    return this.m_apGameMapTmpl[idx]?.m_nMissionType ?? 0;
+  }
+
+  /** CGameMapTmplList::GetMapLevelLimit — the premium channel discount. */
+  GetMapLevelLimit(idx: number): number {
+    const limit = this.m_apGameMapTmpl[idx]?.m_nLevelLimit ?? 0;
+    return CMainSystem.IsPremiumChannel() ? limit - CMainSystem.ms_pInstance!.m_nPremiumLv : limit;
+  }
+
+  /** CGameMapTmplList::GetRandomMapIdx (FxServer.exe.c:14179). */
+  GetRandomMapIdx(nPlayers: number, level: number, theme: number, practice: number, gm: number, premiumTicket: number): number {
+    if (nPlayers <= 0 || nPlayers > 8 || this.m_nMapCount <= 0) return -1;
+    const isLadder = CMainSystem.ms_pInstance!.m_nChannelType === 77;
+    const fits: number[] = [];
+    for (let i = 0; i < this.m_nMapCount; i++) {
+      const tmpl = this.m_apGameMapTmpl[i]!;
+      if (tmpl.m_nMaxPlayer < nPlayers) continue;
+      if (theme !== -1 && tmpl.m_nThemeIdx !== theme) continue;
+      if (isLadder && (tmpl.m_nMissionType > 0 ? 1 : 0) !== 0) continue;
+      if (premiumTicket === 0) {
+        if (this.GetMapLevelLimit(i) > level) continue;
+        if (!CMainSystem.IsPremiumChannel() && tmpl.m_nPremiumOnly === 1) continue;
+        if (practice !== 0 && practice !== (tmpl.m_fPracticeMap !== 0 ? 1 : 0)) continue;
+      }
+      if (gm > tmpl.m_nMaxTeam) continue;
+      fits.push(i);
+    }
+    if (fits.length === 0) return -1;
+    return fits[Math.floor(Math.random() * fits.length) % fits.length]!;
+  }
+}
+
+/** CRC32 (the IEEE table-less variant CCRC32::UpdateCRC uses). */
+export function CRC32(crc: number, data: Uint8Array, len: number): number {
+  let c = crc ^ 0xffffffff;
+  for (let i = 0; i < len; i++) {
+    c ^= data[i]!;
+    for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (0xedb88320 & -(c & 1));
+  }
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+// ============================ CGameSession ============================
+
+/**
+ * CGameSession — one game room (CBaseSession + CListSession + CGameSession,
+ * 0x31DC bytes in the original).  The three originals are folded together
+ * because every CGameSession virtual is either a CListSession body or one of
+ * the empty CGameSessionStrategy thunks (FxServer.exe.lst:79685+).  Fields
+ * carry the original struct offsets.
+ */
+export class CGameSession {
+  static ms_ulSerialNo = 0; // CBaseSession::ms_ulSerialNo
+
+  m_strName = ""; // CNamedObject (the room title)
+  m_setSocket = new Set<CClientSocket>(); // +128
+  fValid = 0; // +140 (CBaseSession::Init sets 1, Destroy clears it)
+  m_nIdx = 0; // +144 (u16, GetIdx)
+  m_nSerialNo = 0; // +148 (Init: ++ms_ulSerialNo)
+  m_rgPlayer: (CUser | null)[] = new Array(8).fill(null); // +20
+  m_nMaxSlot = 8; // +16 (the ctor argument)
+  m_rgSlotState = new Uint8Array(24); // +68, 3 bytes per slot (cleared by Init)
+  m_rgVoteMatrix = new Int32Array(64); // +152 ([8][8], 48-byte stride)
+  m_nChiefSwapCount = 0; // +728 (u16; >= 10000 = supreme room)
+  m_rgVote = new Int32Array(8); // +780 (0 none, 1 asked, 2 yes, 3 no)
+  m_nBanSerial = 0; // +828
+  m_nCurPlayerNum = 0; // +832 (byte)
+  m_nMaxPlayerNum = 8; // +833 (byte)
+  m_szPassword = ""; // +834 (char array, DoJoinSession compares it)
+  m_nLevelLimit = 0; // +840
+  m_nGameType = 0; // +844 (CGameSession::Init writes it)
+  m_fHasPassword = 0; // +848 (byte; set when the password is non-empty)
+  m_nMapIdx = -1; // +850 (u16; -1 = random, -2-theme = theme random)
+  m_fPlaying = 0; // +852
+  m_fModified = 0; // +856 (1 playing / 2 map / 4 cur / 8 max / 0x10 title)
+  m_dwCreateTime = 0; // +860 (timeGetTime)
+  m_nChiefSlotidx = -2; // +864
+  m_fSupreme = 0; // +868 (SetChiefSlotidx: NextChiefSlot == -2)
+  m_nGameTypeMod = 0; // +948 (SendGameTypeMod 1 / SendGameTypeNormal 0)
+  m_nMissionType = 0; // +12748 (LaunchGameStage ← tmpl+108)
+  m_nGameMapIdx = -1; // +1180 (SetMapIdxPlayingByLevel result)
+  m_nBanChiefActive = 0; // +984
+  m_aBomberIdx = new Int32Array(8).fill(-1); // +11572
+  m_abDeleted = new Uint8Array(8); // +11604 (IsPlayerSet == 0 when playing)
+  m_nGameVersion = 0; // +12568 (rand at Init)
+  m_nGameSerial = 0; // +12572 (the session serial copy)
+  m_dwLaunchTime = 0; // +12556 (timeGetTime at launch)
+  m_nMapArg60 = 0; // +12560 (tmpl+60)
+  m_nMapArg64 = 0; // +12564 (tmpl+64)
+  m_nMapArg72 = 0; // +12776 (tmpl+72 — the airplane probability clamp)
+  m_dwArg76 = 0; // +12780 (tmpl+76)
+
+  /** CBaseSession::Init — CListSession::Init / CGameSession::Init heads. */
+  Init(title: string | null, password: string | null, gameType?: number): void {
+    this.fValid = 1;
+    CGameSession.ms_ulSerialNo++;
+    this.m_nSerialNo = CGameSession.ms_ulSerialNo >>> 0;
+    this.m_strName = title ?? "";
+    this.m_rgPlayer.fill(null);
+    this.m_rgSlotState.fill(0);
+    if (gameType !== undefined) {
+      this.m_szPassword = password ?? "";
+      this.m_fHasPassword = this.m_szPassword.length > 0 ? 1 : 0;
+      this.m_nMapIdx = -1;
+      this.m_nCurPlayerNum = 0;
+      this.m_nMaxPlayerNum = this.m_nMaxSlot;
+      this.m_fPlaying = 0;
+      this.m_fModified = 0;
+      this.m_dwCreateTime = Date.now() & 0xffffffff;
+      this.m_nGameType = gameType;
+      this.m_nGameVersion = Math.floor(Math.random() * 0x7fffffff);
+      this.m_nGameSerial = this.m_nSerialNo;
+      this.m_aBomberIdx.fill(-1);
+    }
+  }
+
+  /** CGameSession::Create — CListSession::Init + AddPlayer + InitBangPok. */
+  Create(socket: CClientSocket, title: string, password: string, selects: number[], gameType: number): void {
+    this.Init(title, password, gameType);
+    this.AddPlayerList(socket, selects); // vtbl+24 = CListSession::AddPlayer
+    this.m_fModified = 0;
+    this.InitBangPok(socket);
+  }
+
+  GetName(): string {
+    return this.m_strName;
   }
 
   hasPassword(): boolean {
-    return this.m_strPassword.length > 0;
+    return this.m_fHasPassword !== 0;
   }
 
-  /** CBaseSession::GetEmptySlotCount */
+  // ---- slot-state helpers (the 3-byte records at +68) ----
+  // byte0: 0x01 closed / 0x02 chief / 0x1C the ready group (0x04 ready)
+  // byte1: 0x3F bomber select, byte2: 0x1F team color
+
+  IsClosed(slot: number): boolean {
+    return (this.m_rgSlotState[slot * 3]! & 1) !== 0;
+  }
+
+  SetClosed(slot: number, closed: boolean): void {
+    const p = slot * 3;
+    this.m_rgSlotState[p] = closed ? (this.m_rgSlotState[p]! | 1) : (this.m_rgSlotState[p]! & 0xfe);
+  }
+
+  IsReady(slot: number): boolean {
+    return (this.m_rgSlotState[slot * 3]! & 0x04) !== 0;
+  }
+
+  /** CanStartGame's stand-by probe — the whole 0x1C group. */
+  GetReadyGroup(slot: number): number {
+    return this.m_rgSlotState[slot * 3]! & 0x1c;
+  }
+
+  GetColor(slot: number): number {
+    return this.m_rgSlotState[slot * 3 + 2]! & 0x1f;
+  }
+
+  SetColor(slot: number, color: number): void {
+    const p = slot * 3 + 2;
+    this.m_rgSlotState[p] = (this.m_rgSlotState[p]! & 0xe0) | (color & 0x1f);
+  }
+
+  GetBomber(slot: number): number {
+    return this.m_rgSlotState[slot * 3 + 1]! & 0x3f;
+  }
+
+  SetBomber(slot: number, bomber: number): void {
+    const p = slot * 3 + 1;
+    this.m_rgSlotState[p] = (this.m_rgSlotState[p]! & 0xc0) | (bomber & 0x3f);
+  }
+
+  // ---- CBaseSession slot bookkeeping ----
+
+  /** CBaseSession::IsEmptySlot — nobody seated and the slot open. */
+  IsEmptySlot(slot: number): boolean {
+    return this.m_rgPlayer[slot] === null && !this.IsClosed(slot);
+  }
+
+  IsNullSlot(slot: number): boolean {
+    return this.m_rgPlayer[slot] === null;
+  }
+
+  /** IsPlayerSet (vtbl+184) — CGameSession also counts practice occupants. */
+  IsPlayerSet(slot: number): boolean {
+    return this.m_rgPlayer[slot] !== null;
+  }
+
   GetEmptySlotCount(): number {
-    return this.m_rgPlayer.filter((p) => p === null).length;
+    let n = 0;
+    for (let i = 0; i < this.m_nMaxSlot; i++) if (this.IsEmptySlot(i)) n++;
+    return n;
   }
 
-  /** CBaseSession::GetEmptySlot — the first empty slot. */
+  GetNullSlotCount(): number {
+    let n = 0;
+    for (let i = 0; i < this.m_nMaxSlot; i++) if (this.IsNullSlot(i)) n++;
+    return n;
+  }
+
   GetEmptySlot(): number {
-    return this.m_rgPlayer.findIndex((p) => p === null);
+    for (let i = 0; i < this.m_nMaxSlot; i++) if (this.IsEmptySlot(i)) return i;
+    return -1;
   }
 
-  /** CBaseSession::AddUser — the slot bookkeeping of a join. */
-  AddUser(slot: number, user: CUser): void {
+  GetNullSlot(): number {
+    for (let i = 0; i < this.m_nMaxSlot; i++) if (this.IsNullSlot(i)) return i;
+    return -1;
+  }
+
+  /** CBaseSession::GetSlotidx — the user's +490. */
+  GetSlotidx(user: CUser | null): number {
+    return user ? user.m_nSlotIdx : -1;
+  }
+
+  /** CBaseSession::SetSlotidx. */
+  SetSlotidx(user: CUser | null, slot: number): void {
+    if (user) user.m_nSlotIdx = slot;
+  }
+
+  /** CBaseSession::CheckValidPlayer (vtbl+96). */
+  CheckValidPlayer(user: CUser | null): boolean {
+    const slot = this.GetSlotidx(user);
+    return slot >= 0 && slot < this.m_nMaxSlot && this.m_rgPlayer[slot] === user;
+  }
+
+  /** CBaseSession::CheckValidSocket (vtbl+100). */
+  CheckValidSocket(socket: CClientSocket): boolean {
+    const n = socket.GetUserCount();
+    if (n <= 0) return false;
+    for (let i = 0; i < n; i++) {
+      if (!this.CheckValidPlayer(socket.GetUser(i))) return false;
+    }
+    return true;
+  }
+
+  // ---- sending ----
+
+  /** CBaseSession::SendPacket — every socket of the room. */
+  SendPacket(packet: CSendPacket): void {
+    for (const socket of this.m_setSocket) socket.SendPacket(packet);
+  }
+
+  /** CBaseSession::SendPacketExclude. */
+  SendPacketExclude(packet: CSendPacket, except: CClientSocket): void {
+    for (const socket of this.m_setSocket) {
+      if (socket !== except) socket.SendPacket(packet);
+    }
+  }
+
+  /** CBaseSession::PutPacket — queue for everyone (optionally minus one). */
+  PutPacket(packet: CSendPacket, except: CClientSocket | null = null): void {
+    for (const socket of this.m_setSocket) {
+      if (socket !== except) socket.QueuePacket(packet);
+    }
+  }
+
+  /** CBaseSession::FlushPacket — drain the queues, close dead sockets. */
+  FlushPacket(): void {
+    for (const socket of [...this.m_setSocket]) {
+      if (socket.m_bConnected) socket.FlushPendingPackets();
+      else {
+        console.error(`[GS] Not connected socket (${socket.GetUser(0)?.GetName() ?? "NULL"}) in game session. Post Close Packet.`);
+        socket.PostClosePacket();
+      }
+    }
+  }
+
+  // ---- the 105/106/107/112 makers ----
+
+  /** CBaseSession::MakeSetSlotStatePacket — 107 [E1 slot][EBuffer 3]. */
+  MakeSetSlotStatePacket(slot: number, packet: CSendPacket): void {
+    packet.InitPacket(GS_ClientSend.OnSetSlotState);
+    packet.Encode1(slot);
+    packet.EncodeBuffer(this.m_rgSlotState.subarray(slot * 3, slot * 3 + 3));
+  }
+
+  /** CBaseSession::MakeSlotAccessoryPacket — the tail of packet 105. */
+  MakeSlotAccessoryPacket(slot: number, packet: CSendPacket): void {
+    const user = this.m_rgPlayer[slot]!;
+    let n9 = 0;
+    for (let i = 0; i < 9; i++) if (user.GetSlotDecorationLoaded(i)) n9++;
+    packet.Encode1(n9);
+    if (n9 > 0) {
+      packet.Encode1(slot);
+      for (let i = 0; i < 9; i++) {
+        const deco = user.GetSlotDecorationLoaded(i);
+        if (deco) {
+          packet.Encode1(i);
+          packet.Encode2(deco.nAttr1 & 0xffff); // UserInventory+24
+        }
+      }
+    }
+    let n5 = 0;
+    for (let i = 0; i < 5; i++) if (user.GetCharDecoLoaded(i)) n5++;
+    packet.Encode1(n5);
+    if (n5 > 0) {
+      packet.Encode1(slot);
+      for (let i = 0; i < 5; i++) {
+        const deco = user.GetCharDecoLoaded(i);
+        if (deco) {
+          packet.Encode4(deco.nAttr1); // UserInventory+24
+          packet.Encode4(deco.nAttr2); // +28
+          packet.Encode4(deco.nAttr3); // +32
+        }
+      }
+    }
+    const loaded14 = user.GetInventoryLoaded(14);
+    packet.Encode4(loaded14 ? loaded14.nAttr3 : 0); // UserInventory+32
+  }
+
+  /** CBaseSession::MakeSetPlayerPacket — 105 [slot][serial][self][community]
+   *  [deco?][state 3B][simple info][accessory]. */
+  MakeSetPlayerPacket(slot: number, fSelf: number, packet: CSendPacket): void {
+    const user = this.m_rgPlayer[slot];
+    if (!user) return;
+    packet.InitPacket(GS_ClientSend.OnSetPlayer);
+    packet.Encode1(slot);
+    packet.Encode4(user.GetGlobalSerialNo());
+    packet.Encode1(fSelf);
+    packet.Encode1(user.account.CommunitySvr);
+    if (fSelf !== 0) {
+      const deco = user.GetInventoryLoaded(4);
+      packet.Encode1(deco ? deco.nAttr1 & 0xff : 255); // UserInventory+24
+    }
+    packet.EncodeBuffer(this.m_rgSlotState.subarray(slot * 3, slot * 3 + 3));
+    user.AppendSimpleInfoPacket(packet);
+    this.MakeSlotAccessoryPacket(slot, packet);
+  }
+
+  /** CBaseSession::MakeSessionInfoPacket — 105/107 for every slot. */
+  MakeSessionInfoPacket(socket: CClientSocket): void {
+    const packet = new CSendPacket(0);
+    for (let slot = 0; slot < this.m_nMaxSlot; slot++) {
+      if (this.m_rgPlayer[slot]) this.MakeSetPlayerPacket(slot, socket === this.m_rgPlayer[slot]!.m_pSocket ? 1 : 0, packet);
+      else this.MakeSetSlotStatePacket(slot, packet);
+      socket.QueuePacket(packet);
+    }
+  }
+
+  /** CBaseSession::SendSessionInfoPacket / CGameSession override — 105s + 112. */
+  SendSessionInfoPacket(socket: CClientSocket): void {
+    this.MakeSessionInfoPacket(socket);
+    const packet = new CSendPacket(GS_ClientSend.OnSessionMapIdx);
+    packet.Encode2(this.m_nMapIdx & 0xffff);
+    socket.QueuePacket(packet);
+    socket.FlushPendingPackets();
+  }
+
+  /** CBaseSession::SendJoinPacket — the newcomer's self 105s. */
+  SendJoinPacket(socket: CClientSocket): void {
+    const packet = new CSendPacket(0);
+    const n = socket.GetUserCount();
+    for (let i = 0; i < n; i++) {
+      const user = socket.GetUser(i);
+      if (!this.CheckValidPlayer(user)) {
+        console.error(`[GS] Wrong session player send session packet(SendJoinPacket). Disconnect user[${user?.GetName() ?? "NULL"}].`);
+        socket.PostClosePacket();
+        return;
+      }
+      this.MakeSetPlayerPacket(this.GetSlotidx(user), 1, packet);
+      socket.QueuePacket(packet);
+    }
+    socket.FlushPendingPackets();
+  }
+
+  /** CBaseSession::SendResetPlayer — 106 for the leaver's users. */
+  SendResetPlayer(socket: CClientSocket, a3: number): void {
+    const packet = new CSendPacket(0);
+    const n = socket.GetUserCount();
+    for (let i = 0; i < n; i++) {
+      const user = socket.GetUser(i);
+      if (user && this.GetSlotidx(user) >= 0) {
+        packet.InitPacket(GS_ClientSend.OnResetPlayer);
+        packet.Encode1(this.GetSlotidx(user));
+        packet.Encode4(user.GetGlobalSerialNo());
+        this.PutPacket(packet);
+      }
+    }
+    if (a3 !== 0) socket.SendPacket(packet);
+    this.FlushPacket();
+  }
+
+  // ---- seating ----
+
+  /** CGameSession::GetColorForNewComer (FxServer.exe.c:32760). */
+  GetColorForNewComer(slot: number): number {
+    const counts = new Int32Array(8);
+    let used = 0;
+    for (let i = 0; i < 8; i++) {
+      if (this.m_rgPlayer[i]) {
+        if (++counts[this.GetColor(i)]! === 1) used++;
+      }
+    }
+    const want = slot % 8;
+    if (used > 1) {
+      let best = -1;
+      let bestCount = 8;
+      for (let i = 0; i < 8; i++) {
+        if (counts[i]! !== 0 && counts[i]! < bestCount) {
+          bestCount = counts[i]!;
+          best = i;
+        }
+      }
+      if (best >= 0) return best;
+      return want;
+    }
+    if (used === 1) {
+      const mapIdx = this.m_nMapIdx;
+      let teams: number;
+      if (mapIdx === -1) teams = 0;
+      else if (mapIdx < 0) teams = CGameMapTmplList.ms_pInstance?.m_apTheme[321 - mapIdx]?.m_nMaxTeam ?? 0;
+      else teams = CGameMapTmplList.ms_pInstance?.GetMapMaxTeam(mapIdx) ?? 0;
+      if (teams < 2 || teams > 4) {
+        if (counts[want]! > 0) return want === 0 ? 1 : 0;
+      } else if (counts[0]! <= 0) {
+        return 0;
+      } else {
+        return 3;
+      }
+    }
+    return want;
+  }
+
+  /** CBaseSession::AddUser(slot, user, bomber, color) + the CListSession tail. */
+  AddUser(slot: number, user: CUser, bomber: number, color: number): void {
     if (this.m_rgPlayer[slot]) {
       console.error("[GS] m_rgPlayer[slotidx], CBaseSession::AddUser(int slotidx, CUser* pUser), not return");
       return;
@@ -1152,38 +1926,1321 @@ export class CGameSession {
     this.m_rgPlayer[slot] = user;
     user.SetSessionIdx(this.m_nIdx);
     user.SetSessionSerialNo(this.m_nSerialNo);
-    user.SetPoolType(2);
-    this.m_nPlayerCount++;
-    this.m_nTeamPlayerNum = this.m_nPlayerCount;
-    this.m_nCurPlayerNum = this.m_nPlayerCount;
+    this.SetSlotidx(user, slot);
+    user.SetPoolType(2); // user->socket +468 = 2
+    const p = slot * 3;
+    this.m_rgSlotState[p + 1] = (this.m_rgSlotState[p + 1]! ^ (bomber ^ this.m_rgSlotState[p + 1]!)) & 0x3f;
+    this.m_rgSlotState[p] = this.m_rgSlotState[p]! & 0xe1; // keep closed + 0xE0
+    this.m_rgSlotState[p + 2] = (this.m_rgSlotState[p + 2]! ^ (color ^ this.m_rgSlotState[p + 2]!)) & 0x1f;
+    this.m_nCurPlayerNum++;
     this.m_fModified |= 4;
   }
 
-  /** CListSession::DestroyPlayer — the leave path. */
-  DestroyPlayer(socket: CClientSocket): void {
-    let removed = false;
-    for (const user of socket.m_apUser) {
-      if (!user) continue;
-      const slot = this.m_rgPlayer.indexOf(user);
-      if (slot < 0) continue;
-      this.m_rgPlayer[slot] = null;
-      this.m_nPlayerCount--;
-      this.m_nTeamPlayerNum = this.m_nPlayerCount;
-      this.m_nCurPlayerNum = this.m_nPlayerCount;
-      user.SetSessionIdx(-1);
-      user.SetSessionSerialNo(0);
-      this.m_fModified |= 4;
-      removed = true;
+  /** CBaseSession::AddUser(socket, selects, i) — pick slot/bomber/color. */
+  AddUserFromSocket(socket: CClientSocket, selects: number[], i: number): void {
+    const user = socket.GetUser(i)!;
+    const slot = CClientSocket.HasAuthority(1) !== 0 ? this.GetNullSlot() : this.GetEmptySlot();
+    let bomber = selects[i] ?? 0;
+    if (!CBomberAttr.ms_pInstance!.IsValidSelectIdx(bomber)) bomber = CBomberAttr.ms_pInstance!.GetRandomBomberIdx();
+    let color: number;
+    if (i <= 0) color = this.GetColorForNewComer(slot);
+    else {
+      const first = this.GetSlotidx(socket.GetUser(0));
+      color = this.GetColor(first);
     }
-    if (removed && this.m_nPlayerCount <= 0) {
-      this.fValid = 0;
-      const p = new CSendPacket(GS_ClientSend.OnSessionDestroyed);
-      p.Encode2(this.m_nIdx);
-      p.Encode4(this.m_nSerialNo);
-      CChannelPool.ms_pInstance?.SendAll(p, 1);
+    if (CMainSystem.ms_pInstance!.m_nChannelType === 77) {
+      for (let s = 0; s < this.m_nMaxSlot; s++) {
+        const other = this.m_rgPlayer[s];
+        if (other && other.GetGuildSerialNo() === user.GetGuildSerialNo()) {
+          color = this.GetColor(s);
+          break;
+        }
+      }
+    }
+    this.AddUser(slot, user, bomber, color);
+  }
+
+  /** CBaseSession::AddAllUser (vtbl+40). */
+  AddAllUser(socket: CClientSocket, selects: number[]): void {
+    for (let i = 0; i < socket.GetUserCount(); i++) this.AddUserFromSocket(socket, selects, i);
+  }
+
+  /** CBaseSession::AddPlayer (vtbl+36 body): seat check, AddAllUser, AddSocket. */
+  AddPlayer(socket: CClientSocket, selects: number[]): number {
+    if (this.m_fPlaying !== 0) return 0;
+    const n = socket.GetUserCount();
+    const free = CClientSocket.HasAuthority(1) !== 0 ? this.GetNullSlotCount() : this.GetEmptySlotCount();
+    if (free < n) return 0;
+    this.AddAllUser(socket, selects);
+    this.m_setSocket.add(socket);
+    return 1;
+  }
+
+  /** CListSession::AddPlayer — CGameSession::AddPlayer wraps it (vtbl+36). */
+  AddPlayerList(socket: CClientSocket, selects: number[]): number {
+    if (this.m_fPlaying !== 0) return 0;
+    if (this.AddPlayer(socket, selects) === 0) return 0;
+    if (CClientSocket.HasAuthority(24) !== 0) {
+      this.SetNewChief(this.GetSlotidx(socket.GetUser(0)));
+    }
+    return 1;
+  }
+
+  /** CBaseSession::DeleteUser(slot) + CListSession::DeleteUser(slot). */
+  DeleteUser(slot: number): void {
+    this.m_rgPlayer[slot] = null;
+    this.m_rgSlotState[slot * 3] = this.m_rgSlotState[slot * 3]! & 0xfd; // clear chief
+    for (let i = 0; i < this.m_nMaxSlot; i++) {
+      this.m_rgVoteMatrix[slot * 8 + i] = 0;
+      this.m_rgVoteMatrix[i * 8 + slot] = 0;
+    }
+    this.m_rgVote[slot] = 0;
+    this.m_nCurPlayerNum--;
+    this.m_fModified |= 4;
+  }
+
+  /** CBaseSession::DeleteAllSlotidx — SetSlotidx(-1) for the socket's users. */
+  DeleteAllSlotidx(socket: CClientSocket): void {
+    if (!socket) return;
+    for (let i = 0; i < socket.GetUserCount(); i++) this.SetSlotidx(socket.GetUser(i), -1);
+  }
+
+  // ---- chief ----
+
+  /** CListSession::IsChief — the socket owns the chief user. */
+  IsChief(socket: CClientSocket): boolean {
+    if (!socket) return false;
+    const slot = this.m_nChiefSlotidx;
+    if (slot < 0 || slot >= this.m_nMaxSlot) return false;
+    const user = this.m_rgPlayer[slot];
+    return user !== null && user.m_pSocket === socket;
+  }
+
+  /** CListSession::GetFirstSupremeChief — the first RoomTicket holder. */
+  GetFirstSupremeChief(): number {
+    if (this.m_nMaxSlot <= 0) return -2;
+    for (let i = 0; i < this.m_nMaxSlot; i++) {
+      const user = this.m_rgPlayer[i];
+      if (user && user.HasFunctionalItem("Item/RoomTicket")) return i;
+    }
+    return -2;
+  }
+
+  /** CListSession::GetNextChiefSlot. */
+  GetNextChiefSlot(): number {
+    if (this.m_nChiefSwapCount >= 0x2710) return this.GetFirstSupremeChief();
+    for (let i = 0; i < this.m_nMaxSlot; i++) {
+      if (this.m_rgPlayer[i]) return i;
+    }
+    return -2;
+  }
+
+  /** CListSession::SetChiefSlotidx — byte0 0x02 marks the chief. */
+  SetChiefSlotidx(next: number): void {
+    this.m_fSupreme = next === -2 ? 1 : 0;
+    const old = this.m_nChiefSlotidx;
+    if (old >= 0 && old < this.m_nMaxSlot) this.m_rgSlotState[old * 3] &= 0xfd;
+    this.m_nChiefSlotidx = next;
+    if (next >= 0 && next < this.m_nMaxSlot) {
+      this.m_rgSlotState[next * 3] |= 0x02;
+      const user = this.m_rgPlayer[next];
+      if (user) {
+        const socket = user.m_pSocket;
+        if (socket) {
+          if (this.m_fPlaying === 0) {
+            for (const u of socket.m_apUser) {
+              if (!u) continue;
+              const slot = this.GetSlotidx(u);
+              if (slot >= 0 && slot < this.m_nMaxSlot) this.m_rgSlotState[slot * 3] &= 0xe3; // clear ready
+            }
+          }
+        } else {
+          console.error("[GS] !pSocket, CListSession::SetChiefSlotidx");
+        }
+      } else {
+        console.error("[GS] !pUser, CListSession::SetChiefSlotidx");
+      }
+    }
+  }
+
+  /** CListSession::SetNewChief — move the crown and queue the 107s. */
+  SetNewChief(next: number): void {
+    const old = this.m_nChiefSlotidx;
+    let nextSlot = next;
+    if (nextSlot < 0) nextSlot = this.GetNextChiefSlot();
+    this.SetChiefSlotidx(nextSlot);
+    if (this.m_nChiefSlotidx >= 0 && this.m_nMaxSlot > 0) {
+      for (let slot = 0; slot < this.m_nMaxSlot; slot++) {
+        const user = this.m_rgPlayer[slot];
+        if (user && slot !== this.m_nChiefSlotidx && this.IsChief(user.m_pSocket!)) {
+          const packet = new CSendPacket(0);
+          this.MakeSetSlotStatePacket(slot, packet);
+          this.PutPacket(packet);
+        }
+      }
+    }
+    if (old >= 0) {
+      const packet = new CSendPacket(0);
+      this.MakeSetSlotStatePacket(old, packet);
+      this.PutPacket(packet);
+    }
+    if (this.m_nChiefSlotidx >= 0) {
+      const packet = new CSendPacket(0);
+      this.MakeSetSlotStatePacket(this.m_nChiefSlotidx, packet);
+      this.PutPacket(packet);
+    }
+  }
+
+  /** CListSession::InitBangPok — decide the first chief. */
+  InitBangPok(socket: CClientSocket): void {
+    let chief = 0;
+    this.m_fSupreme = 0;
+    if (this.m_nChiefSwapCount < 0x2710) {
+      const maxLevelUser = socket.GetMaxLevelUser();
+      let slot = 0;
+      for (; slot < this.m_nMaxSlot && this.m_rgPlayer[slot] !== maxLevelUser; slot++);
+      if (slot === this.m_nMaxSlot) {
+        slot = 0;
+        for (; slot < this.m_nMaxSlot; slot++) {
+          const user = this.m_rgPlayer[slot];
+          if (user && user.m_pSocket === socket) break;
+        }
+      }
+      this.SetChiefSlotidx(slot);
+    } else {
+      for (; chief < this.m_nMaxSlot; chief++) {
+        const user = this.m_rgPlayer[chief];
+        if (user && user.HasFunctionalItem("Item/RoomTicket")) break;
+      }
+      if (chief >= this.m_nMaxSlot) {
+        this.m_nChiefSlotidx = -2;
+        console.log("[GS] Spurious LadderSession Creation");
+        return;
+      }
+      this.SetChiefSlotidx(chief);
+    }
+    this.m_nBanSerial = 0;
+  }
+
+  /** CListSession::DoBangPok — 122 to everyone, then out to the lobby. */
+  DoBangPok(): void {
+    for (const socket of [...this.m_setSocket]) {
+      const p = new CSendPacket(GS_ClientSend.OnBangPok);
+      socket.SendPacket(p);
+      socket.m_nPoolType = 4; // v2[117] = 4 (MoveToExchangeSession)
+      CGameSessionTable.ms_pInstance!.MoveToExchangeSession(socket, 0);
+    }
+  }
+
+  // ---- title ----
+
+  /** CListSession::CanRequestChangeTitle (vtbl+108). */
+  CanRequestChangeTitle(socket: CClientSocket): boolean {
+    if (this.IsChief(socket)) return true;
+    console.error("[GS] !this->IsChief(pSocket), CListSession::CanRequestChangeTitle");
+    return false;
+  }
+
+  /** CBaseSession::DoChangeTitle + the CListSession modified bit. */
+  DoChangeTitle(title: string): void {
+    this.m_strName = title;
+    const packet = new CSendPacket(GS_ClientSend.OnChangeTitle);
+    packet.EncodeStr(title);
+    this.SendPacket(packet);
+    this.m_fModified |= 0x10;
+  }
+
+  /** CListSession::DoOpenCloseSlot (vtbl+124) — 110 + the open-slot count. */
+  DoOpenCloseSlot(slot: number, close: number): void {
+    if (slot < 0 || slot >= this.m_nMaxSlot) return;
+    if (this.m_rgPlayer[slot]) close = 0;
+    const packet = new CSendPacket(GS_ClientSend.OnOpenCloseSlotRes);
+    packet.Encode1(((slot << 4) | (close & 0xf)) & 0xff);
+    this.SendPacket(packet);
+    const p = slot * 3;
+    const state = this.m_rgSlotState[p]!;
+    const changing = (state & 1) === 0 !== (close === 0);
+    this.m_rgSlotState[p] = state ^ ((close ^ state) & 1);
+    if (changing) {
+      let open = 0;
+      for (let i = 0; i < this.m_nMaxSlot; i++) {
+        if ((this.m_rgSlotState[i * 3]! & 1) === 0) open++;
+      }
+      if (open !== this.m_nMaxPlayerNum) {
+        this.m_fModified |= 8;
+        this.m_nMaxPlayerNum = open;
+      }
+    }
+  }
+
+  /** CListSession::SetPlaying. */
+  SetPlaying(playing: number): void {
+    this.m_fModified |= 1;
+    this.m_fPlaying = playing;
+  }
+
+  /** CListSession::SetCurPlayer. */
+  SetCurPlayer(cur: number): void {
+    this.m_fModified |= 4;
+    this.m_nCurPlayerNum = cur;
+  }
+
+  // ---- room list packets (83/85/86/87) ----
+
+  /** CListSession::MakeSimpleInfoPacket — 83 [E2 idx][E4 serial][EStr name]
+   *  [E1 hasPW][E1 gameType][E1 playing][E2 mapIdx][E1 cur][E1 max]. */
+  MakeSimpleInfoPacket(packet: CSendPacket): void {
+    packet.Encode2(this.m_nIdx);
+    packet.Encode4(this.m_nSerialNo);
+    packet.EncodeStr(this.m_strName);
+    packet.Encode1(this.m_fHasPassword);
+    packet.Encode1(this.m_nGameType);
+    packet.Encode1(this.m_fPlaying);
+    packet.Encode2(this.m_nMapIdx & 0xffff);
+    packet.Encode1(this.m_nCurPlayerNum);
+    packet.Encode1(this.m_nMaxPlayerNum);
+  }
+
+  /** CListSession::MakeCreatedPacket — 85 [E2 idx][E4 serial][EStr name]
+   *  [E1 hasPW][E1 gameType][E1 cur][E1 max]. */
+  MakeCreatedPacket(packet: CSendPacket): void {
+    packet.InitPacket(GS_ClientSend.OnSessionCreated);
+    this.MakeSimpleInfoCreated(packet);
+  }
+
+  private MakeSimpleInfoCreated(packet: CSendPacket): void {
+    packet.Encode2(this.m_nIdx);
+    packet.Encode4(this.m_nSerialNo);
+    packet.EncodeStr(this.m_strName);
+    packet.Encode1(this.m_fHasPassword);
+    packet.Encode1(this.m_nGameType);
+    packet.Encode1(this.m_nCurPlayerNum);
+    packet.Encode1(this.m_nMaxPlayerNum);
+  }
+
+  /** CListSession::MakeModifiedPacket — 86, or 0 when nothing changed. */
+  MakeModifiedPacket(packet: CSendPacket): number {
+    if (this.m_fModified === 0) return 0;
+    packet.InitPacket(GS_ClientSend.OnSessionModified);
+    packet.Encode2(this.m_nIdx);
+    packet.Encode4(this.m_nSerialNo);
+    packet.Encode1(this.m_fModified);
+    if ((this.m_fModified & 1) !== 0) packet.Encode1(this.m_fPlaying);
+    if ((this.m_fModified & 2) !== 0) packet.Encode2(this.m_nMapIdx & 0xffff);
+    if ((this.m_fModified & 4) !== 0) packet.Encode1(this.m_nCurPlayerNum);
+    if ((this.m_fModified & 8) !== 0) packet.Encode1(this.m_nMaxPlayerNum);
+    if ((this.m_fModified & 0x10) !== 0) packet.EncodeStr(this.m_strName);
+    this.m_fModified = 0;
+    return 1;
+  }
+
+  /** CListSession::MakeDestroyedPacket — 87 [E2 idx][E4 serial]. */
+  MakeDestroyedPacket(packet: CSendPacket): void {
+    packet.InitPacket(GS_ClientSend.OnSessionDestroyed);
+    packet.Encode2(this.m_nIdx);
+    packet.Encode4(this.m_nSerialNo);
+  }
+
+  // ---- leaving ----
+
+  /** CGameSession::DestroyPlayer — the full leave path (FxServer.exe.c:32692). */
+  DestroyPlayer(socket: CClientSocket, a3: number): number {
+    const wasChief = this.IsChief(socket);
+    let dissolve = false;
+    // CListSession::DestroyPlayer → CBaseSession::DestroyPlayer:
+    // DeleteSocket, DeleteUser(socket) per user, SendResetPlayer, +468 = 1
+    this.m_setSocket.delete(socket);
+    for (let i = 0; i < socket.GetUserCount(); i++) {
+      const user = socket.GetUser(i);
+      if (!user) continue;
+      const slot = this.GetSlotidx(user);
+      if (slot >= 0 && slot < this.m_nMaxSlot && this.m_rgPlayer[slot] === user) {
+        this.m_abDeleted[slot] = 0;
+        this.DeleteUser(slot);
+      }
+    }
+    this.SendResetPlayer(socket, a3);
+    socket.m_nPoolType = 1; // socket +468 = 1 (back to the lobby)
+    if (wasChief) {
+      const oldSupreme = this.m_fSupreme;
+      this.SetNewChief(-1);
+      if (this.m_nChiefSwapCount >= 0x2710 && oldSupreme === 0 && this.m_fSupreme !== 0 && this.m_fPlaying === 0) {
+        dissolve = true;
+      }
+    }
+    this.FlushPacket();
+    this.DeleteAllSlotidx(socket);
+    if (this.m_nBanSerial !== 0) this.DeferBanPlayer();
+    socket.AddBeforeJoinSession(this.m_nIdx);
+    if (dissolve) this.DoBangPok();
+    return 1;
+  }
+
+  /** CGameSessionTable::CloseSession's empty check lives on +832. */
+  IsEmpty(): boolean {
+    return this.m_nCurPlayerNum === 0;
+  }
+
+  // ---- ready / map / color / bomber / slots (the 96..111 handlers) ----
+
+  /**
+   * CGameSession::OnSetPlayerReady — the *members'* ready toggle
+   * (FxServer.exe.c:35201).  The body runs only when the sender is NOT the
+   * chief's socket: the chief has no ready state of his own (he starts the
+   * game), and a chief-sent 96 is silently ignored.
+   */
+  OnSetPlayerReady(n: CReceivedPacket, socket: CClientSocket): void {
+    const chiefSlot = this.m_nChiefSlotidx;
+    if (chiefSlot >= 8) return;
+    const chiefUser = this.m_rgPlayer[chiefSlot];
+    if (!chiefUser || chiefUser.m_pSocket === socket) return;
+    const sender = socket.GetUser(0);
+    if (!sender || sender.GetName().length === 0) {
+      console.error(`[GS] Null player sent socket. Disconnect [${GetInfoStr(socket)}].`);
+      socket.PostClosePacket();
+      return;
+    }
+    const b = n.Decode1();
+    if (b !== 1 && b !== 0) {
+      console.error(`[GS] Hacking suspected [${GetInfoStr(socket)}]: set player ready packet out of range.`);
+      socket.PostClosePacket();
+      return;
+    }
+    const packet = new CSendPacket(0);
+    const count = socket.GetUserCount();
+    for (let i = 0; i < count; i++) {
+      const user = socket.GetUser(i);
+      if (!user) {
+        console.error(`[GS] Hacking suspected [${GetInfoStr(socket)}]: null user sent set player ready packet.`);
+        socket.PostClosePacket();
+        return;
+      }
+      const slot = this.GetSlotidx(user);
+      if (slot >= 8) {
+        console.error(`[GS] Hacking suspected [${GetInfoStr(socket)}]: non-valid player sent set player ready packet.`);
+        socket.PostClosePacket();
+        return;
+      }
+      const p = slot * 3;
+      if (b !== 0) {
+        if ((this.m_rgSlotState[p]! & 0x1c) !== 0) {
+          console.error(`[GS] Hacking suspected [${GetInfoStr(socket)}]: set player ready packet [${b}] doesn't sync. Don't disconnect.`);
+          return;
+        }
+        this.m_rgSlotState[p] = (this.m_rgSlotState[p]! & 0xe3) | 0x04;
+      } else {
+        if ((this.m_rgSlotState[p]! & 0x1c) !== 0x04) {
+          console.error(`[GS] Hacking suspected [${GetInfoStr(socket)}]: set player ready packet [${b}] doesn't sync. Don't disconnect.`);
+          return;
+        }
+        this.m_rgSlotState[p] = this.m_rgSlotState[p]! & 0xe3;
+      }
+      this.MakeSetSlotStatePacket(slot, packet);
+      this.PutPacket(packet);
+    }
+    this.FlushPacket();
+  }
+
+  /** CGameSession::OnSelectMap (FxServer.exe.c:33211). */
+  OnSelectMap(n: CReceivedPacket, socket: CClientSocket): void {
+    const mapIdx = n.Decode2() | 0;
+    if (this.m_fPlaying === 0) {
+      this.m_fModified |= 2;
+      this.m_nMapIdx = mapIdx;
+    }
+    const packet = new CSendPacket(GS_ClientSend.OnSessionMapIdx);
+    packet.Encode2(this.m_nMapIdx & 0xffff);
+    this.PutPacket(packet);
+    this.FlushPacket();
+    if (this.m_fPlaying !== 0) return;
+    // the team count of the chosen map (321 - mapIdx indexes m_apTheme)
+    let teams: number;
+    if (mapIdx === -1) teams = 8;
+    else if (mapIdx >= 0) teams = CGameMapTmplList.ms_pInstance?.GetMapMaxTeam(mapIdx) ?? 0;
+    else teams = CGameMapTmplList.ms_pInstance?.m_apTheme[321 - mapIdx]?.m_nMaxTeam ?? 0;
+    // the colors in use (v19; 0x11111111 = untouched sentinel)
+    const v19 = new Int32Array(8).fill(-1);
+    let usedColors = 0;
+    for (let slot = 0; slot < 8; slot++) {
+      if (this.IsPlayerSet(slot) && v19[this.GetColor(slot)]! === -1) {
+        usedColors++;
+        v19[this.GetColor(slot)] = 0x11111115;
+      }
+    }
+    const SENTINEL = 0x11111115;
+    if (teams < usedColors) {
+      // round-robin re-assignment onto {0,3,5,6} for 2..4 team maps
+      let k = 0;
+      const v20 = [0, 3, 5, 6];
+      if (teams >= 2 && teams <= 4) {
+        for (let slot = 0; slot < 8; slot++) {
+          if (!this.IsPlayerSet(slot)) continue;
+          const p = slot * 3 + 2;
+          const want = v20[k % teams]!;
+          this.m_rgSlotState[p] = (this.m_rgSlotState[p]! ^ (want ^ this.m_rgSlotState[p]!)) & 0x1f;
+          k++;
+          const sp = new CSendPacket(0);
+          this.MakeSetSlotStatePacket(slot, sp);
+          this.PutPacket(sp);
+        }
+      }
+    } else {
+      switch (teams) {
+        case 2:
+          if (v19[0] === SENTINEL) v19[0] = 0;
+          if (v19[3] === SENTINEL) v19[3] = 3;
+          for (let i = 0; i < 8; i++) {
+            if (v19[i] === SENTINEL) {
+              if (v19[0] !== 0) {
+                v19[i] = 0;
+                v19[0] = 0;
+              } else if (v19[3] !== 3) {
+                v19[i] = 3;
+                v19[3] = 3;
+              }
+            }
+          }
+          break;
+        case 3:
+          if (v19[0] === SENTINEL) v19[0] = 0;
+          if (v19[3] === SENTINEL) v19[3] = 3;
+          if (v19[5] === SENTINEL) v19[5] = 5;
+          for (let j = 0; j < 8; j++) {
+            if (v19[j] === SENTINEL) {
+              if (v19[0] !== 0) {
+                v19[j] = 0;
+                v19[0] = 0;
+              } else if (v19[3] === 3) {
+                if (v19[5] !== 5) {
+                  v19[j] = 5;
+                  v19[5] = 5;
+                }
+              } else {
+                v19[j] = 3;
+                v19[3] = 3;
+              }
+            }
+          }
+          break;
+        case 4:
+          if (v19[0] === SENTINEL) v19[0] = 0;
+          if (v19[3] === SENTINEL) v19[3] = 3;
+          if (v19[5] === SENTINEL) v19[5] = 5;
+          if (v19[6] === SENTINEL) v19[6] = 6;
+          for (let m = 0; m < 8; m++) {
+            if (v19[m] === SENTINEL) {
+              if (v19[0] !== 0) {
+                v19[m] = 0;
+                v19[0] = 0;
+              } else if (v19[3] === 3) {
+                if (v19[5] === 5) {
+                  if (v19[6] !== 6) {
+                    v19[m] = 6;
+                    v19[6] = 6;
+                  }
+                } else {
+                  v19[m] = 5;
+                  v19[5] = 5;
+                }
+              } else {
+                v19[m] = 3;
+                v19[3] = 3;
+              }
+            }
+          }
+          break;
+        case 8:
+          for (let k = 0; k < 8; k++) v19[k] = k;
+          break;
+        default:
+          break;
+      }
+      for (let slot = 0; slot < 8; slot++) {
+        if (!this.IsPlayerSet(slot)) continue;
+        const p = slot * 3 + 2;
+        const want = v19[this.GetColor(slot)]! & 0xff;
+        this.m_rgSlotState[p] = (this.m_rgSlotState[p]! ^ (want ^ this.m_rgSlotState[p]!)) & 0x1f;
+        const sp = new CSendPacket(0);
+        this.MakeSetSlotStatePacket(slot, sp);
+        this.PutPacket(sp);
+      }
+    }
+    this.FlushPacket();
+  }
+
+  /** CBaseSession::OnSelectColor — 98 → 108 (FxServer.exe.c:30993). */
+  OnSelectColor(n: CReceivedPacket, socket: CClientSocket): void {
+    const user0 = socket.GetUser(0);
+    if (!user0 || user0.GetName().length === 0) {
+      console.error(`[GS] Null player sent socket. Disconnect [${GetInfoStr(socket)}].`);
+      socket.PostClosePacket();
+      return;
+    }
+    const b = n.Decode1();
+    const selfIdx = b >> 4;
+    const colorIdx = b & 0xf;
+    const target = socket.GetUser(selfIdx);
+    const slot = this.GetSlotidx(target);
+    if (selfIdx < 0 || selfIdx >= socket.GetUserCount()) {
+      console.error(`[GS] Hacking suspected [${GetInfoStr(socket)}]: selfidx is out of range.`);
+      socket.PostClosePacket();
+      return;
+    }
+    if (colorIdx >= 8) {
+      console.error(`[GS] Hacking suspected [${GetInfoStr(socket)}]: coloridx is out of range.`);
+      socket.PostClosePacket();
+      return;
+    }
+    if (slot >= 0 && slot < this.m_nMaxSlot) {
+      this.SetColor(slot, colorIdx); // DoSelectColor
+      const packet = new CSendPacket(GS_ClientSend.OnSelectColorRes);
+      packet.Encode1(((slot << 4) | (colorIdx & 0xf)) & 0xff);
+      this.SendPacket(packet);
+      return;
+    }
+    console.error(`[GS] Invalid slot idx (OnSelectColor). Disconnect [${GetInfoStr(socket)}].`);
+    socket.PostClosePacket();
+  }
+
+  /** CListSession::OnSelectBomber → CBaseSession::OnSelectBomber — 99 → 109. */
+  OnSelectBomber(n: CReceivedPacket, socket: CClientSocket): void {
+    if (this.m_fPlaying !== 0) return;
+    const user0 = socket.GetUser(0);
+    if (!user0 || user0.GetName().length === 0) {
+      console.error(`[GS] Null player sent socket. Disconnect [${GetInfoStr(socket)}].`);
+      socket.PostClosePacket();
+      return;
+    }
+    const b = n.Decode1();
+    const selfIdx = b >> 4;
+    const bomberIdx = b & 0xf;
+    const target = socket.GetUser(selfIdx);
+    const slot = this.GetSlotidx(target);
+    if (selfIdx < 0 || selfIdx >= socket.GetUserCount()) {
+      console.error(`[GS] Hacking suspected [${GetInfoStr(socket)}]: selfidx is out of range(OnSelectBomber).`);
+      socket.PostClosePacket();
+      return;
+    }
+    const attr = CBomberAttr.ms_pInstance!;
+    if (bomberIdx < attr.GetNormalCount() || bomberIdx === attr.GetTotalCount()) {
+      if (slot >= 0 && slot < this.m_nMaxSlot) {
+        const p = slot * 3 + 1;
+        this.m_rgSlotState[p] = (this.m_rgSlotState[p]! ^ ((bomberIdx ^ this.m_rgSlotState[p]!) & 0x3f));
+        const packet = new CSendPacket(GS_ClientSend.OnSelectBomberRes);
+        packet.Encode1(((slot << 4) | (bomberIdx & 0xf)) & 0xff);
+        this.SendPacket(packet);
+        return;
+      }
+      console.error(`[GS] Invalid slot idx (OnSelectBomber). Disconnect [${GetInfoStr(socket)}].`);
+      socket.PostClosePacket();
+      return;
+    }
+    console.error(`[GS] Hacking suspected [${GetInfoStr(socket)}]: bomberidx is out of range(OnSelectBomber).`);
+    socket.PostClosePacket();
+  }
+
+  /** CListSession::OnOpenCloseSlot — 100 (chief only, FxServer.exe.c:40725). */
+  OnOpenCloseSlot(n: CReceivedPacket, socket: CClientSocket): void {
+    if (this.m_fPlaying !== 0) return;
+    const user0 = socket.GetUser(0);
+    if (!user0 || user0.GetName().length === 0) {
+      console.error(`[GS] Null player sent socket. Disconnect [${GetInfoStr(socket)}].`);
+      socket.PostClosePacket();
+      return;
+    }
+    const chiefSlot = this.m_nChiefSlotidx;
+    if (chiefSlot < 0 || chiefSlot >= this.m_nMaxSlot) {
+      console.error(`[GS] No Chief player exists.(Supreme Room) (SetSlotState). Disconnect [${GetInfoStr(socket)}].`);
+      return;
+    }
+    const chiefUser = this.m_rgPlayer[chiefSlot];
+    if (!chiefUser) {
+      console.error(`[GS] Chief player doesn't exists(SetSlotState). Disconnect [${GetInfoStr(socket)}].`);
+      socket.PostClosePacket();
+      return;
+    }
+    if (chiefUser.m_pSocket !== socket) {
+      console.error(`[GS] Hacking suspected [${GetInfoStr(socket)}]: non-chief tried to open or close slot.`);
+      socket.PostClosePacket();
+      return;
+    }
+    const b = n.Decode1();
+    const slot = b >> 4;
+    const close = (b & 0xf) !== 0 ? 1 : 0;
+    if (slot >= 0 && slot < this.m_nMaxSlot) {
+      this.DoOpenCloseSlot(slot, close);
+      return;
+    }
+    console.error(`[GS] Invalid slot idx (OnOpenCloseSlot). Disconnect [${GetInfoStr(socket)}].`);
+    socket.PostClosePacket();
+  }
+
+  /** CGameSession::OnSetGameTypeNormal — 102 → 93. */
+  OnSetGameTypeNormal(socket: CClientSocket): void {
+    const chiefSlot = this.m_nChiefSlotidx;
+    if (chiefSlot >= 8) {
+      console.error("[GS] No chief exists but player request to set game type");
+      return;
+    }
+    const chiefUser = this.m_rgPlayer[chiefSlot];
+    if (chiefUser && chiefUser.m_pSocket === socket) this.SendGameTypeNormal();
+    else console.error("[GS] Non-chief player request to set game type");
+  }
+
+  /** CGameSession::OnSetGameTypeMod — 103 → 92. */
+  OnSetGameTypeMod(socket: CClientSocket): void {
+    const chiefSlot = this.m_nChiefSlotidx;
+    if (chiefSlot >= 8) {
+      console.error("[GS] No chief exists but player request to set game type");
+      return;
+    }
+    const chiefUser = this.m_rgPlayer[chiefSlot];
+    if (chiefUser && chiefUser.m_pSocket === socket) this.SendGameTypeMod();
+    else console.error("[GS] Non-chief player request to set game type");
+  }
+
+  /** CGameSession::SendGameTypeNormal — +948 = 0, packet 93. */
+  SendGameTypeNormal(): void {
+    this.m_nGameTypeMod = 0;
+    this.SendPacket(new CSendPacket(GS_ClientSend.OnGameTypeNormal));
+  }
+
+  /** CGameSession::SendGameTypeMod — +948 = 1, packet 92. */
+  SendGameTypeMod(): void {
+    this.m_nGameTypeMod = 1;
+    this.SendPacket(new CSendPacket(GS_ClientSend.OnGameTypeMod));
+  }
+
+  /** CGameSession::SendGameType — the join tail (92 or 93). */
+  SendGameType(socket: CClientSocket): void {
+    socket.SendPacket(new CSendPacket(this.m_nGameTypeMod !== 0 ? GS_ClientSend.OnGameTypeMod : GS_ClientSend.OnGameTypeNormal));
+  }
+
+  // ---- ban votes (104/105 → 113/114) ----
+
+  /** CListSession::OnHostAskBanPlayer (FxServer.exe.c:41110). */
+  OnHostAskBanPlayer(n: CReceivedPacket, socket: CClientSocket): void {
+    const user0 = socket.GetUser(0);
+    if (!user0 || user0.GetName().length === 0) {
+      console.error(`[GS] Null player sent socket. Disconnect [${GetInfoStr(socket)}].`);
+      socket.PostClosePacket();
+      return;
+    }
+    const chiefSlot = this.m_nChiefSlotidx;
+    if (chiefSlot < 0 || chiefSlot >= this.m_nMaxSlot) {
+      console.error(`[GS] Hacking suspected [${GetInfoStr(socket)}]: Non-chief player ask ban player (there is no chief player exists)`);
+      socket.PostClosePacket();
+      return;
+    }
+    const chiefUser = this.m_rgPlayer[chiefSlot]!;
+    if (!chiefUser || chiefUser.m_pSocket !== socket) {
+      console.error(`[GS] Hacking suspected [${GetInfoStr(socket)}]: Non-chief player ask ban player`);
+      socket.PostClosePacket();
+      return;
+    }
+    if (this.m_nBanSerial !== 0) {
+      const p = new CSendPacket(GS_ClientSend.OnBanPlayerRes);
+      p.Encode1(1);
+      socket.SendPacket(p);
+      return;
+    }
+    const serial = n.Decode4();
+    const superFlag = n.Decode1();
+    let slot = this.GetSlotidxFromSerialNo(serial);
+    if (socket.GetSelfidxFromSerialNo(serial) !== -1) {
+      console.error(`[GS] Hacking suspected [${GetInfoStr(socket)}]: Chief player ask ban himself`);
+      socket.PostClosePacket();
+      return;
+    }
+    // the target's users record 0, everyone else 1 (asked)
+    for (let i = 0; i < this.m_nMaxSlot; i++) {
+      const u = this.m_rgPlayer[i];
+      if (u && u.GetGlobalSerialNo() === serial) {
+        this.m_rgVote[i] = 0;
+        slot = i;
+      } else {
+        this.m_rgVote[i] = 1;
+      }
+    }
+    if (slot === -1) {
+      this.m_nBanSerial = 0;
+      return;
+    }
+    const targetUser = this.m_rgPlayer[slot]!;
+    if (superFlag !== 0 || CClientSocket.HasAuthority(21) !== 0) {
+      // a super chief (Item/SuperChief) or an operator kicks outright
+      let hasSuper = false;
+      for (const u of socket.m_apUser) {
+        if (u && u.HasFunctionalItem("Item/SuperChief")) {
+          hasSuper = true;
+          break;
+        }
+      }
+      if (hasSuper || CClientSocket.HasAuthority(21) !== 0) {
+        this.m_nBanSerial = 0;
+        const targetSocket = targetUser.m_pSocket!;
+        this.MoveOut(targetSocket);
+        const p = new CSendPacket(GS_ClientSend.OnBanPlayerRes);
+        p.Encode1(4);
+        this.SendPacket(p);
+        return;
+      }
+    }
+    // Item/BanReflex bounces the ban onto the chief
+    let reflex = false;
+    for (const u of targetUser.m_pSocket?.m_apUser ?? []) {
+      if (u && u.HasFunctionalItem("Item/BanReflex")) {
+        reflex = true;
+        break;
+      }
+    }
+    if (reflex) {
+      this.m_nBanSerial = 0;
+      const chief = this.m_rgPlayer[this.m_nChiefSlotidx]!;
+      const chiefSocket = chief.m_pSocket!;
+      this.MoveOut(chiefSocket);
+      const p = new CSendPacket(GS_ClientSend.OnBanPlayerRes);
+      p.Encode1(5);
+      p.EncodeStr(chief.GetName());
+      this.SendPacket(p);
+      return;
+    }
+    // start the vote: the chief is a yes, the ask goes to the rest
+    for (const u of targetUser.m_pSocket?.m_apUser ?? []) {
+      const s = this.GetSlotidx(u);
+      if (s >= 0) this.m_rgVote[s] = 0;
+    }
+    this.m_nBanSerial = serial;
+    for (const u of socket.m_apUser) {
+      const s = this.GetSlotidx(u);
+      if (s >= 0) this.m_rgVote[s] = 2;
+    }
+    this.DeferBanPlayer();
+    if (this.m_nBanSerial !== 0) {
+      const ask = new CSendPacket(GS_ClientSend.OnBanVoteRequest);
+      ask.Encode4(serial);
+      ask.EncodeStr(targetUser.GetName());
+      const chiefSocket = chiefUser.m_pSocket!;
+      const targetSocket = targetUser.m_pSocket!;
+      const sent = new Set<CClientSocket>();
+      for (const u of this.m_rgPlayer) {
+        if (!u || u === chiefUser) continue;
+        if (u.GetGlobalSerialNo() === serial) continue;
+        const member = u.m_pSocket;
+        if (!member || member === targetSocket || member === chiefSocket) continue;
+        if (sent.has(member)) continue;
+        sent.add(member);
+        member.SendPacket(ask);
+      }
+      const res = new CSendPacket(GS_ClientSend.OnBanPlayerRes);
+      res.Encode1(0);
+      socket.SendPacket(res);
+    }
+  }
+
+  /** The MoveToExchangeSession stub — FXGS only logs and retags the socket. */
+  MoveOut(socket: CClientSocket): void {
+    console.error("[GS] CBaseSessionTable::MoveToExchangeSession(CClientSocket* pSocket1, CClientSocket* pSocket2)");
+    void socket;
+  }
+
+  /** CListSession::GetSlotidxFromSerialNo. */
+  GetSlotidxFromSerialNo(serial: number): number {
+    return this.m_rgPlayer.findIndex((u) => u && u.GetGlobalSerialNo() === serial);
+  }
+
+  /** CListSession::OnRespondToBanPlayer — 105 (FxServer.exe.c:40232+). */
+  OnRespondToBanPlayer(n: CReceivedPacket, socket: CClientSocket): void {
+    if (this.m_nBanSerial === 0 || this.m_nBanSerial !== (n.Decode4() >>> 0)) return;
+    const yes = n.Decode1();
+    const count = socket.GetUserCount();
+    for (let i = 0; i < count; i++) {
+      const slot = this.GetSlotidx(socket.GetUser(i));
+      if (this.m_rgVote[slot] !== 1) break;
+      this.m_rgVote[slot] = yes !== 0 ? 2 : 3;
+    }
+    this.DeferBanPlayer();
+  }
+
+  /** CListSession::DeferBanPlayer (vtbl+144) — count and apply the votes. */
+  DeferBanPlayer(): void {
+    let targetSlot = -1;
+    let total = 0;
+    let yes = 0;
+    let no = 0;
+    for (let slot = 0; slot < this.m_nMaxSlot; slot++) {
+      const user = this.m_rgPlayer[slot];
+      if (!user) continue;
+      if (user.GetGlobalSerialNo() === this.m_nBanSerial) targetSlot = slot;
+      const vote = this.m_rgVote[slot]!;
+      if (vote !== 0) {
+        total++;
+        if (vote === 2) yes++;
+        else if (vote === 3) no++;
+      }
+    }
+    if (targetSlot === -1) {
+      this.m_nBanSerial = 0;
+      const p = new CSendPacket(GS_ClientSend.OnBanPlayerRes);
+      p.Encode1(4);
+      this.SendPacket(p);
+      return;
+    }
+    if (2 * yes > total) {
+      // banned by majority
+      this.m_nBanSerial = 0;
+      const target = this.m_rgPlayer[targetSlot]!;
+      const targetSocket = target.m_pSocket!;
+      this.MoveOut(targetSocket);
+      targetSocket.m_nPoolType = 4;
+      const p = new CSendPacket(GS_ClientSend.OnBanPlayerRes);
+      p.Encode1(2);
+      p.EncodeStr(target.GetName());
+      this.SendPacket(p);
+      return;
+    }
+    if (2 * no >= total || yes + no >= total) {
+      this.m_nBanSerial = 0;
+      const target = this.m_rgPlayer[targetSlot]!;
+      const p = new CSendPacket(GS_ClientSend.OnBanPlayerRes);
+      p.Encode1(3);
+      p.EncodeStr(target.GetName());
+      this.SendPacket(p);
+    }
+  }
+
+  // ---- title / emotion / team chat ----
+
+  /** CBaseSession::OnRequestChangeTitle — 107 (FxServer.exe.c:41978A). */
+  OnRequestChangeTitle(n: CReceivedPacket, socket: CClientSocket): void {
+    if (this.CanRequestChangeTitle(socket)) {
+      let title = n.DecodeStr();
+      if (title.length > 0x16) title = title.slice(0, 21);
+      this.DoChangeTitle(title);
+    } else {
+      console.error("[GS] !this->CanRequestChangeTitle(pSocket), CBaseSession::CanRequestChangeTitle");
+    }
+  }
+
+  /** CBaseSession::OnPlayEmotion — 108 → 118 minus the sender. */
+  OnPlayEmotion(n: CReceivedPacket, socket: CClientSocket): void {
+    const slot = n.Decode1();
+    const a = n.Decode1();
+    const b = n.Decode1();
+    const c = n.Decode2();
+    const user = this.m_rgPlayer[slot];
+    if (user && user.m_pSocket === socket) {
+      const packet = new CSendPacket(GS_ClientSend.OnPlayEmotion);
+      packet.Encode1(slot);
+      packet.Encode1(a);
+      packet.Encode1(b);
+      packet.Encode2(c);
+      this.SendPacketExclude(packet, socket);
+    } else {
+      console.error(`[GS] slotidx and socket doesn't match: hacking suspected [${GetInfoStr(socket)}].`);
+      socket.PostClosePacket();
+    }
+  }
+
+  /** CListSession::OnTeamChat — 111 → 27 to the same color (424251E0). */
+  OnTeamChat(n: CReceivedPacket, socket: CClientSocket): void {
+    const msg = n.DecodeStr();
+    const user0 = socket.GetUser(0);
+    if (!user0 || user0.GetName().length === 0) {
+      console.error(`[GS] Null player sent socket. Disconnect [${GetInfoStr(socket)}].`);
+      socket.PostClosePacket();
+      return;
+    }
+    if (socket.GetUserCount() !== 1) {
+      console.error(`[GS] 2 Player requested Team Chat, NOT ALLOWED![${GetInfoStr(socket)}]`);
+      return;
+    }
+    if (msg.length + user0.GetName().length + 10 > 0x400) {
+      console.error("[GS] User send too long chat msg. Disconnect connection");
+      socket.PostClosePacket();
+      return;
+    }
+    const text = `${user0.GetName()} : ${msg}`;
+    const packet = new CSendPacket(GS_ClientSend.OnWhisperRes);
+    packet.EncodeStr(text);
+    const slot = this.GetSlotidx(user0);
+    const color = this.GetColor(slot);
+    for (let s = 0; s < 8; s++) {
+      const other = this.m_rgPlayer[s];
+      if (other && s !== slot && this.GetColor(s) === color) {
+        other.m_pSocket?.SendPacket(packet);
+      }
+    }
+  }
+
+  // ---- starting the game (106 → 115/116) ----
+
+  /** CGameSession::CanStartGame (FxServer.exe.c:41C805) — 0 = go. */
+  CanStartGame(a2: number): number {
+    const counts = new Int32Array(8);
+    let players = 0;
+    let teams = 0;
+    const chiefSlot = this.m_nChiefSlotidx;
+    const chiefUser = chiefSlot < 8 ? this.m_rgPlayer[chiefSlot] : null;
+    for (let slot = 0; slot < 8; slot++) {
+      const user = this.m_rgPlayer[slot];
+      if (!user || CClientSocket.HasAuthority(25) !== 0) continue;
+      const state0 = this.m_rgSlotState[slot * 3]!;
+      const state1 = this.m_rgSlotState[slot * 3 + 1]!;
+      if (++counts[this.GetColor(slot)]! === 1) teams++;
+      players++;
+      if (chiefUser && chiefUser.m_pSocket === user.m_pSocket) {
+        if ((state0 & 0x1c) !== 0) {
+          console.error(`[GS] Chief Player is not stand-by, but [${(state0 >> 2) & 7}].`);
+          return 2;
+        }
+      } else if ((state0 & 2) === 0 && (state0 & 0x1c) !== 4) {
+        return 2;
+      }
+      void state1;
+    }
+    if (this.m_nGameType !== 0) {
+      for (let c = 0; c < 8; c++) {
+        if (counts[c] !== 0 && counts[c] !== Math.floor(players / teams)) return 6;
+      }
+    }
+    const total = players; // GetExtraPlayerNo() == 0
+    const totalTeams = teams; // GetExtraTeamNo() == 0
+    if (total < 2) return 3;
+    if (totalTeams < 2) return 5;
+    const mapIdx = this.m_nGameMapIdx;
+    const list = CGameMapTmplList.ms_pInstance!;
+    if (mapIdx >= 0) {
+      if (total > list.GetMapMaxPlayer(mapIdx)) return 4;
+      if (chiefUser) {
+        if (CClientSocket.HasAuthority(23) !== 0) return 0;
+        if (!CMainSystem.IsPremiumChannel() && chiefUser.m_fPremiumTicket !== 1 && list.GetMapPremiumOnly(mapIdx) === 1) return 7;
+        if (chiefUser.dyn.exp >= list.GetMapLevelLimit(mapIdx)) return 0;
+      } else {
+        return 0;
+      }
+    } else if (a2 !== 0) {
+      return 0;
+    }
+    return 1;
+  }
+
+  /** CGameSession::SetMapIdxPlayingByLevel (FxServer.exe.c:41C9C4). */
+  SetMapIdxPlayingByLevel(level: number, gm: number, premiumTicket: number): void {
+    let mapIdx = this.m_nMapIdx;
+    if (mapIdx === -1) {
+      mapIdx = CGameMapTmplList.ms_pInstance!.GetRandomMapIdx(this.m_nCurPlayerNum, level, -1, 0, gm, premiumTicket);
+    } else if (mapIdx < 0) {
+      mapIdx = CGameMapTmplList.ms_pInstance!.GetRandomMapIdx(this.m_nCurPlayerNum, level, -2 - mapIdx, 0, gm, premiumTicket);
+    }
+    this.m_nGameMapIdx = mapIdx;
+  }
+
+  /** CGameSession::CheckIsCaptain — the highest exp of a color (mod mode). */
+  CheckIsCaptain(slot: number): number {
+    const user = this.m_rgPlayer[slot];
+    if (!user) return 0;
+    const exp = user.dyn.exp;
+    const color = this.GetColor(slot);
+    for (let i = 0; i < 8; i++) {
+      const other = this.m_rgPlayer[i];
+      if (other && color === this.GetColor(i) && exp < other.dyn.exp) return 0;
+    }
+    return 1;
+  }
+
+  /** CGameSession::SendAirplaneItemProb — 173 (needs iteminfo.txt). */
+  SendAirplaneItemProb(): void {
+    let text: string;
+    try {
+      text = require("node:fs").readFileSync("iteminfo.txt", "utf8");
+    } catch {
+      return; // no iteminfo.txt — the original just skips the packet
+    }
+    const rows = text.split(/\s+/).filter((s) => s.length > 0);
+    let at = 0;
+    const itemAttr = CItemAttr.ms_pInstance!;
+    const readEntry = (): [number, number] => {
+      const name = rows[at++]!;
+      const prob = parseInt(rows[at++]!, 10);
+      return [itemAttr.GetItemidx(name) & 0xff, prob & 0xff];
+    };
+    const firstCount = parseInt(rows[at++]!, 10);
+    const first: [number, number][] = [];
+    for (let i = 0; i < firstCount; i++) first.push(readEntry());
+    const secondCount = parseInt(rows[at++]!, 10);
+    const second: [number, number][] = [];
+    for (let i = 0; i < secondCount; i++) second.push(readEntry());
+    const packet = new CSendPacket(GS_ClientSend.OnAirplaneItemProb);
+    if (this.IsLadderGame() !== 0 && this.m_nMapArg72 > 30000) packet.Encode4(0x7530);
+    else packet.Encode4(this.m_nMapArg72);
+    packet.Encode4(this.m_dwArg76);
+    const list = this.m_nMissionType === 1 ? second : first; // +12748 == 1
+    packet.Encode1(list.length);
+    for (const [idx, prob] of list) {
+      packet.Encode1(idx);
+      packet.Encode1(prob);
+    }
+    this.SendPacket(packet);
+  }
+
+  /** CGameSession::IsLadderGame (vtbl+156) — the mission flag stands in. */
+  IsLadderGame(): number {
+    return this.m_nChiefSwapCount >= 0x2710 ? 1 : 0;
+  }
+
+  /** CGameSession::LaunchGameStage — packet 116 (FxServer.exe.c:37254). */
+  LaunchGameStage(): void {
+    const packet = new CSendPacket(GS_ClientSend.OnStartGame);
+    // DoLaunchGameStageEx is an empty `retn` in the original
+    packet.Encode4(Date.now() & 0xffffffff);
+    packet.Encode4(this.m_nGameMapIdx);
+    packet.Encode1(this.m_nCurPlayerNum); // +832 — GetPlayerNo(), not the max
+    const tmpl = CGameMapTmplList.ms_pInstance!.m_apGameMapTmpl[this.m_nGameMapIdx];
+    const spawns = Math.min(tmpl ? tmpl.m_nMaxPlayer : 8, 8);
+    const order: number[] = [];
+    for (let i = 0; i < spawns; i++) order.push(i);
+    for (let i = order.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [order[i], order[j]] = [order[j]!, order[i]!];
+    }
+    let next = 0;
+    const attr = CBomberAttr.ms_pInstance!;
+    for (let slot = 0; slot < 8; slot++) {
+      this.m_aBomberIdx[slot] = -1;
+      if (!this.IsPlayerSet(slot)) continue;
+      let bomber = this.GetBomber(slot);
+      if (bomber === attr.GetTotalCount() && attr.GetNormalCount() > 0) {
+        if (Math.floor(Math.random() * 30) !== 0) {
+          bomber = Math.floor(Math.random() * attr.GetNormalCount());
+        } else {
+          bomber = attr.GetNormalCount() + (Math.floor(Math.random() * 3) !== 0 ? 1 : 0);
+        }
+      }
+      this.m_aBomberIdx[slot] = bomber;
+      packet.Encode1(slot);
+      if (this.m_nGameTypeMod !== 0) packet.Encode1(this.CheckIsCaptain(slot));
+      else packet.Encode1(0);
+      packet.Encode1(order[next++] ?? 0);
+      packet.Encode1(bomber);
+      packet.Encode1(this.GetColor(slot));
+    }
+    this.SendPacket(packet);
+    // CDynInfoCalculator/CUdpLossRegulator Init — in-play state only
+    for (let slot = 0; slot < 8; slot++) this.m_abDeleted[slot] = this.IsPlayerSet(slot) ? 0 : 1;
+    this.SetPlaying(1);
+    this.m_dwLaunchTime = Date.now() & 0xffffffff;
+    this.m_nMapArg60 = tmpl ? tmpl.m_nArg60 : 0; // tmpl+60
+    this.m_nMapArg64 = tmpl ? tmpl.m_nArg64 : 0; // tmpl+64
+    this.m_nMapArg72 = tmpl ? tmpl.m_dwPlayTime : 0; // tmpl+72
+    this.m_dwArg76 = tmpl ? tmpl.m_dwArg76 : 0; // tmpl+76
+    this.SendAirplaneItemProb();
+  }
+
+  /** CGameSession::OnRequestStartGame — 106 (FxServer.exe.c:37434). */
+  OnRequestStartGame(_n: CReceivedPacket, socket: CClientSocket): void {
+    const user0 = socket.GetUser(0);
+    if (!user0) {
+      console.error(`[GS] Null player sent socket. Disconnect [${GetInfoStr(socket)}].`);
+      socket.PostClosePacket();
+      return;
+    }
+    const chiefSlot = this.m_nChiefSlotidx;
+    if (chiefSlot >= 8) {
+      console.error(`[GS] [Hacking suspected:${GetInfoStr(socket)}] No chief player exists but tried to start game, ${chiefSlot}`);
+      this.DoBangPok();
+      return;
+    }
+    const chiefUser = this.m_rgPlayer[chiefSlot];
+    if (!chiefUser || chiefUser.m_pSocket !== socket) {
+      console.error(`[GS] Hacking suspected [${GetInfoStr(socket)}]: Non-chief player request to start game`);
+      socket.PostClosePacket();
+      return;
+    }
+    if (this.m_fPlaying !== 0) return;
+    // fold the sub colors (1,2,4,7) onto the main ones (0,3,5,6)
+    const v22 = new Int32Array(8).fill(-1);
+    for (let slot = 0; slot < 8; slot++) {
+      if (this.IsPlayerSet(slot) && v22[this.GetColor(slot)] === -1) v22[this.GetColor(slot)] = this.GetColor(slot);
+    }
+    const claim = (idx: number): void => {
+      if (v22[0] === -1) {
+        v22[idx] = 0;
+        v22[0] = 0;
+      } else if (v22[3] === -1) {
+        v22[idx] = 3;
+        v22[3] = 0;
+      } else if (v22[5] === -1) {
+        v22[idx] = 5;
+        v22[5] = 0;
+      } else if (v22[6] === -1) {
+        v22[idx] = 6;
+        v22[6] = 0;
+      }
+    };
+    if (v22[1] !== -1) claim(1);
+    if (v22[2] !== -1) claim(2);
+    if (v22[4] !== -1) claim(4);
+    if (v22[7] !== -1) claim(7);
+    this.SetMapIdxPlayingByLevel(chiefUser.dyn.exp, CClientSocket.HasAuthority(23), chiefUser.m_fPremiumTicket);
+    const can = this.CanStartGame(0);
+    const res = new CSendPacket(GS_ClientSend.OnStartGameRes);
+    res.Encode1(can);
+    socket.SendPacket(res);
+    if (can !== 0) return;
+    if (CGameMapTmplList.ms_pInstance!.GetMapMaxTeam(this.m_nGameMapIdx) < 8) {
+      let changed = false;
+      const packet = new CSendPacket(0);
+      for (let slot = 0; slot < 8; slot++) {
+        if (!this.IsPlayerSet(slot)) continue;
+        const want = v22[this.GetColor(slot)]!;
+        if (this.GetColor(slot) !== want) {
+          const p = slot * 3 + 2;
+          this.m_rgSlotState[p] = (this.m_rgSlotState[p]! ^ (want ^ this.m_rgSlotState[p]!)) & 0x1f;
+          changed = true;
+          this.MakeSetSlotStatePacket(slot, packet);
+          this.PutPacket(packet);
+        }
+      }
+      if (changed) this.FlushPacket();
+    }
+    this.LaunchGameStage();
+    // LaunchGameStageEx (vtbl+200) is an empty `retn`
+  }
+
+  /** CGameSession::OnHackingSuspected — 186 (FxServer.exe.c:36160). */
+  OnHackingSuspected(n: CReceivedPacket, socket: CClientSocket): void {
+    const user0 = socket.GetUser(0);
+    if (!user0 || user0.GetName().length === 0) {
+      console.error(`[GS] Null player sent socket. Disconnect [${GetInfoStr(socket)}].`);
+      socket.PostClosePacket();
+      return;
+    }
+    const slot = n.Decode1();
+    const serial = n.Decode4();
+    const code = n.Decode1();
+    if (slot >= 8) {
+      console.error(`[GS] Hacking suspected [${user0.GetName()}]: illegal slotidx (OnHackingSuspected)`);
+      socket.PostClosePacket();
+      return;
+    }
+    const target = this.m_rgPlayer[slot];
+    if (!target || target.GetGlobalSerialNo() !== serial) return;
+    const names = [
+      "khcFailedGameContextSync",
+      "kBombIgniteIllegalSlotidx",
+      "kMovableBoxNotFound",
+      "",
+      "kEatObstacle",
+      "khcSpecialItemWrong",
+      "khcSpecialItemOverflow",
+      "kSpecialItemShort",
+    ];
+    if (code === 3 || code === 8) return;
+    if (code >= names.length) {
+      console.error(`[GS] Hacking suspected [${user0.GetName()}]: illegal hacking code (OnHackingSuspected)`);
+      const p = new CSendPacket(GS_ClientSend.OnHackingKick);
+      p.Encode1(slot);
+      this.SendPacketExclude(p, socket);
+      socket.SendPacketAndDestroy(p);
+      return;
+    }
+    console.error(`[GS] [${user0.GetName()}] reported [${target.GetName()}] committed hacking (${names[code]}).`);
+    if (target.m_pSocket === socket) {
+      console.error(`[GS] Hacking suspected [${target.GetName()}] (${GetInfoStr(socket)}) by itself. Disconnect.`);
+      const p = new CSendPacket(GS_ClientSend.OnHackingKick);
+      p.Encode1(slot);
+      this.SendPacketExclude(p, socket);
+      socket.SendPacketAndDestroy(p);
+      return;
+    }
+    let reports = 0;
+    let players = 0;
+    const reporterSlot = this.GetSlotidx(user0);
+    if (reporterSlot >= 0 && reporterSlot < 8) this.m_rgVoteMatrix[slot * 8 + reporterSlot] = 1;
+    for (let i = 0; i < 8; i++) {
+      if (this.m_rgPlayer[i]) {
+        players++;
+        if (this.m_rgVoteMatrix[slot * 8 + i] !== 0) reports++;
+      } else if (this.m_rgVoteMatrix[slot * 8 + i] !== 0) {
+        console.error("[GS] Hacking Info Doesn't Sync");
+        this.m_rgVoteMatrix[slot * 8 + i] = 0;
+      }
+    }
+    if (reports < Math.floor(players / 2)) return;
+    console.error(`[GS] Hacking suspected [${target.GetName()}] by major of the session. Disconnect.`);
+    const p = new CSendPacket(GS_ClientSend.OnHackingKick);
+    p.Encode1(slot);
+    this.SendPacketExclude(p, target.m_pSocket!);
+    target.m_pSocket!.SendPacketAndDestroy(p);
+  }
+
+  /** CGameSession::OnPacket — the room dispatch (FxServer.exe.c:37668). */
+  OnPacket(n: CReceivedPacket, socket: CClientSocket): void {
+    if (!this.CheckValidSocket(socket)) {
+      console.error(`[GS] !this->CheckValidSocket(pSocket), CGameSession::OnPacket. Disconnect socket[${GetInfoStr(socket)}]`);
+      console.error(`[GS]     User[${socket.GetUser(0)?.GetName() ?? "NULL"}], Game Session Slot Index: [${this.m_nIdx}]. CurrentPoolType=${socket.m_nPoolType}.`);
+      socket.PostClosePacket();
+      return;
+    }
+    switch (n.Decode1()) {
+      case SESSION_ReceivedPacket.OnSetPlayerReady:
+        this.OnSetPlayerReady(n, socket);
+        break;
+      case SESSION_ReceivedPacket.OnSelectMap:
+        this.OnSelectMap(n, socket);
+        break;
+      case SESSION_ReceivedPacket.OnSelectColor:
+        this.OnSelectColor(n, socket);
+        break;
+      case SESSION_ReceivedPacket.OnSelectBomber:
+        this.OnSelectBomber(n, socket);
+        break;
+      case SESSION_ReceivedPacket.OnOpenCloseSlot:
+        this.OnOpenCloseSlot(n, socket);
+        break;
+      case SESSION_ReceivedPacket.OnSetGameTypeNormal:
+        this.OnSetGameTypeNormal(socket);
+        break;
+      case SESSION_ReceivedPacket.OnSetGameTypeMod:
+        this.OnSetGameTypeMod(socket);
+        break;
+      case SESSION_ReceivedPacket.OnHostAskBanPlayer:
+        this.OnHostAskBanPlayer(n, socket);
+        break;
+      case SESSION_ReceivedPacket.OnRespondToBanPlayer:
+        this.OnRespondToBanPlayer(n, socket);
+        break;
+      case SESSION_ReceivedPacket.OnRequestStartGame:
+        this.OnRequestStartGame(n, socket);
+        break;
+      case SESSION_ReceivedPacket.OnRequestChangeTitle:
+        this.OnRequestChangeTitle(n, socket);
+        break;
+      case SESSION_ReceivedPacket.OnPlayEmotion:
+        this.OnPlayEmotion(n, socket);
+        break;
+      case SESSION_ReceivedPacket.OnReadyForImmediateStart:
+        // in-play only: needs the game stage (the next unit)
+        break;
+      case SESSION_ReceivedPacket.OnTeamChat:
+        this.OnTeamChat(n, socket);
+        break;
+      case SESSION_ReceivedPacket.OnHackingSuspected:
+        this.OnHackingSuspected(n, socket);
+        break;
+      default:
+        // 140..162 are the in-play game packets — the next unit
+        break;
     }
   }
 }
+
+/** CClientSocket::GetInfoStr — the "%s:%d" debug tag of the original. */
+function GetInfoStr(socket: CClientSocket): string {
+  return socket.GetUser(0)?.GetName() ?? "NULL";
+}
+
 
 // ============================ CGameSessionTable ============================
 
@@ -1191,9 +3248,16 @@ export class CGameSession {
 export class CGameSessionTable {
   static ms_pInstance: CGameSessionTable | null = null;
 
-  m_apGameSession: (CGameSession | null)[] = new Array(255).fill(null);
+  m_apGameSession: CGameSession[] = []; // +8 (255 preallocated rooms)
+  /** +1024 — the per-room flush flags (1 = created, 4 = destroyed). */
+  m_acTableFlags = new Uint8Array(255);
+  /** CBaseSession::LockBaseSessions — JS is single threaded; the calls only
+   *  mark the critical sections the original holds. */
+  static LockBaseSessions(_n: number): void {}
+  static UnlockBaseSessions(_n: number): void {}
 
   constructor() {
+    for (let i = 0; i < 255; i++) this.m_apGameSession.push(new CGameSession());
     CGameSessionTable.ms_pInstance = this;
   }
 
@@ -1217,39 +3281,74 @@ export class CGameSessionTable {
     }
   }
 
-  /** CGameSessionTable::OnPacket — the in-session dispatch (96..189). */
+  /** CGameSessionTable::OnPacket — lock, validate, then the room dispatch. */
   OnPacket(n: CReceivedPacket, socket: CClientSocket): void {
     const idx = socket.m_nSessionIdx;
     if (idx >= 255) {
-      if (socket.m_nPoolType !== 4 && n.m_pBlock[n.m_uOffset] !== 104) {
+      if (socket.m_nPoolType !== 4 && n.m_pBlock[n.m_uOffset] !== SESSION_ReceivedPacket.OnHostAskBanPlayer) {
         if (idx === -1) console.log("[GS] Lobby player sent session packet (OnPacket). Don't Disconnect.");
         else if (idx === -2) console.error("[GS] Connecting player sent session packet (OnPacket). Don't Disconnect.");
         else console.error("[GS] Invalid game session slot index (OnPacket). Don't Disconnect.");
       }
       return;
     }
+    CGameSessionTable.LockBaseSessions(idx);
     const session = this.m_apGameSession[idx];
-    if (!session || session.fValid === 0 || session.m_nSerialNo !== socket.m_nSessionSerialNo) {
-      if (socket.m_nPoolType !== 4) {
-        console.error(`[GS] Illegal game session (${idx}). Disconnect [${socket.GetUser(0)?.GetName() ?? "NULL"}].`);
-        socket.PostClosePacket();
-      }
-      return;
+    if (session && session.fValid !== 0 && session.m_nSerialNo === socket.m_nSessionSerialNo) {
+      n.m_uOffset = 0;
+      session.OnPacket(n, socket);
+    } else if (socket.m_nPoolType !== 4) {
+      console.error(`[GS] Illegal game session (${idx}). Disconnect [${socket.GetUser(0)?.GetName() ?? "NULL"}].`);
+      socket.PostClosePacket();
     }
-    n.m_uOffset = 0;
-    // The room-stage dispatch (CListSession::OnPacket) is the next unit.
-    void session;
+    CGameSessionTable.UnlockBaseSessions(idx);
   }
 
   /** CGameSessionTable::DestroyPlayer — vtbl+48, on socket close/leave. */
-  DestroyPlayer(socket: CClientSocket, _a3: number): void {
+  DestroyPlayer(socket: CClientSocket, a3: number): void {
+    if (!socket) return;
+    if (!socket.GetUser(0)) return;
     const idx = socket.m_nSessionIdx;
-    if (idx >= 0 && idx < 255) {
-      const session = this.m_apGameSession[idx];
-      if (session && session.fValid !== 0 && session.m_nSerialNo === socket.m_nSessionSerialNo) {
-        session.DestroyPlayer(socket);
+    const serial = socket.m_nSessionSerialNo;
+    if (idx >= 255) return;
+    CGameSessionTable.LockBaseSessions(idx);
+    for (let i = 0; i < socket.GetUserCount(); i++) {
+      const user = socket.GetUser(i);
+      if (user) {
+        user.SetSessionIdx(0xffff);
+        user.SetSessionSerialNo(0xffffffff);
       }
     }
+    const session = this.m_apGameSession[idx]!;
+    if (session && session.fValid !== 0 && session.m_nSerialNo === serial && session.DestroyPlayer(socket, a3) !== 0 && session.IsEmpty() && this.CloseSession(idx, serial) !== 0) {
+      if ((this.m_acTableFlags[idx]! & 1) !== 0) this.m_acTableFlags[idx] = 0;
+      else this.m_acTableFlags[idx]! |= 4;
+    }
+    CGameSessionTable.UnlockBaseSessions(idx);
+  }
+
+  /** CBaseSessionTable::MoveToExchangeSession — a ReportError stub in FXGS. */
+  MoveToExchangeSession(_socket: CClientSocket, _a3: number): void {
+    console.error("[GS] CBaseSessionTable::MoveToExchangeSession(CClientSocket* pSocket1, CClientSocket* pSocket2)");
+  }
+
+  /** CGameSessionTable::CloseSession — fValid = 0 behind the serial check. */
+  CloseSession(idx: number, serial: number): number {
+    if (idx >= 255) {
+      console.error("[GS] Invalid game session slot index (CloseSession)");
+      return 0;
+    }
+    let ok = 1;
+    CGameSessionTable.LockBaseSessions(idx);
+    const session = this.m_apGameSession[idx]!;
+    if (session && session.fValid !== 0 && session.m_nSerialNo === serial) {
+      if (session.m_nCurPlayerNum !== 0) console.error("[GS] Game session closed although some players are not destroyed");
+      session.fValid = 0; // CBaseSession::Destroy
+    } else {
+      ok = 0;
+    }
+    CGameSessionTable.UnlockBaseSessions(idx);
+    return ok;
   }
 
   /** CGameSessionTable::KickImp — "Fatal Revenge". */
@@ -1258,8 +3357,7 @@ export class CGameSessionTable {
     console.error(`[GS] Fatal Revenge: Kick imp's ass [${socket.GetUser(0)?.GetName() ?? "NULL"}] !`);
     const p = new CSendPacket(GS_ClientSend.OnKickoffUser);
     p.EncodeStr("abnormal state, disconnect user.");
-    socket.SendPacket(p);
-    socket.PostClosePacket();
+    socket.SendPacketAndDestroy(p);
     return 1;
   }
 
@@ -1279,13 +3377,15 @@ export class CGameSessionTable {
     this.DoCreateSession(socket, title, password, selects, gameType);
   }
 
-  /** CGameSessionTable::DoCreateSession — the create control flow. */
-  DoCreateSession(socket: CClientSocket, _title: string, _password: string, _selects: number[], gameType: number): void {
+  /** CGameSessionTable::DoCreateSession (FxServer.exe.c:38917). */
+  DoCreateSession(socket: CClientSocket, title: string, password: string, selects: number[], gameType: number): void {
     if (this.KickImp(socket) !== 0) return;
     const res = new CSendPacket(GS_ClientSend.OnCreateSessionRes);
-    for (let i = 0; i < socket.GetUserCount(); i++) {
-      const user = socket.GetUser(i);
-      if (user && user.GetSessionIdx() !== -1 && user.GetSessionIdx() !== 0xffff) {
+    const na = socket.GetUserCount();
+    if (na <= 0) return;
+    for (let i = 0; i < na; i++) {
+      const user = socket.GetUser(i)!;
+      if (user.GetSessionIdx() !== 0xffff) {
         console.error(`[GS] User joined a session already request for creating session. Disconnect[${user.GetName()}]`);
         socket.PostClosePacket();
         res.Encode1(3);
@@ -1300,35 +3400,19 @@ export class CGameSessionTable {
       socket.SendPacket(res);
       return;
     }
-    const session = new CGameSession();
-    session.m_nIdx = nb;
-    session.m_nSerialNo = Math.floor(Math.random() * 0x7fffffff);
-    session.m_nGameType = gameType;
-    session.fValid = 1;
-    session.m_nOwnerSocketSerial = socket.m_nLocalSerialNo;
-    this.m_apGameSession[nb] = session;
+    CGameSessionTable.LockBaseSessions(-1);
+    const session = this.m_apGameSession[nb]!;
+    session.Create(socket, title, password, selects, gameType);
+    this.m_acTableFlags[nb]! |= 1;
     res.Encode1(0);
     res.Encode2(nb);
     res.Encode4(session.m_nSerialNo);
     res.Encode1(gameType);
     socket.SendPacket(res);
-    // seat the users (CBaseSession::AddAllUser → AddUser)
-    for (const user of socket.m_apUser) {
-      if (!user) continue;
-      const slot = session.GetEmptySlot();
-      if (slot < 0) break;
-      session.AddUser(slot, user);
-    }
-    // the room-list broadcast (CListSession::MakeCreatedPacket)
-    const created = new CSendPacket(GS_ClientSend.OnSessionCreated);
-    created.Encode2(session.m_nIdx);
-    created.Encode4(session.m_nSerialNo);
-    created.EncodeStr(session.strTitle());
-    created.Encode1(session.m_nGameType);
-    created.Encode1(session.hasPassword() ? 1 : 0);
-    created.Encode1(session.m_nTeamPlayerNum);
-    created.Encode1(session.m_nMaxPlayerNum);
-    CChannelPool.ms_pInstance?.SendAll(created, 1);
+    // vtbl+80 — the creator sees the room (their own 105s + the 112 tail)
+    session.SendSessionInfoPacket(socket);
+    CGameSessionTable.UnlockBaseSessions(nb);
+    CGameSessionTable.UnlockBaseSessions(-1);
   }
 
   /** CGameSessionTable::JoinSession — packet 81 body. */
@@ -1347,98 +3431,49 @@ export class CGameSessionTable {
     this.DoJoinSession(socket, idx, serial, password, selects);
   }
 
-  /** CGameSessionTable::DoJoinSession. */
-  DoJoinSession(socket: CClientSocket, idx: number, serial: number, password: string, _selects: number[]): void {
+  /** CGameSessionTable::DoJoinSession (FxServer.exe.c:39015). */
+  DoJoinSession(socket: CClientSocket, idx: number, serial: number, password: string, selects: number[]): void {
     if (this.KickImp(socket) !== 0) return;
+    const na = socket.GetUserCount();
     const res = new CSendPacket(GS_ClientSend.OnJoinSessionRes);
-    const session = idx < 255 ? this.m_apGameSession[idx] : null;
-    const seated = socket.m_apUser.some((u) => u && u.GetSessionIdx() !== -1 && u.GetSessionIdx() !== 0xffff);
-    if (session && session.fValid !== 0 && session.m_fPlaying === 0 && session.m_nSerialNo === serial && !seated) {
-      if (session.hasPassword() && session.m_strPassword !== password) {
-        res.Encode1(1);
-        socket.SendPacket(res);
-        return;
+    if (idx >= 255) {
+      console.error("[GS] Invalid game session slot index (DoJoinSession)");
+      return;
+    }
+    CGameSessionTable.LockBaseSessions(idx);
+    const session = this.m_apGameSession[idx]!;
+    if (session && session.fValid !== 0 && session.m_fSupreme === 0 && session.m_nSerialNo === serial) {
+      let seated = false;
+      for (let i = 0; i < na; i++) {
+        if (socket.GetUser(i)!.GetSessionIdx() !== 0xffff) {
+          seated = true;
+          break;
+        }
       }
-      if (session.GetEmptySlotCount() >= socket.GetUserCount()) {
-        res.Encode1(0);
-        socket.SendPacket(res);
-        // seat every user of the socket
-        const joined: CUser[] = [];
-        for (const user of socket.m_apUser) {
-          if (!user) continue;
-          const slot = session.GetEmptySlot();
-          if (slot < 0) break;
-          session.AddUser(slot, user);
-          joined.push(user);
+      if (!seated) {
+        if (CClientSocket.HasAuthority(1) === 0 && session.m_szPassword.length > 0 && session.m_szPassword !== password) {
+          res.Encode1(1);
+          socket.SendPacket(res);
+          CGameSessionTable.UnlockBaseSessions(idx);
+          return;
         }
-        // SendSessionInfoPacket → the joiner sees everyone; the room sees them
-        for (let slot = 0; slot < 8; slot++) {
-          const user = session.m_rgPlayer[slot];
-          if (!user) continue;
-          this.MakeSetPlayerPacket(session, slot, socket, user.m_pSocket === socket);
+        if (session.AddPlayerList(socket, selects) !== 0) {
+          res.Encode1(0);
+          socket.SendPacket(res);
+          session.SendSessionInfoPacket(socket); // vtbl+80
+          session.SendJoinPacket(socket); // vtbl+84
+          session.SendGameType(socket);
+          CGameSessionTable.UnlockBaseSessions(idx);
+          return;
         }
-        const cur = new CSendPacket(GS_ClientSend.OnSessionCurPlayer);
-        cur.Encode2(session.m_nCurPlayerNum);
-        socket.SendPacket(cur);
-        // SendJoinPacket — the newcomers' P105 to the existing members
-        for (const member of session.m_rgPlayer) {
-          if (!member || joined.includes(member)) continue;
-          for (const nj of joined) {
-            const slot = session.m_rgPlayer.indexOf(nj);
-            this.MakeSetPlayerPacket(session, slot, member.m_pSocket!, false);
-          }
-        }
-        session.m_fModified |= 0x10;
-        this.BroadcastModified(session);
-        return;
       }
     }
     res.Encode1(2);
     socket.SendPacket(res);
+    CGameSessionTable.UnlockBaseSessions(idx);
   }
 
-  /** CBaseSession::MakeSetPlayerPacket — packet 105 to one receiver. */
-  private MakeSetPlayerPacket(session: CGameSession, slot: number, receiver: CClientSocket, fSelf: number | boolean): void {
-    const user = session.m_rgPlayer[slot];
-    if (!user) return;
-    const p = new CSendPacket(GS_ClientSend.OnSetPlayer);
-    p.Encode1(slot);
-    p.Encode4(user.GetGlobalSerialNo());
-    p.Encode1(fSelf ? 1 : 0);
-    p.Encode1(user.account.CommunitySvr);
-    const deco = user.GetInventoryLoaded(4);
-    p.Encode1(deco ? deco.SlotByte : 255);
-    p.EncodeStr(user.strName);
-    p.Encode1(user.account.Gender);
-    p.Encode4(user.GetLookLevel());
-    p.Encode4(user.m_nPremiumSvrId !== 0 ? user.m_nPremiumSvrIdx : 0);
-    p.Encode4(user.m_nGuildSN);
-    if (CMainSystem.ms_pInstance!.m_nChannelType === 77) {
-      const guild = CGuildTable.ms_pInstance?.FindGuildFromSerialNo(user.m_nGuildSN);
-      p.Encode2(guild ? guild.m_nMarkRevision : 0);
-    } else {
-      p.Encode2(0);
-    }
-    receiver.SendPacket(p);
-  }
-
-  /** CGameSessionTable::FlushModifiedTableInfo — the 86 broadcasts. */
-  private BroadcastModified(session: CGameSession): void {
-    if (session.m_fModified === 0) return;
-    const p = new CSendPacket(GS_ClientSend.OnSessionModified);
-    p.Encode2(session.m_nIdx);
-    p.Encode4(session.m_nSerialNo);
-    p.Encode1(session.m_fModified);
-    if ((session.m_fModified & 1) !== 0) p.Encode1(session.m_fPlaying);
-    if ((session.m_fModified & 2) !== 0) p.Encode2(session.m_nCurPlayerNum);
-    if ((session.m_fModified & 4) !== 0) p.Encode1(session.m_nTeamPlayerNum);
-    if ((session.m_fModified & 8) !== 0) p.Encode1(session.m_nMaxPlayerNum);
-    if ((session.m_fModified & 0x10) !== 0) p.EncodeStr(session.strTitle());
-    session.m_fModified = 0;
-    CChannelPool.ms_pInstance?.SendAll(p, 1);
-  }
-
-  /** CGameSessionTable::JoinFreeSession — packet 82 body. */
+  /** CGameSessionTable::JoinFreeSession — packet 82 body (DoJoinFreeSession). */
   JoinFreeSession(n: CReceivedPacket, socket: CClientSocket): void {
     const count = n.Decode1();
     const selects: number[] = [];
@@ -1452,12 +3487,46 @@ export class CGameSessionTable {
     for (const session of this.m_apGameSession) {
       if (!session || session.fValid === 0 || session.m_fPlaying !== 0) continue;
       if (session.GetEmptySlotCount() < socket.GetUserCount()) continue;
-      this.DoJoinSession(socket, session.m_nIdx, session.m_nSerialNo, session.m_strPassword, selects);
+      this.DoJoinSession(socket, session.m_nIdx, session.m_nSerialNo, session.m_szPassword, selects);
       return;
     }
     const res = new CSendPacket(GS_ClientSend.OnJoinSessionRes);
     res.Encode1(2);
     socket.SendPacket(res);
+  }
+
+  /** CGameSessionTable::FlushModifiedInfo — the 86 sweep (timer). */
+  FlushModifiedInfo(): void {
+    for (const session of this.m_apGameSession) {
+      if (!session || session.fValid === 0) continue;
+      const packet = new CSendPacket(0);
+      if (session.MakeModifiedPacket(packet) !== 0) {
+        CChannelPool.ms_pInstance?.SendAll(packet, 1);
+      }
+    }
+  }
+
+  /** CGameSessionTable::FlushModifiedTableInfo — the 85/87 sweep (timer).
+   *  NB: no fValid gate here (unlike FlushModifiedInfo) — a just-destroyed
+   *  session (fValid = 0) must still announce its 87. (FxServer.exe.c:38335) */
+  FlushModifiedTableInfo(): void {
+    for (let n = 0; n < 255; n++) {
+      const session = this.m_apGameSession[n];
+      if (!session) continue;
+      const flags = this.m_acTableFlags[n]!;
+      if ((flags & 1) !== 0) {
+        const packet = new CSendPacket(0);
+        session.MakeCreatedPacket(packet);
+        this.m_acTableFlags[n] = 0;
+        this.m_acTableFlags[n]! |= 2;
+        CChannelPool.ms_pInstance?.SendAll(packet, 1);
+      } else if ((flags & 4) !== 0) {
+        const packet = new CSendPacket(0);
+        session.MakeDestroyedPacket(packet);
+        this.m_acTableFlags[n] = 0;
+        CChannelPool.ms_pInstance?.SendAll(packet, 1);
+      }
+    }
   }
 }
 
@@ -2146,10 +4215,16 @@ export class CMainSystem {
   m_fInventoryDB = 0; // +27 (the entry path's InitUserInventory gate)
   m_nPremiumSvrReward = 0; // CChannelPool ctor fill
   m_nPremiumSvrLuckPro = 30000;
+  m_nPremiumLv = 0; // +12 (GetMapLevelLimit's premium-channel discount)
 
   constructor(cfg: CServerConfig) {
     CMainSystem.ms_pInstance = this;
     this.m_nGameDomain = cfg.GetNumAttribute("GameDomain");
+  }
+
+  /** CMainSystem::IsPremiumChannel — the channel type is 41. */
+  static IsPremiumChannel(): boolean {
+    return CMainSystem.ms_pInstance!.m_nChannelType === 41;
   }
 
   /** CMainSystem::OnConnEstablished — the connect-time packet 0. */
@@ -2472,12 +4547,21 @@ export async function main(cfgFile: string, dbDir: string): Promise<void> {
   cfg.Init(cfgFile);
   CServerConfig.ms_pInstance = cfg;
 
+  // CBomberAttr / CItemAttr / CGameMapTmplList — the Attr/… + Map/… data
+  // package (FxServer.exe.c:13436 loads them right after CUserItemMan).  The
+  // files ship with the client install; without them the tables stay empty
+  // exactly like a server whose IDF package lacks the entries.
+  const dataDir = process.env.FXGS_DATA_DIR ?? "data";
+  new CBomberAttr().Load(`${dataDir}/Attr`);
+  new CItemAttr().Load(`${dataDir}/Attr`);
+  new CGameMapTmplList().CreateTmplList(`${dataDir}/Map`, `${dataDir}/Attr`);
+
   const db = new CDBMan(dbDir);
   const itemMan = new CUserItemMan();
   itemMan.Init(db);
   new CLocalUserTable();
   const mainSystem = new CMainSystem(cfg);
-  new CGameSessionTable();
+  const sessionTable = new CGameSessionTable();
   const connectPool = new CConnectPool(db);
   const channelPool = new CChannelPool(db);
   new CGuildTable(db);
@@ -2520,6 +4604,13 @@ export async function main(cfgFile: string, dbDir: string): Promise<void> {
     connectPool.DisconnectTimeoutSocket();
     channelPool.DisconnectTimeoutSocket();
   }, 1000);
+
+  // CTimerThreadNormal::Proc (Sleep 0x190 = 400 ms) — the room 85/86/87
+  // broadcasts ride this timer in the original, not the request path.
+  setInterval(() => {
+    sessionTable.FlushModifiedInfo();
+    sessionTable.FlushModifiedTableInfo();
+  }, 0x190);
 
   await center.Init(cfg);
 }

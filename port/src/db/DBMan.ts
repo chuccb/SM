@@ -480,8 +480,14 @@ export class CDBMan {
       .get(id) as Record<string, unknown> | undefined;
     const fail = { retval: -1 } as const;
     if (!acc) return fail;
+    // NB: bun:sqlite keys a result column by its *declared* name (short_column_names),
+    // not by the case written in the SELECT — alias explicitly to the _USERDYNINFO
+    // field names the callers read.
     const dyn = db
-      .query("SELECT money, exp, win, draw, lose FROM FxUserDynamic WHERE ID = ?")
+      .query(
+        `SELECT Money AS money, Exp AS exp, Win AS win, Draw AS draw, Lose AS lose
+         FROM FxUserDynamic WHERE ID = ?`,
+      )
       .get(id) as Record<string, number> | undefined;
     if (!dyn) return fail;
     return {

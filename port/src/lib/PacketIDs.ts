@@ -56,7 +56,7 @@ export const SESSION_ReceivedPacket = {
   OnSetPlayerReady: 96,
   OnSelectMap: 97,
   OnSelectColor: 98, // CBaseSession::OnSelectColor
-  OnSelectCharacter: 99, // CGameSession vtbl+120
+  OnSelectBomber: 99, // CListSession vtbl+120 → CBaseSession::OnSelectBomber
   OnOpenCloseSlot: 100, // CListSession::OnOpenCloseSlot
   OnSetGameTypeNormal: 102,
   OnSetGameTypeMod: 103,
@@ -89,7 +89,7 @@ export const SESSION_ReceivedPacket = {
   OnReqTakeHouse: 161,
   OnShobuari: 162,
   OnNotifyUDPLoss: 185,
-  OnEstimateGameRTT: 186, // vtbl+164 → CGameSession::OnEstimateRTT
+  OnHackingSuspected: 186, // vtbl+164 → CGameSession::OnHackingSuspected
   OnNotifyUdpLossRegulator: 187, // CUdpLossRegulator::OnNotifyUdpLoss
 } as const;
 
