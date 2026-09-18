@@ -1,0 +1,159 @@
+/**
+ * CMultiServer (CxLogin.exe.c) — the login server list provider.
+ *
+ * Init reads three ConfigDB tables:
+ *   CAMultiSvr  → m_vtMultiServer  (_MULTISERVER, 36B: SN, strName, strIp, dwParam, dwCurrent)
+ *   CALoginSvr  → m_vtLoginServer  (_LOGINSERVER, 24B: SN, strIp, nPort, nFlag)
+ *   CAString(type 0/1) → m_vtNotice (_MULTISERVERNOTICE, 32B: sn, nType, strValue, strAttr)
+ *
+ * It then pre-builds the four cached AskMultiServer response packets
+ * (CMultiServer::GetInfoPacket returns this + 76 + 48*hashMismatch +
+ * 24*versionMismatch):
+ *
+ *   P(0,0) = P(0,1) = [E1 0][E1 0]                       (both sections current)
+ *   P(1,0) = [E1 1][EOS(info)][E1 0]                     (info changed)
+ *   P(1,1) = [E1 1][EOS(info)][E1 1][EOS(notice)]        (both changed)
+ *
+ * The client recomputes both adler32 hashes from the embedded streams; the
+ * server keeps its own copies for the comparison in CLoginPool::OnAskMultiServer.
+ *
+ * info stream   = E1 mCnt, mCnt×(EStr name, EStr ip, E4 param), E2 lCnt,
+ *                 lCnt×(E4 inet_addr(ip), E2 port, E1 flag), E1 m_nCurrentServer
+ * notice stream = E1 nCnt, nCnt×(E1 type, EStr value, EStr strAttr)
+ */
+import type { CDBMan } from "../db/DBMan.ts";
+import { COSmartStream } from "../core/SmartStream.ts";
+import { CSendPacket } from "../core/Packet.ts";
+
+export interface _MULTISERVER {
+  SN: number;
+  strName: string;
+  strIp: string;
+  dwParam: number;
+  dwCurrent: number;
+}
+
+export interface _LOGINSERVER {
+  SN: number;
+  strIp: string;
+  nPort: number;
+  nFlag: number;
+}
+
+export interface _MULTISERVERNOTICE {
+  sn: number;
+  nType: number;
+  strValue: string;
+  strAttr: string;
+}
+
+export function inet_addr(cp: string): number {
+  const parts = cp.split(".").map((x) => Number.parseInt(x, 10) & 0xff);
+  if (parts.length !== 4 || parts.some((p) => Number.isNaN(p))) return 0;
+  return ((parts[0]! << 24) | (parts[1]! << 16) | (parts[2]! << 8) | parts[3]!) >>> 0;
+}
+
+export class CMultiServer {
+  m_vtMultiServer: _MULTISERVER[] = [];
+  m_vtLoginServer: _LOGINSERVER[] = [];
+  m_vtNotice: _MULTISERVERNOTICE[] = [];
+  m_nCurrentServer = 0;
+  m_nHashValue = 0; // adler32(info stream)
+  m_nVersion = 0; // adler32(notice stream)
+  /** the four pre-built packets, indexed [hashMismatch][versionMismatch] */
+  m_packet: [CSendPacket[], CSendPacket[]] = [[], []];
+
+  /** CMultiServer::Init */
+  Init(db: CDBMan): void {
+    this.m_vtMultiServer = db.GetMultiServers().map((r) => ({
+      SN: r.SN,
+      strName: r.Name,
+      strIp: r.IP,
+      dwParam: r.Param,
+      dwCurrent: r.Current,
+    }));
+    for (const m of this.m_vtMultiServer) if (m.dwCurrent !== 0) this.m_nCurrentServer = m.SN;
+
+    this.m_vtLoginServer = db.GetLoginServers().map((r) => ({
+      SN: r.SN,
+      strIp: r.IP,
+      nPort: r.Port,
+      nFlag: r.Flag,
+    }));
+
+    this.m_vtNotice = db.GetMultiServerNotices().map((r) => ({
+      sn: r.sn,
+      nType: r.type,
+      strValue: r.value,
+      strAttr: r.strAttr,
+    }));
+
+    this.MakeInfoPackets();
+    console.log(
+      `MultiServer: m(${this.m_vtMultiServer.length}) l(${this.m_vtLoginServer.length}) d(${this.m_nCurrentServer}) hash(0x${this.m_nHashValue.toString(16).toUpperCase()})`,
+    );
+  }
+
+  /** The stream/packet construction of CMultiServer::Init's tail. */
+  private MakeInfoPackets(): void {
+    const info = new COSmartStream();
+    info.Encode1(this.m_vtMultiServer.length);
+    for (const m of this.m_vtMultiServer) {
+      info.EncodeStr(m.strName);
+      info.EncodeStr(m.strIp);
+      info.Encode4(m.dwParam);
+    }
+    info.Encode2(this.m_vtLoginServer.length);
+    for (const l of this.m_vtLoginServer) {
+      info.Encode4(inet_addr(l.strIp));
+      info.Encode2(l.nPort);
+      info.Encode1(l.nFlag);
+    }
+    info.Encode1(this.m_nCurrentServer & 0xff);
+    this.m_nHashValue = info.GetHashValue();
+
+    const notice = new COSmartStream();
+    notice.Encode1(this.m_vtNotice.length);
+    for (const n of this.m_vtNotice) {
+      notice.Encode1(n.nType);
+      notice.EncodeStr(n.strValue);
+      notice.EncodeStr(n.strAttr);
+    }
+    this.m_nVersion = notice.GetHashValue();
+
+    // P(0,0) / P(0,1): both sections current.
+    for (const vm of [0, 1]) {
+      const p = new CSendPacket(1);
+      p.Encode1(0);
+      p.Encode1(0);
+      this.m_packet[0][vm] = p;
+    }
+    // P(1,0): info changed.
+    {
+      const p = new CSendPacket(1);
+      p.Encode1(1);
+      p.EncodeOSStream(info);
+      p.Encode1(0);
+      this.m_packet[1][0] = p;
+    }
+    // P(1,1): both changed.
+    {
+      const p = new CSendPacket(1);
+      p.Encode1(1);
+      p.EncodeOSStream(info);
+      p.Encode1(1);
+      p.EncodeOSStream(notice);
+      this.m_packet[1][1] = p;
+    }
+  }
+
+  /** CMultiServer::GetInfoPacket — this + 76 + 48*hashMismatch + 24*versionMismatch. */
+  GetInfoPacket(fHashMismatch: number, fVersionMismatch: number): CSendPacket {
+    return this.m_packet[fHashMismatch ? 1 : 0][fVersionMismatch ? 1 : 0];
+  }
+
+  /** CMultiServer::GetHashValue */
+  GetHashValue(): number {
+    return this.m_nHashValue;
+  }
+}

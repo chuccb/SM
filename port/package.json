@@ -1,0 +1,24 @@
+{
+  "name": "crazyarcade-server",
+  "version": "1.0.0",
+  "description": "CrazyArcade (BnB) official server suite ported to TypeScript + Bun + SQLite",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "bun run src/main.ts",
+    "center": "bun run src/main.ts --only center",
+    "login": "bun run src/main.ts --only login",
+    "game": "bun run src/main.ts --only game",
+    "shop": "bun run src/main.ts --only shop",
+    "util": "bun run src/main.ts --only util",
+    "relay": "bun run src/main.ts --only relay",
+    "test": "bun test"
+  },
+  "engines": {
+    "bun": ">=1.4"
+  },
+  "devDependencies": {
+    "bun-types": "^1.4.2",
+    "typescript": "^7.0.2"
+  }
+}
