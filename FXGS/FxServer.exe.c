@@ -29,14 +29,17 @@ void __thiscall CCenterProcess::OnDeleteUser(CCenterProcess *__hidden this, stru
 int __thiscall _STL::_Rb_tree<unsigned char,_STL::pair<unsigned char const,int>,_STL::_Select1st<_STL::pair<unsigned char const,int>>,_STL::less<unsigned char>,_STL::allocator<_STL::pair<unsigned char const,int>>>::_M_lower_bound(int *this, _BYTE *i); // idb
 int __thiscall _STL::_Rb_tree<unsigned char,_STL::pair<unsigned char const,unsigned short>,_STL::_Select1st<_STL::pair<unsigned char const,unsigned short>>,_STL::less<unsigned char>,_STL::allocator<_STL::pair<unsigned char const,unsigned short>>>::_M_lower_bound(int *this, _BYTE *j); // idb
 _DWORD *__thiscall _STL::_String_base<char,_STL::allocator<char>>::_String_base<char,_STL::allocator<char>>(_DWORD *this, int allocator); // idb
+_DWORD *__stdcall _STL::_Rb_tree<unsigned char,_STL::pair<unsigned char const,int>,_STL::_Select1st<_STL::pair<unsigned char const,int>>,_STL::less<unsigned char>,_STL::allocator<_STL::pair<unsigned char const,int>>>::_M_create_node(int);
+_DWORD *__stdcall _STL::_Rb_tree<unsigned char,_STL::pair<unsigned char const,unsigned short>,_STL::_Select1st<_STL::pair<unsigned char const,unsigned short>>,_STL::less<unsigned char>,_STL::allocator<_STL::pair<unsigned char const,unsigned short>>>::_M_create_node(int p_j); // idb
 void __thiscall _STL::_String_base<char,_STL::allocator<char>>::_M_deallocate_block(_DWORD *this);
-int __thiscall _STL::_Rb_tree<unsigned char,_STL::pair<unsigned char const,int>,_STL::_Select1st<_STL::pair<unsigned char const,int>>,_STL::less<unsigned char>,_STL::allocator<_STL::pair<unsigned char const,int>>>::insert_unique(int *this, int a2, unsigned __int8 *a3);
-_DWORD *__thiscall _STL::_Rb_tree<unsigned char,_STL::pair<unsigned char const,unsigned short>,_STL::_Select1st<_STL::pair<unsigned char const,unsigned short>>,_STL::less<unsigned char>,_STL::allocator<_STL::pair<unsigned char const,unsigned short>>>::_M_insert(_DWORD *this, _DWORD *p_p_j, int j, int j, _BYTE *p_j, int j); // idb
+_DWORD *__thiscall _STL::_Rb_tree<unsigned char,_STL::pair<unsigned char const,int>,_STL::_Select1st<_STL::pair<unsigned char const,int>>,_STL::less<unsigned char>,_STL::allocator<_STL::pair<unsigned char const,int>>>::_M_insert(_DWORD *this, _DWORD *p_i, int j, int j, _BYTE *i, int j); // idb
+int __thiscall _STL::_Rb_tree<unsigned char,_STL::pair<unsigned char const,int>,_STL::_Select1st<_STL::pair<unsigned char const,int>>,_STL::less<unsigned char>,_STL::allocator<_STL::pair<unsigned char const,int>>>::insert_unique(int *this, int, unsigned __int8 *i); // idb
+_DWORD *__thiscall _STL::_Rb_tree<unsigned char,_STL::pair<unsigned char const,unsigned short>,_STL::_Select1st<_STL::pair<unsigned char const,unsigned short>>,_STL::less<unsigned char>,_STL::allocator<_STL::pair<unsigned char const,unsigned short>>>::_M_insert(_DWORD *this, _DWORD *p_p_j, int j, int ja, _BYTE *p_j, int a6); // idb
 int __thiscall _STL::_Rb_tree<unsigned char,_STL::pair<unsigned char const,unsigned short>,_STL::_Select1st<_STL::pair<unsigned char const,unsigned short>>,_STL::less<unsigned char>,_STL::allocator<_STL::pair<unsigned char const,unsigned short>>>::insert_unique(int *this, int a2, unsigned __int8 *p_j); // idb
 void __thiscall CCenterProcess::~CCenterProcess(CCenterProcess *__hidden this); // idb
 unsigned __int8 **__thiscall _STL::basic_string<char,_STL::char_traits<char>,_STL::allocator<char>>::basic_string<char,_STL::char_traits<char>,_STL::allocator<char>>(unsigned __int8 **this, char *Str, int);
 void __thiscall _STL::basic_string<char,_STL::char_traits<char>,_STL::allocator<char>>::basic_string<char,_STL::char_traits<char>,_STL::allocator<char>>(_DWORD *this);
-int *__thiscall _STL::_Rb_tree<unsigned char,_STL::pair<unsigned char const,int>,_STL::_Select1st<_STL::pair<unsigned char const,int>>,_STL::less<unsigned char>,_STL::allocator<_STL::pair<unsigned char const,int>>>::insert_unique(int *this, int *p_i, int j, unsigned __int8 *a4); // idb
+int *__thiscall _STL::_Rb_tree<unsigned char,_STL::pair<unsigned char const,int>,_STL::_Select1st<_STL::pair<unsigned char const,int>>,_STL::less<unsigned char>,_STL::allocator<_STL::pair<unsigned char const,int>>>::insert_unique(int *this, int *p_i, int j, unsigned __int8 *i); // idb
 int *__thiscall _STL::_Rb_tree<unsigned char,_STL::pair<unsigned char const,unsigned short>,_STL::_Select1st<_STL::pair<unsigned char const,unsigned short>>,_STL::less<unsigned char>,_STL::allocator<_STL::pair<unsigned char const,unsigned short>>>::insert_unique(int *this, int *p_p_j, int j, unsigned __int8 *p_j); // idb
 void __thiscall _STL::basic_string<char,_STL::char_traits<char>,_STL::allocator<char>>::~basic_string<char,_STL::char_traits<char>,_STL::allocator<char>>(void *); // idb
 CCenterProcess *__thiscall CCenterProcess::`vector deleting destructor'(CCenterProcess *this, char a2);
@@ -62,18 +65,16 @@ void __thiscall CChannelPool::OnGuildMarkRevision(CChannelPool *__hidden this, C
 void __thiscall CChannelPool::OnReqChannelsState(CChannelPool *__hidden this, struct CReceivedPacketBase *, struct CClientSocket *M_start); // idb
 void __thiscall CChannelPool::OnReqConnectToSvr(CChannelPool *__hidden this, CReceivedPacketBase *, struct CClientSocket *M_start); // idb
 void __thiscall CChannelPool::OnCenterResConnectToSvr(CChannelPool *__hidden this, struct CReceivedPacketBase *n); // idb
-void __thiscall CChannelPool::PutUserSimpleInfoPacket(CChannelPool *this, struct CClientSocket *M_start, int n); // idb
+void __thiscall CChannelPool::PutUserSimpleInfoPacket(CChannelPool *__hidden this, struct CClientSocket *M_start, int); // idb
 _DWORD *__thiscall _STL::_Rb_tree<unsigned int,_STL::pair<unsigned int const,void *>,_STL::_Select1st<_STL::pair<unsigned int const,void *>>,_STL::less<unsigned int>,_STL::allocator<_STL::pair<unsigned int const,void *>>>::_M_lower_bound(void *this, _DWORD *p_na); // idb
 _DWORD *__thiscall _STL::_Rb_tree<unsigned int,_STL::pair<unsigned int const,void *>,_STL::_Select1st<_STL::pair<unsigned int const,void *>>,_STL::less<unsigned int>,_STL::allocator<_STL::pair<unsigned int const,void *>>>::_M_upper_bound(void *this, _DWORD *p_na); // idb
-_DWORD *__thiscall _STL::_Rb_tree<unsigned int,_STL::pair<unsigned int const,void *>,_STL::_Select1st<_STL::pair<unsigned int const,void *>>,_STL::less<unsigned int>,_STL::allocator<_STL::pair<unsigned int const,void *>>>::_M_find<unsigned int>(void *this, _DWORD *);
+_DWORD *__cdecl _STL::_Construct<_STL::pair<unsigned int const,void *>,_STL::pair<unsigned int const,void *>>(_DWORD *a1, _DWORD *p_value); // idb
 void __thiscall CChannelPool::OnRequestUserSimpleInfo(CChannelPool *this, CReceivedPacketBase *a2, struct CClientSocket *M_start); // idb
-_DWORD *__stdcall _STL::_Rb_tree<unsigned int,_STL::pair<unsigned int const,void *>,_STL::_Select1st<_STL::pair<unsigned int const,void *>>,_STL::less<unsigned int>,_STL::allocator<_STL::pair<unsigned int const,void *>>>::_M_create_node(_DWORD *p_value); // idb
 void __thiscall CChannelPool::DeleteRankList(CChannelPool *__hidden this, struct CClientSocket *); // idb
 _DWORD *__thiscall _STL::_Rb_tree<unsigned int,_STL::pair<unsigned int const,void *>,_STL::_Select1st<_STL::pair<unsigned int const,void *>>,_STL::less<unsigned int>,_STL::allocator<_STL::pair<unsigned int const,void *>>>::equal_range(void *this, _DWORD *a2, _DWORD *p_na); // idb
 _DWORD *__thiscall _STL::_Rb_tree<unsigned int,_STL::pair<unsigned int const,void *>,_STL::_Select1st<_STL::pair<unsigned int const,void *>>,_STL::less<unsigned int>,_STL::allocator<_STL::pair<unsigned int const,void *>>>::_M_insert(_DWORD *this, _DWORD *p_p_value, int j, _DWORD *j, _DWORD *p_value, int); // idb
 void __thiscall CChannelPool::~CChannelPool(CChannelPool *__hidden this); // idb
 unsigned __int8 *__thiscall _STL::vector<void *,_STL::allocator<void *>>::_M_insert_overflow(int this, unsigned __int8 *src, _DWORD *src, int, unsigned __int8 *i, char); // idb
-int __thiscall _STL::_Rb_tree<unsigned int,_STL::pair<unsigned int const,void *>,_STL::_Select1st<_STL::pair<unsigned int const,void *>>,_STL::less<unsigned int>,_STL::allocator<_STL::pair<unsigned int const,void *>>>::count(void *this, _DWORD *p_na); // idb
 CChannelPool *__thiscall CChannelPool::`scalar deleting destructor'(CChannelPool *this, char a2);
 void __thiscall CChannelPool::OnRequestModifyUserInfo(CChannelPool *__hidden this, CReceivedPacketBase *, struct CClientSocket *M_start); // idb
 // void __userpurge CChannelPool::OnRequestUserInfoDetail(int this@<edi>, CReceivedPacketBase *, struct CClientSocket *M_start); idb
@@ -85,7 +86,7 @@ void __thiscall CChannelPool::OnInviteUser(CChannelPool *__hidden this, CReceive
 // void __userpurge CChannelPool::OnEnterChannelStage(int@<ebx>, struct CReceivedPacketBase *, struct CClientSocket *M_start); idb
 int __thiscall _STL::vector<void *,_STL::allocator<void *>>::insert(_DWORD *this, unsigned __int8 *src, _DWORD *p_User); // idb
 void __thiscall CChannelPool::UpdateRankList(CChannelPool *__hidden this, struct CUser *User); // idb
-void __thiscall CChannelPool::PutGuildMemberListPacket(CChannelPool *this, struct CClientSocket *M_start, int n); // idb
+void __thiscall CChannelPool::PutGuildMemberListPacket(CChannelPool *__hidden this, struct CClientSocket *M_start, int); // idb
 void __thiscall CChannelPool::DeleteGuildMember(CChannelPool *__hidden this, struct CClientSocket *); // idb
 void __thiscall CChannelPool::OnDeleteSocket(CChannelPool *this, struct CClientSocket *a2); // idb
 void __thiscall CChannelPool::OnRequestGuildMemberInfo(CChannelPool *this, CReceivedPacketBase *a2, struct CClientSocket *M_start); // idb
@@ -180,9 +181,9 @@ void __thiscall CGuildDynInfoCalculator::AddPlayer(CGuildDynInfoCalculator *this
 void __cdecl SimpleCipher(const char *dst, int n64); // idb
 int __fastcall CItemAttr::GetItemidx(CItemAttr *this, char *s1); // idb
 _DWORD *__thiscall _STL::_Rb_tree<int,_STL::pair<int const,int>,_STL::_Select1st<_STL::pair<int const,int>>,_STL::less<int>,_STL::allocator<_STL::pair<int const,int>>>::_M_lower_bound(void *this, _DWORD *p_n); // idb
-_DWORD *__thiscall _STL::_Rb_tree<int,_STL::pair<int const,int>,_STL::_Select1st<_STL::pair<int const,int>>,_STL::less<int>,_STL::allocator<_STL::pair<int const,int>>>::_M_insert(_DWORD *this, _DWORD *, int j, _DWORD *j, _DWORD *, int j); // idb
 int __thiscall _STL::_Rb_tree<int,_STL::pair<int const,int>,_STL::_Select1st<_STL::pair<int const,int>>,_STL::less<int>,_STL::allocator<_STL::pair<int const,int>>>::insert_unique(int *this, int a2, int *a3);
 void __thiscall CItemAttr::~CItemAttr(CObject *this);
+_DWORD *__thiscall _STL::_Rb_tree<int,_STL::pair<int const,int>,_STL::_Select1st<_STL::pair<int const,int>>,_STL::less<int>,_STL::allocator<_STL::pair<int const,int>>>::insert_unique(int *this, _DWORD *p_p_n, _DWORD *j, int *a4); // idb
 CObject *__thiscall CItemAttr::`scalar deleting destructor'(CObject *this, char a2);
 _DWORD *__thiscall _STL::map<int,int,_STL::less<int>,_STL::allocator<_STL::pair<int const,int>>>::insert(int *this, _DWORD *p_p_n, _DWORD *j, int *a4); // idb
 _DWORD *__thiscall _STL::map<int,int,_STL::less<int>,_STL::allocator<_STL::pair<int const,int>>>::operator[](int *this, int *p_n); // idb
@@ -206,7 +207,6 @@ CListenThread *__thiscall CListenThread::`scalar deleting destructor'(CListenThr
 CSysException *__thiscall CSysException::`scalar deleting destructor'(CSysException *this, char a2);
 void __thiscall CLocalSocket::~CLocalSocket(CLocalSocket *__hidden this); // idb
 CLocalSocket *__thiscall CLocalSocket::`vector deleting destructor'(CLocalSocket *this, char a2);
-struct CUser *__thiscall CLocalUserTable::FindUserFromGlobalSerialNo(CLocalUserTable *__hidden this, unsigned int); // idb
 void __thiscall _STL::vector<void *,_STL::allocator<void *>>::_M_fill_insert(int this, unsigned __int8 *src, unsigned int i, unsigned int srca); // idb
 int __thiscall _STL::pair<_STL::basic_string<char,_STL::char_traits<char>,_STL::allocator<char>> const,void *>::~pair<_STL::basic_string<char,_STL::char_traits<char>,_STL::allocator<char>> const,void *>(void *p); // idb
 void *__thiscall _STL::pair<_STL::basic_string<char,_STL::char_traits<char>,_STL::allocator<char>> const,void *>::`scalar deleting destructor'(void *p, char a2);
@@ -223,7 +223,6 @@ CMainWindow *__thiscall CMainWindow::`scalar deleting destructor'(CMainWindow *t
 void __thiscall CMainWindow::OnInitDialog(CMainWindow *__hidden this, HWND); // idb
 int __stdcall CMainWindow::DlgProc(HWND a1, unsigned int a2, unsigned int a3, int a4);
 void __thiscall CSendPacket::~CSendPacket(CSendPacketBase *this);
-CSendPacketBase *__thiscall CSendPacket::CSendPacket(CSendPacketBase *this, int nPacketType);
 void __thiscall CSendPacket::InitPacket(CSendPacketBase *this, int nPacketType);
 CSendPacketBase *__thiscall CSendPacket::`scalar deleting destructor'(CSendPacketBase *this, char a2);
 void __thiscall CRSUserItem::~CRSUserItem(CDBRowset *this);
@@ -256,7 +255,6 @@ _STL::ios_base *__thiscall _STL::basic_ios<char,_STL::char_traits<char>>::`scala
 int __thiscall _STL::basic_ios<char,_STL::char_traits<char>>::clear(_STL::ios_base *this, int _M_iostate); // idb
 int __thiscall _STL::basic_ios<char,_STL::char_traits<char>>::_M_handle_exception(_DWORD *this, int);
 int __thiscall _STL::basic_filebuf<char,_STL::char_traits<char>>::underflow(void *this);
-_BYTE *__cdecl _STL::find_if<char const *,_STL::_Eq_char_bound<_STL::char_traits<char>>>(_BYTE *, int, char);
 int __cdecl _STL::_M_read_unbuffered<char,_STL::char_traits<char>,_STL::_Constant_unary_fun<bool,int>>(int this, _DWORD *, int, _BYTE *dst, char, char, char, char); // idb
 char *__thiscall _STL::basic_ostream<char,_STL::char_traits<char>>::flush(char *this);
 // int __thiscall _STL::basic_filebuf<char,_STL::char_traits<char>>::~basic_filebuf<char,_STL::char_traits<char>>(_DWORD); weak
@@ -272,6 +270,7 @@ char *__thiscall _STL::basic_istream<char,_STL::char_traits<char>>::seekg(char *
 void __thiscall CServerConfig::~CServerConfig(CObject *this);
 unsigned __int8 ***__thiscall _STL::_Rb_tree<_STL::basic_string<char,_STL::char_traits<char>,_STL::allocator<char>>,_STL::pair<_STL::basic_string<char,_STL::char_traits<char>,_STL::allocator<char>> const,_STL::basic_string<char,_STL::char_traits<char>,_STL::allocator<char>>>,_STL::_Select1st<_STL::pair<_STL::basic_string<char,_STL::char_traits<char>,_STL::allocator<char>> const,_STL::basic_string<char,_STL::char_traits<char>,_STL::allocator<char>>>>,_STL::less<_STL::basic_string<char,_STL::char_traits<char>,_STL::allocator<char>>>,_STL::allocator<_STL::pair<_STL::basic_string<char,_STL::char_traits<char>,_STL::allocator<char>> const,_STL::basic_string<char,_STL::char_traits<char>,_STL::allocator<char>>>>>::insert_unique(int *this, int a2, int p_Buf1);
 CObject *__thiscall CServerConfig::`vector deleting destructor'(CObject *this, char a2);
+_DWORD *__thiscall _STL::_Rb_tree<int,int,_STL::_Identity<int>,_STL::less<int>,_STL::allocator<int>>::_M_insert(_DWORD *this, _DWORD *p_p_n, int j, _DWORD *ja, _DWORD *p_n, int a6); // idb
 void __thiscall CSyncGameObjMan::Init(CSyncGameObjMan *__hidden this, struct CGameSession *this); // idb
 void __thiscall CSyncGameObjMan::OnPlayerLeave(CSyncGameObjMan *this, unsigned int n);
 void __thiscall CSyncGameObjMan::OnReqDestroyObj(CBaseSession **this, CReceivedPacketBase *n, struct CClientSocket *n8); // idb
@@ -282,7 +281,7 @@ int __thiscall _STL::set<int,_STL::less<int>,_STL::allocator<int>>::insert(int *
 void __thiscall CSyncGameObjMan::Delegate(CSyncGameObjMan *this, int n, int MinimumLoadSlotIdx); // idb
 void __thiscall CSyncGameObjMan::OnReqCreateObj(CSyncGameObjMan *__hidden this, CReceivedPacketBase *n, struct CClientSocket *n8); // idb
 void __thiscall CSyncGameObjMan::SetInitialObjNo(CSyncGameObjMan *__hidden this, int n); // idb
-_DWORD *__cdecl _STL::__find_if<_STL::reverse_iterator<char const *>,_STL::_Eq_char_bound<_STL::char_traits<char>>>(_DWORD *a1, _BYTE *a2, int a3, char n92); // idb
+_DWORD *__cdecl _STL::__find_if<_STL::reverse_iterator<char const *>,_STL::_Eq_char_bound<_STL::char_traits<char>>>(_DWORD *, _BYTE *, int, char n92); // idb
 _DWORD *__cdecl _STL::find_if<_STL::reverse_iterator<char const *>,_STL::_Eq_char_bound<_STL::char_traits<char>>>(_DWORD *a1, _BYTE *a2, _BYTE *a3, char n92);
 void __thiscall CTimerThread::~CTimerThread(CThread *this);
 CThread *__thiscall CTimerThread::`vector deleting destructor'(CThread *this, char a2);
@@ -303,50 +302,44 @@ int __fastcall CUser::IncDecExp(CUser *__hidden this, int value); // idb
 int __thiscall CUser::HasFunctionalItem(CUser *__hidden this, const char *); // idb
 unsigned __int16 __thiscall CUser::GetSessionIdx(CUser *__hidden this); // idb
 unsigned int __thiscall CUser::GetSessionSerialNo(CUser *__hidden this); // idb
-void __stdcall _STL::allocator<UserInventory>::deallocate(_DWORD *p, int);
 int __thiscall CUser::GetLookLevel(CUser *__hidden this); // idb
 void __thiscall CObjectPool<CUser>::~CObjectPool<CUser>(char *this);
 char *__thiscall CObjectPool<CUser>::`scalar deleting destructor'(char *p, char a2);
-void __thiscall CUser::AppendSimpleInfoPacket(CNamedObject *this, struct CSendPacket *);
 UserInventory *__thiscall UserInventory::`scalar deleting destructor'(UserInventory *this, char a2);
-UserInventory *__thiscall UserInventory::UserInventory(UserInventory *__hidden this, const struct UserInventory *); // idb
-UserInventory *__cdecl _STL::_Construct<UserInventory,UserInventory>(UserInventory *p, struct UserInventory *a2); // idb
+UserInventory *__cdecl _STL::_Construct<UserInventory,UserInventory>(UserInventory *p, struct UserInventory *p); // idb
 void __cdecl _STL::_Destroy<UserInventory *>(UserInventory *, UserInventory *);
-UserInventory *__cdecl _STL::__uninitialized_copy<UserInventory *,UserInventory *>(struct UserInventory *p, struct UserInventory *p, UserInventory *p); // idb
-void __thiscall _STL::vector<UserInventory,_STL::allocator<UserInventory>>::_M_clear(_DWORD **this);
+UserInventory *__cdecl _STL::__uninitialized_fill_n<UserInventory *,unsigned int,UserInventory>(UserInventory *p, int a2, struct UserInventory *p_value); // idb
 void __thiscall CUser::~CUser(CUser *__hidden this); // idb
-void *__thiscall _STL::vector<UserInventory,_STL::allocator<UserInventory>>::_M_insert_overflow(int this, struct UserInventory *p, struct UserInventory *p_value, int a4, unsigned int a5, char a6); // idb
+void *__thiscall _STL::vector<UserInventory,_STL::allocator<UserInventory>>::_M_insert_overflow(int this, struct UserInventory *p, struct UserInventory *p_value, int, unsigned int p, char); // idb
 CUser *__thiscall CUser::`vector deleting destructor'(CUser *this, char a2);
 UserInventory *__thiscall _STL::vector<UserInventory,_STL::allocator<UserInventory>>::push_back(struct UserInventory **this, struct UserInventory *p_value); // idb
 int __cdecl _STL::__distance<_STL::_Rb_tree_iterator<CUser *,_STL::_Nonconst_traits<CUser *>>>(_DWORD **p_i, _DWORD *p_i); // idb
 _DWORD *__thiscall _STL::_Rb_tree<CUser *,CUser *,_STL::_Identity<CUser *>,_STL::less<CUser *>,_STL::allocator<CUser *>>::_M_find<CUser *>(void *this, _DWORD *p_User); // idb
-_DWORD *__thiscall _STL::_Rb_tree<CClientSocket *,CClientSocket *,_STL::_Identity<CClientSocket *>,_STL::less<CClientSocket *>,_STL::allocator<CClientSocket *>>::_M_find<CClientSocket *>(void *this, _DWORD *p_M_start); // idb
 void __thiscall _STL::_Rb_tree<CUser *,CUser *,_STL::_Identity<CUser *>,_STL::less<CUser *>,_STL::allocator<CUser *>>::erase(_DWORD *this, int j);
 void __thiscall _STL::_Rb_tree<CUser *,CUser *,_STL::_Identity<CUser *>,_STL::less<CUser *>,_STL::allocator<CUser *>>::erase(_DWORD *this, _DWORD *i, _DWORD *i); // idb
 _DWORD *__thiscall _STL::_Rb_tree<CUser *,CUser *,_STL::_Identity<CUser *>,_STL::less<CUser *>,_STL::allocator<CUser *>>::_M_lower_bound(void *this, _DWORD *p_User); // idb
 _DWORD *__thiscall _STL::_Rb_tree<CUser *,CUser *,_STL::_Identity<CUser *>,_STL::less<CUser *>,_STL::allocator<CUser *>>::_M_upper_bound(void *this, _DWORD *p_User); // idb
-_DWORD *__thiscall _STL::_Rb_tree<CUser *,CUser *,_STL::_Identity<CUser *>,_STL::less<CUser *>,_STL::allocator<CUser *>>::_M_insert(_DWORD *this, _DWORD *p_p_User, int j, _DWORD *ja, _DWORD *p_User, int a6); // idb
-_DWORD *__thiscall _STL::_Rb_tree<CClientSocket *,CClientSocket *,_STL::_Identity<CClientSocket *>,_STL::less<CClientSocket *>,_STL::allocator<CClientSocket *>>::_M_insert(_DWORD *this, _DWORD *, int j, _DWORD *j, _DWORD *, int); // idb
+_DWORD *__stdcall _STL::_Rb_tree<CUser *,CUser *,_STL::_Identity<CUser *>,_STL::less<CUser *>,_STL::allocator<CUser *>>::_M_create_node(_DWORD *p_User); // idb
+_DWORD *__thiscall _STL::_Rb_tree<CUser *,CUser *,_STL::_Identity<CUser *>,_STL::less<CUser *>,_STL::allocator<CUser *>>::_M_insert(_DWORD *this, _DWORD *p_p_User, int j, _DWORD *j, _DWORD *p_User, int); // idb
 void __thiscall CUserPool::~CUserPool(CNamedObject *this);
 int __thiscall CUserPool::DelSocket(CUserPool *__hidden this, struct CClientSocket *M_start); // idb
 _DWORD *__thiscall _STL::_Rb_tree<CUser *,CUser *,_STL::_Identity<CUser *>,_STL::less<CUser *>,_STL::allocator<CUser *>>::equal_range(void *this, _DWORD *p_i, _DWORD *p_User); // idb
 int __thiscall _STL::_Rb_tree<CUser *,CUser *,_STL::_Identity<CUser *>,_STL::less<CUser *>,_STL::allocator<CUser *>>::insert_unique(int *this, int a2, unsigned int *p_User); // idb
+int __thiscall _STL::_Rb_tree<CClientSocket *,CClientSocket *,_STL::_Identity<CClientSocket *>,_STL::less<CClientSocket *>,_STL::allocator<CClientSocket *>>::insert_unique(int *this, int a2, unsigned int *p_M_start); // idb
 CNamedObject *__thiscall CUserPool::`scalar deleting destructor'(CNamedObject *this, char a2);
 int __thiscall CUserPool::DeleteSocket(CUserPool *this, struct CClientSocket *M_start); // idb
 void __thiscall CUserPool::OnEstimateRTT(CUserPool *this, CReceivedPacketBase *, CSocket *M_start); // idb
 void __thiscall CUserPool::DisconnectTimeoutSocket(CUserPool *__hidden this); // idb
 int __thiscall _STL::set<CUser *,_STL::less<CUser *>,_STL::allocator<CUser *>>::insert(int *this, int, unsigned int *p_User); // idb
-int __thiscall _STL::set<CClientSocket *,_STL::less<CClientSocket *>,_STL::allocator<CClientSocket *>>::insert(int *this, int a2, unsigned int *p_M_start); // idb
 int __thiscall _STL::_Rb_tree<CUser *,CUser *,_STL::_Identity<CUser *>,_STL::less<CUser *>,_STL::allocator<CUser *>>::erase(_DWORD *this, _DWORD *p_User); // idb
 void __thiscall CUserPool::OnPacket(CUserPool *this, CReceivedPacketBase *a2, CSocket *M_start); // idb
 void __thiscall CUserPool::OnTimer(CUserPool *this); // idb
-int __thiscall CUserPool::AddSocket(CUserPool *this, struct CClientSocket *M_start); // idb
+int __thiscall CUserPool::AddSocket(CUserPool *__hidden this, struct CClientSocket *M_start); // idb
 int __thiscall CUserPool::AddNewSocket(CUserPool *this, struct CClientSocket *M_start); // idb
 void __thiscall CWorkerThread::~CWorkerThread(CThread *this);
 CThread *__thiscall CWorkerThread::`scalar deleting destructor'(CThread *this, char a2);
 BOOL __thiscall CBomberAttr::IsValidSelectIdx(CBomberAttr *this, int);
 int __thiscall CBaseSession::DeleteAllSlotidx(CBaseSession *__hidden this, struct CClientSocket *); // idb
-void __thiscall CBaseSession::DeleteUser(CBaseSession *this, int n8); // idb
 int __thiscall CBaseSession::GetEmptySlotCount(CBaseSession *__hidden this); // idb
 int __thiscall CBaseSession::GetEmptySlot(CBaseSession *__hidden this); // idb
 int __thiscall CBaseSession::GetNullSlotCount(CBaseSession *__hidden this); // idb
@@ -370,7 +363,7 @@ void __thiscall CBaseSessionTable::~CBaseSessionTable(CBaseSessionTable *__hidde
 CBaseSessionTable *__thiscall CBaseSessionTable::`vector deleting destructor'(CBaseSessionTable *this, char a2);
 void __thiscall CUdpLossRegulator::~CUdpLossRegulator(CObject *this); // idb
 CObject *__thiscall CUdpLossRegulator::`vector deleting destructor'(CObject *this, char a2);
-void __thiscall CGameSession::Init(CGameSession *this, char *_M_start, char *Source, int a4); // idb
+void __thiscall CGameSession::Init(CGameSession *this, char *_M_start, char *Source, int); // idb
 void __thiscall CGameSession::Create(CGameSession *this, struct CClientSocket *n, char *_M_start, char *Source, int *const a5, int a6); // idb
 void __thiscall CGameSession::DealWithGhostOfLeavingPlayer(CGameSession *this, struct CClientSocket *a2); // idb
 void __thiscall CGameSession::OnSetBombTimer(CGameSession *__hidden this, CReceivedPacketBase *n, struct CClientSocket *n8); // idb
@@ -400,6 +393,7 @@ void __thiscall CGameSession::OnSetGameTypeNormal(CGameSession *__hidden this, s
 void __thiscall CGameSession::OnSetGameTypeMod(CGameSession *__hidden this, struct CClientSocket *n8); // idb
 void __thiscall CGameSession::OnSetEffect(CGameSession *__hidden this, struct CReceivedPacketBase *n, struct CClientSocket *n8); // idb
 int __thiscall CGameSession::GetGameDetailResult(CGameSession *__hidden this, int n8); // idb
+void __thiscall CGameSession::OnNotifyUDPPacketLoss(CGameSession *__hidden this, CReceivedPacketBase *n, struct CClientSocket *n8); // idb
 void __thiscall CGameSession::OnReqEatBula(CGameSession *__hidden this, CReceivedPacketBase *n, struct CClientSocket *n8); // idb
 void __thiscall CGameSession::OnShobuari(CGameSession *__hidden this, struct CReceivedPacketBase *n, struct CClientSocket *n8); // idb
 void __thiscall CGameContext::Init(CGameContext *__hidden this); // idb
@@ -471,9 +465,11 @@ void __thiscall CPracticeSession::OnRequestAILevelChange(CPracticeSession *this,
 void __thiscall CPracticeSession::SetChiefSlotidx(CPracticeSession *__hidden this, int MaxLevelUserIdx); // idb
 void __thiscall CPracticeSession::Create(CPracticeSession *this, struct CClientSocket *n, int *const a3); // idb
 void __thiscall CPracticeSession::SendGameResult(CPracticeSession *this, int a2); // idb
+void __thiscall CPracticeSession::OnOpenCloseSlot(CPracticeSession *__hidden this, CReceivedPacketBase *n, struct CClientSocket *n8); // idb
+void __thiscall CPracticeSession::OnSelectColor(CPracticeSession *__hidden this, CReceivedPacketBase *n, struct CClientSocket *n8); // idb
+void __thiscall CPracticeSession::OnPacket(CPracticeSession *this, CReceivedPacketBase *n, CNamedObject *n8);
 void __thiscall CPracticeSessionStrategy::~CPracticeSessionStrategy(CPracticeSessionStrategy *__hidden this); // idb
 CPracticeSessionStrategy *__thiscall CPracticeSessionStrategy::`vector deleting destructor'(CPracticeSessionStrategy *this, char a2);
-BOOL __cdecl Equivalent(const struct SessionInfo *a1, const struct SessionInfo *src); // idb
 void __cdecl _STL::_Construct<SessionInfo,SessionInfo>(void *dst, const void *src); // idb
 char *__cdecl _STL::__uninitialized_copy<SessionInfo *,SessionInfo *>(char *src, char *src, char *dst); // idb
 void *__thiscall _STL::vector<SessionInfo,_STL::allocator<SessionInfo>>::_M_allocate_and_copy<SessionInfo *>(void *this, int, char *src, char *src); // idb
@@ -504,7 +500,6 @@ _DWORD *__thiscall _STL::list<cDataPacket *,_STL::allocator<cDataPacket *>>::pus
 cQueueIn *__thiscall cQueueIn::`vector deleting destructor'(cQueueIn *this, char a2);
 void __thiscall cQueueOut::~cQueueOut(cQueueOut *__hidden this); // idb
 cQueueOut *__thiscall cQueueOut::`vector deleting destructor'(cQueueOut *this, char a2);
-void __thiscall cUnreliableQueueIn::AddPacket(cUnreliableQueueIn *this, unsigned int a2, char *pSrc, unsigned __int16 n, unsigned int TickCount); // idb
 void __thiscall cUnreliableQueueIn::~cUnreliableQueueIn(cUnreliableQueueIn *__hidden this); // idb
 cUnreliableQueueIn *__thiscall cUnreliableQueueIn::`vector deleting destructor'(cUnreliableQueueIn *this, char a2);
 void __thiscall cUnreliableQueueOut::~cUnreliableQueueOut(cUnreliableQueueOut *__hidden this); // idb
@@ -513,10 +508,8 @@ void __thiscall CDataFile::~CDataFile(CDataFile *__hidden this); // idb
 CDataFile *__thiscall CDataFile::`vector deleting destructor'(CDataFile *this, char a2);
 // void __thiscall CEnumProcess::~CEnumProcess(CEnumProcess *__hidden this); idb
 CEnumProcess *__thiscall CEnumProcess::`vector deleting destructor'(CEnumProcess *this, char a2);
-_DWORD *__cdecl _STL::__find<CGameEvent * *,CGameEvent *>(_DWORD *a1, int dst, int *p_thisa); // idb
+_DWORD *__cdecl _STL::fill_n<CGameEvent * *,unsigned int,CGameEvent *>(_DWORD *a1, int i, _DWORD *p_thisa); // idb
 void __thiscall CEventManager::RemoveGameEvent(CEventManager *__hidden this, struct CGameEvent *this); // idb
-void __thiscall _STL::vector<CGameEvent *,_STL::allocator<CGameEvent *>>::_M_clear(_DWORD *this);
-unsigned __int8 *__thiscall _STL::vector<CGameEvent *,_STL::allocator<CGameEvent *>>::_M_insert_overflow(int this, unsigned __int8 *src, _DWORD *p_thisa, int a4, unsigned __int8 *i, char a6); // idb
 void __thiscall CEventManager::AddGameEvent(CEventManager *__hidden this, struct CGameEvent *this); // idb
 void __thiscall CFastFile::FastFileFini(CFastFile *__hidden this); // idb
 int __thiscall CFastFile::FastFileClose(CFastFile *__hidden this, struct _FILEHANDLE *); // idb
@@ -721,8 +714,6 @@ void __thiscall _STL::vector<CStackWalker::Entry,_STL::allocator<CStackWalker::E
 CStackWalker *__thiscall CStackWalker::CStackWalker(CStackWalker *this, void *ihThread, CContext *iopContext); // idb
 CContext *__thiscall CContext::CContext(CContext *this, void *ihThread, int iOption); // idb
 void __thiscall CSendPacketBase::~CSendPacketBase(CSendPacketBase *this); // idb
-void __thiscall CSendPacketBase::Encode1(CSendPacketBase *this, int n);
-void __thiscall CSendPacketBase::Encode2(CSendPacketBase *this, int n);
 void __thiscall CReceivedPacketBase::~CReceivedPacketBase(CReceivedPacketBase *this); // idb
 void __cdecl SimpleStreamEncrypt3(unsigned __int8 *const src, unsigned __int8 *tar, unsigned int len, unsigned int key); // idb
 void __cdecl SimpleStreamDecrypt3(unsigned __int8 *const src, unsigned __int8 *tar, unsigned int len, unsigned int key); // idb
@@ -732,7 +723,7 @@ unsigned int __thiscall CSendPacketBase::Encode1At(CSendPacketBase *this, unsign
 unsigned int __thiscall CSendPacketBase::Encode2At(CSendPacketBase *this, unsigned int uOffset, unsigned __int16 n); // idb
 unsigned int __thiscall CSendPacketBase::Encode4At(CSendPacketBase *this, unsigned int uOffset, unsigned int n); // idb
 unsigned int __thiscall CSendPacketBase::EncodeBufferAt(CSendPacketBase *this, unsigned int uOffset, const unsigned __int8 *pBuf, unsigned int len);
-int __thiscall CSendPacketBase::EncodeOSStreamAt(CSendPacketBase *this, unsigned int uOffset, COSmartStream *osstream);
+unsigned int __thiscall CSendPacketBase::EncodeOSStreamAt(CSendPacketBase *this, unsigned int uOffset, COSmartStream *osstream);
 CReceivedPacketBase *__thiscall CReceivedPacketBase::`vector deleting destructor'(CReceivedPacketBase *this, char a2);
 BOOL __thiscall CReceivedPacketBase::DecodePacket(CReceivedPacketBase *this, unsigned __int8 *const pBuf, int len, int fMakeConvert, int nHeaderType, unsigned int dwCrcKey);
 unsigned __int16 __thiscall CReceivedPacketBase::Decode2At(CReceivedPacketBase *this, unsigned int uOffset); // idb
@@ -802,11 +793,8 @@ void __thiscall CDBRowset::Get_FieldText(CDBRowset *this, unsigned int lField, _
 void __thiscall CDataSource::Close(CDataSource *this); // idb
 void __thiscall CDataSource::~CDataSource(CDataSource *this); // idb
 CDataSource *__thiscall CDataSource::`scalar deleting destructor'(CDataSource *this, char a2);
-int __fastcall sub_443930(int, int);
-int __stdcall deflateReset(_DWORD *dst); // idb
 // int __usercall sub_445490@<eax>(int result@<eax>, int@<edi>, int j); idb
 // int __usercall sub_445560@<eax>(int *@<eax>, _DWORD *@<edx>);
-_WORD *__cdecl _tr_init(int);
 // signed int __usercall sub_446740@<eax>(int@<edx>, int i@<ebx>, int@<edi>); idb
 // signed int __usercall sub_4467A0@<eax>(_DWORD *a1@<esi>, int *a2);
 std::bad_alloc *__thiscall std::bad_alloc::`vector deleting destructor'(std::bad_alloc *this, char a2);
@@ -834,10 +822,8 @@ _STL::underflow_error *__thiscall _STL::underflow_error::`scalar deleting destru
 unsigned int __cdecl _STL::_STLP_mutex_spin<0>::_M_do_lock(volatile LONG *Target);
 int __cdecl _STL::_Rb_global<bool>::_Rebalance(int, _DWORD *);
 int __cdecl _STL::_Rb_global<bool>::_Rebalance_for_erase(int j, struct _STL::_Rb_tree_node_base **, _DWORD *, _DWORD *); // idb
-// int __usercall _STL::__find_end<char const *,char const *,_STL::_Eq_traits<_STL::char_traits<char>>>@<eax>(int a1@<edx>, int a2, int a3, int Str, int a5, int a6, int a7, char a8); idb
 _DWORD *__cdecl _STL::__node_alloc<1,0>::_M_allocate(unsigned int i); // idb
 void __cdecl _STL::__node_alloc<1,0>::_M_deallocate(_DWORD *, int);
-int *__cdecl _STL::__find_if<_STL::reverse_iterator<char const *>,_STL::_Not_within_traits<_STL::char_traits<char>>>(int *a1, int a2, int a3, _BYTE *Str, _BYTE *a5);
 void __cdecl __noreturn _STL::__stl_throw_out_of_range(char *Str);
 void __cdecl __noreturn _STL::__stl_throw_length_error(char *Str);
 _STL::locale *__thiscall _STL::locale::locale(_STL::locale *this);
@@ -945,7 +931,7 @@ _STL::_Messages *__thiscall _STL::_Messages::`vector deleting destructor'(_STL::
 _STL::locale::facet *__thiscall _STL::messages<unsigned short>::`scalar deleting destructor'(_STL::locale::facet *p, char a2);
 void __cdecl _STL::__format_float_scientific(char *src, const char *, int n36, int signa, bool, unsigned int sign, int n36); // idb
 void __cdecl _STL::__format_nan_or_inf(char *src, long double x, __int16 sign); // idb
-int __cdecl _STL::__format_float_fixed(int p, char *a2, int n36, int signa, int a5, __int16 sign, int n36a, char a8); // idb
+int __cdecl _STL::__format_float_fixed(int p, char *, int n36, int signa, int, __int16 sign, int n36, char); // idb
 // unsigned __int8 **__usercall sub_469BB0@<eax>(int n36@<ecx>, int a2@<eax>, __int16 sign@<di>, unsigned __int8 **p, char *a5, int signa, long double x, char a8); idb
 // unsigned __int8 **__usercall sub_469DF0@<eax>(int n36@<ecx>, int a2@<eax>, __int16 sign@<di>, unsigned __int8 **p, char *a5, int signa, long double x, char a8); idb
 void __thiscall _SgI::stdio_streambuf_base::~stdio_streambuf_base(_STL::locale *this);
@@ -1010,18 +996,12 @@ void __thiscall CDumpContext::HexDump(CDumpContext *this, const char *lpszLine, 
 //-------------------------------------------------------------------------
 // Data declarations
 
-_UNKNOWN _STL::_Rb_tree<unsigned char,_STL::pair<unsigned char const,unsigned short>,_STL::_Select1st<_STL::pair<unsigned char const,unsigned short>>,_STL::less<unsigned char>,_STL::allocator<_STL::pair<unsigned char const,unsigned short>>>::_M_create_node;
-_UNKNOWN _STL::_Rb_tree<unsigned char,_STL::pair<unsigned char const,int>,_STL::_Select1st<_STL::pair<unsigned char const,int>>,_STL::less<unsigned char>,_STL::allocator<_STL::pair<unsigned char const,int>>>::_M_insert; // idb
-_UNKNOWN _STL::_Construct<_STL::pair<unsigned int const,void *>,_STL::pair<unsigned int const,void *>>;
-_UNKNOWN _STL::_Rb_tree<int,_STL::pair<int const,int>,_STL::_Select1st<_STL::pair<int const,int>>,_STL::less<int>,_STL::allocator<_STL::pair<int const,int>>>::insert_unique;
-_UNKNOWN _STL::_Rb_tree<int,int,_STL::_Identity<int>,_STL::less<int>,_STL::allocator<int>>::_M_insert; // idb
-_UNKNOWN _STL::__uninitialized_fill_n<UserInventory *,unsigned int,UserInventory>; // idb
-_UNKNOWN _STL::_Rb_tree<CUser *,CUser *,_STL::_Identity<CUser *>,_STL::less<CUser *>,_STL::allocator<CUser *>>::_M_create_node;
-_UNKNOWN _STL::_Rb_tree<CClientSocket *,CClientSocket *,_STL::_Identity<CClientSocket *>,_STL::less<CClientSocket *>,_STL::allocator<CClientSocket *>>::insert_unique;
+_UNKNOWN _STL::_Construct<_STL::pair<unsigned char const,unsigned short>,_STL::pair<unsigned char const,unsigned short>>;
+_UNKNOWN _STL::_Rb_tree<int,_STL::pair<int const,int>,_STL::_Select1st<_STL::pair<int const,int>>,_STL::less<int>,_STL::allocator<_STL::pair<int const,int>>>::_M_insert; // idb
+_UNKNOWN _STL::_Rb_tree<int,int,_STL::_Identity<int>,_STL::less<int>,_STL::allocator<int>>::_M_create_node;
+_UNKNOWN _STL::_Rb_tree<CClientSocket *,CClientSocket *,_STL::_Identity<CClientSocket *>,_STL::less<CClientSocket *>,_STL::allocator<CClientSocket *>>::_M_insert; // idb
 _UNKNOWN CPracticeSession::Init; // idb
-_UNKNOWN _STL::fill_n<CGameEvent * *,unsigned int,CGameEvent *>; // idb
-_UNKNOWN _STL::search<_STL::reverse_iterator<char const *>,_STL::reverse_iterator<char const *>,_STL::_Eq_traits<_STL::char_traits<char>>>;
-_UNKNOWN loc_484A44; // weak
+_UNKNOWN _STL::search<_STL::reverse_iterator<char const *>,_STL::reverse_iterator<char const *>,_STL::_Eq_traits<_STL::char_traits<char>>>; // idb
 _UNKNOWN loc_488AD8; // weak
 // extern void (__stdcall *Sleep)(DWORD dwMilliseconds);
 // extern BOOL (__stdcall *IsBadReadPtr)(const void *lp, UINT_PTR ucb);
@@ -2736,14 +2716,14 @@ _DWORD *__stdcall _STL::_Rb_tree<unsigned char,_STL::pair<unsigned char const,in
 
 //----- (00401A5C) --------------------------------------------------------
 _DWORD *__stdcall _STL::_Rb_tree<unsigned char,_STL::pair<unsigned char const,unsigned short>,_STL::_Select1st<_STL::pair<unsigned char const,unsigned short>>,_STL::less<unsigned char>,_STL::allocator<_STL::pair<unsigned char const,unsigned short>>>::_M_create_node(
-        int a1)
+        int p_j)
 {
   _DWORD *v1; // esi
 
   v1 = _STL::__node_alloc<1,0>::allocate(0x14u);
   _STL::_Construct<_STL::pair<unsigned char const,unsigned short>,_STL::pair<unsigned char const,unsigned short>>(
     (int)(v1 + 4),
-    a1);
+    p_j);
   return v1;
 }
 
@@ -2892,7 +2872,7 @@ unsigned __int8 *__thiscall _STL::basic_string<char,_STL::char_traits<char>,_STL
 //----- (00401C07) --------------------------------------------------------
 _DWORD *__thiscall _STL::_Rb_tree<unsigned char,_STL::pair<unsigned char const,int>,_STL::_Select1st<_STL::pair<unsigned char const,int>>,_STL::less<unsigned char>,_STL::allocator<_STL::pair<unsigned char const,int>>>::_M_insert(
         _DWORD *this,
-        _DWORD *a2,
+        _DWORD *p_i,
         int j,
         int ja,
         _BYTE *a5,
@@ -2930,15 +2910,15 @@ LABEL_6:
   node[1] = ja;
   _STL::_Rb_global<bool>::_Rebalance((int)node, (_DWORD *)(*this + 4));
   ++*(this + 1);
-  *a2 = node;
-  return a2;
+  *p_i = node;
+  return p_i;
 }
 
 //----- (00401C8F) --------------------------------------------------------
 int __thiscall _STL::_Rb_tree<unsigned char,_STL::pair<unsigned char const,int>,_STL::_Select1st<_STL::pair<unsigned char const,int>>,_STL::less<unsigned char>,_STL::allocator<_STL::pair<unsigned char const,int>>>::insert_unique(
         int *this,
         int a2,
-        unsigned __int8 *a3)
+        unsigned __int8 *i)
 {
   int j_2; // ecx
   int j_1; // esi
@@ -2955,7 +2935,7 @@ int __thiscall _STL::_Rb_tree<unsigned char,_STL::pair<unsigned char const,int>,
   v7 = true;
   if ( j_1 != 0 )
   {
-    v8 = *a3;
+    v8 = *i;
     do
     {
       j = j_1;
@@ -2974,10 +2954,10 @@ int __thiscall _STL::_Rb_tree<unsigned char,_STL::pair<unsigned char const,int>,
     {
       v10 = _STL::_Rb_tree<unsigned char,_STL::pair<unsigned char const,int>,_STL::_Select1st<_STL::pair<unsigned char const,int>>,_STL::less<unsigned char>,_STL::allocator<_STL::pair<unsigned char const,int>>>::_M_insert(
               this,
-              &a3,
+              &i,
               j,
               j,
-              a3,
+              i,
               0);
 LABEL_13:
       v11 = *v10;
@@ -2987,14 +2967,14 @@ LABEL_13:
     }
     j_3 = _STL::_Rb_global<bool>::_M_decrement(j);
   }
-  if ( *(_BYTE *)(j_3 + 16) < *a3 )
+  if ( *(_BYTE *)(j_3 + 16) < *i )
   {
     v10 = _STL::_Rb_tree<unsigned char,_STL::pair<unsigned char const,int>,_STL::_Select1st<_STL::pair<unsigned char const,int>>,_STL::less<unsigned char>,_STL::allocator<_STL::pair<unsigned char const,int>>>::_M_insert(
             this,
-            &a3,
+            &i,
             j_1,
             j,
-            a3,
+            i,
             0);
     goto LABEL_13;
   }
@@ -3006,7 +2986,7 @@ LABEL_13:
 //----- (00401D15) --------------------------------------------------------
 _DWORD *__thiscall _STL::_Rb_tree<unsigned char,_STL::pair<unsigned char const,unsigned short>,_STL::_Select1st<_STL::pair<unsigned char const,unsigned short>>,_STL::less<unsigned char>,_STL::allocator<_STL::pair<unsigned char const,unsigned short>>>::_M_insert(
         _DWORD *this,
-        _DWORD *a2,
+        _DWORD *p_p_j,
         int j,
         int ja,
         _BYTE *p_j,
@@ -3044,8 +3024,8 @@ LABEL_6:
   node[1] = ja;
   _STL::_Rb_global<bool>::_Rebalance((int)node, (_DWORD *)(*this + 4));
   ++*(this + 1);
-  *a2 = node;
-  return a2;
+  *p_p_j = node;
+  return p_p_j;
 }
 
 //----- (00401D9D) --------------------------------------------------------
@@ -3271,22 +3251,22 @@ int *__thiscall _STL::_Rb_tree<unsigned char,_STL::pair<unsigned char const,int>
         int *this,
         int *p_i,
         int j,
-        unsigned __int8 *a4)
+        unsigned __int8 *i)
 {
   _DWORD *j_2; // eax
   int *inserted; // eax
-  unsigned __int8 *v7; // ebx
+  unsigned __int8 *i_2; // ebx
   unsigned __int8 v8; // cl
   _DWORD *j_5; // eax
   int j_6; // eax
   int j_3; // eax
   unsigned __int8 v13; // cl
-  char v14; // dl
+  char i_4; // dl
   int j_4; // [esp-Ch] [ebp-20h]
-  unsigned __int8 *v16; // [esp-8h] [ebp-1Ch]
+  unsigned __int8 *i_1; // [esp-8h] [ebp-1Ch]
   int j_1; // [esp-4h] [ebp-18h]
-  _BYTE v18[8]; // [esp+Ch] [ebp-8h] BYREF
-  char v19; // [esp+27h] [ebp+13h]
+  int v18[2]; // [esp+Ch] [ebp-8h] BYREF
+  char i_3; // [esp+27h] [ebp+13h]
 
   j_2 = (_DWORD *)*this;
   if ( j != *(_DWORD *)(*this + 8) )
@@ -3294,37 +3274,37 @@ int *__thiscall _STL::_Rb_tree<unsigned char,_STL::pair<unsigned char const,int>
     if ( (_DWORD *)j == j_2 )
     {
       j_6 = j_2[3];
-      if ( *(_BYTE *)(j_6 + 16) >= *a4 )
+      if ( *(_BYTE *)(j_6 + 16) >= *i )
         goto LABEL_3;
       j_1 = j;
-      v16 = a4;
+      i_1 = i;
       j_4 = j_6;
       goto LABEL_16;
     }
     j_3 = _STL::_Rb_global<bool>::_M_decrement(j);
-    v7 = a4;
-    v13 = *a4;
-    v19 = *a4 < *(_BYTE *)(j + 16);
-    if ( v19 == 0 || *(_BYTE *)(j_3 + 16) >= v13 )
+    i_2 = i;
+    v13 = *i;
+    i_3 = *i < *(_BYTE *)(j + 16);
+    if ( i_3 == 0 || *(_BYTE *)(j_3 + 16) >= v13 )
     {
       j_5 = _STL::_Rb_global<bool>::_M_increment((_DWORD *)j);
-      v14 = v19 == 0;
-      if ( v19 == 0 )
+      i_4 = i_3 == 0;
+      if ( i_3 == 0 )
       {
-        v14 = *(_BYTE *)(j + 16) < *v7;
-        if ( *(_BYTE *)(j + 16) >= *v7 )
+        i_4 = *(_BYTE *)(j + 16) < *i_2;
+        if ( *(_BYTE *)(j + 16) >= *i_2 )
           goto LABEL_6;
-        if ( j_5 == (_DWORD *)*this || *v7 < *((_BYTE *)j_5 + 16) )
+        if ( j_5 == (_DWORD *)*this || *i_2 < *((_BYTE *)j_5 + 16) )
           goto LABEL_26;
       }
-      if ( v19 == v14 )
+      if ( i_3 == i_4 )
         goto LABEL_6;
       goto LABEL_29;
     }
     if ( *(_DWORD *)(j_3 + 12) == 0 )
     {
       j_1 = j_3;
-      v16 = v7;
+      i_1 = i_2;
       j_4 = j_3;
       goto LABEL_16;
     }
@@ -3334,17 +3314,17 @@ LABEL_21:
       p_i,
       j,
       j,
-      v7,
+      i_2,
       0);
     return p_i;
   }
   if ( *(this + 1) != 0 )
   {
-    v7 = a4;
+    i_2 = i;
     v8 = *(_BYTE *)(j + 16);
-    if ( v8 <= *a4 )
+    if ( v8 <= *i )
     {
-      if ( v8 >= *a4 )
+      if ( v8 >= *i )
       {
 LABEL_6:
         *p_i = j;
@@ -3354,11 +3334,11 @@ LABEL_6:
       if ( j_5 == (_DWORD *)*this )
       {
         j_1 = j;
-        v16 = a4;
+        i_1 = i;
         j_4 = j;
         goto LABEL_16;
       }
-      if ( *a4 < *((_BYTE *)j_5 + 16) )
+      if ( *i < *((_BYTE *)j_5 + 16) )
       {
 LABEL_26:
         if ( *(_DWORD *)(j + 12) != 0 )
@@ -3368,12 +3348,12 @@ LABEL_26:
             p_i,
             (int)j_5,
             (int)j_5,
-            v7,
+            i_2,
             0);
           return p_i;
         }
         j_1 = j;
-        v16 = v7;
+        i_1 = i_2;
         j_4 = j;
 LABEL_16:
         _STL::_Rb_tree<unsigned char,_STL::pair<unsigned char const,int>,_STL::_Select1st<_STL::pair<unsigned char const,int>>,_STL::less<unsigned char>,_STL::allocator<_STL::pair<unsigned char const,int>>>::_M_insert(
@@ -3381,7 +3361,7 @@ LABEL_16:
           p_i,
           0,
           j_4,
-          v16,
+          i_1,
           j_1);
         return p_i;
       }
@@ -3389,7 +3369,7 @@ LABEL_29:
       inserted = (int *)_STL::_Rb_tree<unsigned char,_STL::pair<unsigned char const,int>,_STL::_Select1st<_STL::pair<unsigned char const,int>>,_STL::less<unsigned char>,_STL::allocator<_STL::pair<unsigned char const,int>>>::insert_unique(
                           this,
                           (int)v18,
-                          v7);
+                          i_2);
       goto LABEL_30;
     }
     goto LABEL_21;
@@ -3398,7 +3378,7 @@ LABEL_3:
   inserted = (int *)_STL::_Rb_tree<unsigned char,_STL::pair<unsigned char const,int>,_STL::_Select1st<_STL::pair<unsigned char const,int>>,_STL::less<unsigned char>,_STL::allocator<_STL::pair<unsigned char const,int>>>::insert_unique(
                       this,
                       (int)v18,
-                      a4);
+                      i);
 LABEL_30:
   *p_i = *inserted;
   return p_i;
@@ -5417,15 +5397,15 @@ int __cdecl _STL::__distance<_STL::_Rb_tree_iterator<_STL::pair<unsigned int con
 //----- (004039F1) --------------------------------------------------------
 _DWORD *__cdecl _STL::_Construct<_STL::pair<unsigned int const,void *>,_STL::pair<unsigned int const,void *>>(
         _DWORD *a1,
-        _DWORD *a2)
+        _DWORD *p_value)
 {
   _DWORD *result; // eax
 
   result = a1;
   if ( a1 != nullptr )
   {
-    *a1 = *a2;
-    a1[1] = a2[1];
+    *a1 = *p_value;
+    a1[1] = p_value[1];
   }
   return result;
 }
@@ -7034,7 +7014,7 @@ void __userpurge CChannelPool::OnPacket(
     }
     goto LABEL_42;
   }
-  if ( (unsigned __int8)n69 <= 0x54u )
+  if ( (unsigned __int8)n69 <= 84u )
   {
     if ( n69 == 84 )
     {
@@ -7052,28 +7032,28 @@ void __userpurge CChannelPool::OnPacket(
     }
     switch ( n69 )
     {
-      case 'P':
+      case 80:
         (*(void (__thiscall **)(int, CReceivedPacketBase *, CSocket *))(*(_DWORD *)TSingleton<CBaseSessionTable>::ms_pInstance
                                                                       + 52))(
           TSingleton<CBaseSessionTable>::ms_pInstance,
           a3,
           M_start);
         return;
-      case 'Q':
+      case 81:
         (*(void (__thiscall **)(int, CReceivedPacketBase *, CSocket *))(*(_DWORD *)TSingleton<CBaseSessionTable>::ms_pInstance
                                                                       + 64))(
           TSingleton<CBaseSessionTable>::ms_pInstance,
           a3,
           M_start);
         return;
-      case 'R':
+      case 82:
         (*(void (__thiscall **)(int, CReceivedPacketBase *, CSocket *))(*(_DWORD *)TSingleton<CBaseSessionTable>::ms_pInstance
                                                                       + 68))(
           TSingleton<CBaseSessionTable>::ms_pInstance,
           a3,
           M_start);
         return;
-      case 'S':
+      case 83:
         CChannelPool::OnEnterLobbyStage(this, a3, (struct CClientSocket *)M_start);
         return;
       default:
@@ -7102,7 +7082,7 @@ LABEL_46:
         return;
       }
 LABEL_42:
-      if ( (unsigned __int8)n69 > 0x5Fu && (unsigned __int8)n69 < 0xBEu )
+      if ( (unsigned __int8)n69 > 95u && (unsigned __int8)n69 < 190u )
       {
         a3->m_uOffset = 0;
         (*(void (__thiscall **)(int, CReceivedPacketBase *, CSocket *))(*(_DWORD *)TSingleton<CBaseSessionTable>::ms_pInstance
@@ -7327,7 +7307,7 @@ void __thiscall CChatPool::OnPacket(CChatPool *this, CReceivedPacketBase *a2, CS
   int n2; // eax
 
   n30 = CReceivedPacketBase::Decode1(a2);
-  if ( n30 > 0x1Eu )
+  if ( n30 > 30u )
   {
     switch ( n30 )
     {
@@ -16870,7 +16850,7 @@ _DWORD *__thiscall _STL::_Rb_tree<int,_STL::pair<int const,int>,_STL::_Select1st
 //----- (0040E7C3) --------------------------------------------------------
 _DWORD *__thiscall _STL::_Rb_tree<int,_STL::pair<int const,int>,_STL::_Select1st<_STL::pair<int const,int>>,_STL::less<int>,_STL::allocator<_STL::pair<int const,int>>>::insert_unique(
         int *this,
-        _DWORD *a2,
+        _DWORD *p_p_n,
         _DWORD *j,
         int *a4)
 {
@@ -16932,12 +16912,12 @@ _DWORD *__thiscall _STL::_Rb_tree<int,_STL::pair<int const,int>,_STL::_Select1st
 LABEL_21:
     _STL::_Rb_tree<int,_STL::pair<int const,int>,_STL::_Select1st<_STL::pair<int const,int>>,_STL::less<int>,_STL::allocator<_STL::pair<int const,int>>>::_M_insert(
       this,
-      a2,
+      p_p_n,
       (int)j,
       j,
       v7,
       0);
-    return a2;
+    return p_p_n;
   }
   if ( *(this + 1) != 0 )
   {
@@ -16948,8 +16928,8 @@ LABEL_21:
       if ( v8 >= *a4 )
       {
 LABEL_6:
-        *a2 = j;
-        return a2;
+        *p_p_n = j;
+        return p_p_n;
       }
       j_5 = _STL::_Rb_global<bool>::_M_increment(j);
       if ( j_5 == (_DWORD *)*this )
@@ -16966,12 +16946,12 @@ LABEL_26:
         {
           _STL::_Rb_tree<int,_STL::pair<int const,int>,_STL::_Select1st<_STL::pair<int const,int>>,_STL::less<int>,_STL::allocator<_STL::pair<int const,int>>>::_M_insert(
             this,
-            a2,
+            p_p_n,
             (int)j_5,
             j_5,
             v7,
             0);
-          return a2;
+          return p_p_n;
         }
         j_1 = j;
         v16 = v7;
@@ -16979,12 +16959,12 @@ LABEL_26:
 LABEL_16:
         _STL::_Rb_tree<int,_STL::pair<int const,int>,_STL::_Select1st<_STL::pair<int const,int>>,_STL::less<int>,_STL::allocator<_STL::pair<int const,int>>>::_M_insert(
           this,
-          a2,
+          p_p_n,
           0,
           j_4,
           v16,
           (int)j_1);
-        return a2;
+        return p_p_n;
       }
 LABEL_29:
       inserted = (_DWORD *)_STL::_Rb_tree<int,_STL::pair<int const,int>,_STL::_Select1st<_STL::pair<int const,int>>,_STL::less<int>,_STL::allocator<_STL::pair<int const,int>>>::insert_unique(
@@ -17001,8 +16981,8 @@ LABEL_3:
                          (int)v18,
                          a4);
 LABEL_30:
-  *a2 = *inserted;
-  return a2;
+  *p_p_n = *inserted;
+  return p_p_n;
 }
 
 //----- (0040E8E9) --------------------------------------------------------
@@ -24928,19 +24908,19 @@ _DWORD *__thiscall _STL::set<int,_STL::less<int>,_STL::allocator<int>>::find<int
 //----- (00415074) --------------------------------------------------------
 _DWORD *__thiscall _STL::_Rb_tree<int,int,_STL::_Identity<int>,_STL::less<int>,_STL::allocator<int>>::_M_insert(
         _DWORD *this,
-        _DWORD *a2,
+        _DWORD *p_p_n,
         int j,
         _DWORD *ja,
-        _DWORD *a5,
+        _DWORD *p_n,
         int a6)
 {
   _DWORD *node; // esi
   _DWORD *v8; // eax
   _DWORD *v9; // eax
 
-  if ( ja == (_DWORD *)*this || a6 == 0 && (j != 0 || *a5 < ja[4]) )
+  if ( ja == (_DWORD *)*this || a6 == 0 && (j != 0 || *p_n < ja[4]) )
   {
-    node = _STL::_Rb_tree<int,int,_STL::_Identity<int>,_STL::less<int>,_STL::allocator<int>>::_M_create_node(a5);
+    node = _STL::_Rb_tree<int,int,_STL::_Identity<int>,_STL::less<int>,_STL::allocator<int>>::_M_create_node(p_n);
     ja[2] = node;
     v9 = (_DWORD *)*this;
     if ( ja == (_DWORD *)*this )
@@ -24954,7 +24934,7 @@ _DWORD *__thiscall _STL::_Rb_tree<int,int,_STL::_Identity<int>,_STL::less<int>,_
   }
   else
   {
-    node = _STL::_Rb_tree<int,int,_STL::_Identity<int>,_STL::less<int>,_STL::allocator<int>>::_M_create_node(a5);
+    node = _STL::_Rb_tree<int,int,_STL::_Identity<int>,_STL::less<int>,_STL::allocator<int>>::_M_create_node(p_n);
     ja[3] = node;
     v8 = (_DWORD *)*this;
     if ( ja == *(_DWORD **)(*this + 12) )
@@ -24966,8 +24946,8 @@ LABEL_6:
   node[1] = ja;
   _STL::_Rb_global<bool>::_Rebalance((int)node, (_DWORD *)(*this + 4));
   ++*(this + 1);
-  *a2 = node;
-  return a2;
+  *p_p_n = node;
+  return p_p_n;
 }
 
 //----- (00415101) --------------------------------------------------------
@@ -27596,7 +27576,7 @@ UserInventory *__cdecl _STL::__uninitialized_copy<UserInventory *,UserInventory 
 UserInventory *__cdecl _STL::__uninitialized_fill_n<UserInventory *,unsigned int,UserInventory>(
         UserInventory *p,
         int a2,
-        struct UserInventory *a3)
+        struct UserInventory *p_value)
 {
   int v4; // [esp+0h] [ebp-20h] BYREF
   UserInventory *p_1; // [esp+Ch] [ebp-14h]
@@ -27608,7 +27588,7 @@ UserInventory *__cdecl _STL::__uninitialized_fill_n<UserInventory *,unsigned int
   p_1 = p;
   while ( a2 != 0 )
   {
-    _STL::_Construct<UserInventory,UserInventory>(p_1, a3);
+    _STL::_Construct<UserInventory,UserInventory>(p_1, p_value);
     --a2;
     p_1 = (UserInventory *)((char *)p_1 + 84);
   }
@@ -28748,13 +28728,13 @@ _DWORD *__thiscall _STL::_Rb_tree<CClientSocket *,CClientSocket *,_STL::_Identit
 
 //----- (004181BA) --------------------------------------------------------
 _DWORD *__stdcall _STL::_Rb_tree<CUser *,CUser *,_STL::_Identity<CUser *>,_STL::less<CUser *>,_STL::allocator<CUser *>>::_M_create_node(
-        _DWORD *a1)
+        _DWORD *p_User)
 {
   _DWORD *result; // eax
 
   result = _STL::__node_alloc<1,0>::allocate(0x14u);
   if ( result != (_DWORD *)-16 )
-    result[4] = *a1;
+    result[4] = *p_User;
   return result;
 }
 
@@ -29183,13 +29163,13 @@ LABEL_13:
 int __thiscall _STL::_Rb_tree<CClientSocket *,CClientSocket *,_STL::_Identity<CClientSocket *>,_STL::less<CClientSocket *>,_STL::allocator<CClientSocket *>>::insert_unique(
         int *this,
         int a2,
-        unsigned int *a3)
+        unsigned int *p_M_start)
 {
   int j_2; // ecx
   _DWORD *j_1; // esi
   _DWORD *j; // edi
   bool v7; // dl
-  unsigned int v8; // eax
+  unsigned int M_start; // eax
   int j_3; // eax
   int *v10; // eax
   int v11; // ecx
@@ -29200,12 +29180,12 @@ int __thiscall _STL::_Rb_tree<CClientSocket *,CClientSocket *,_STL::_Identity<CC
   v7 = true;
   if ( j_1 != nullptr )
   {
-    v8 = *a3;
+    M_start = *p_M_start;
     do
     {
       j = j_1;
-      v7 = v8 < j_1[4];
-      if ( v8 >= j_1[4] )
+      v7 = M_start < j_1[4];
+      if ( M_start >= j_1[4] )
         j_1 = (_DWORD *)j_1[3];
       else
         j_1 = (_DWORD *)j_1[2];
@@ -29219,10 +29199,10 @@ int __thiscall _STL::_Rb_tree<CClientSocket *,CClientSocket *,_STL::_Identity<CC
     {
       v10 = _STL::_Rb_tree<CClientSocket *,CClientSocket *,_STL::_Identity<CClientSocket *>,_STL::less<CClientSocket *>,_STL::allocator<CClientSocket *>>::_M_insert(
               this,
-              &a3,
+              &p_M_start,
               (int)j,
               j,
-              a3,
+              p_M_start,
               0);
 LABEL_13:
       v11 = *v10;
@@ -29232,14 +29212,14 @@ LABEL_13:
     }
     j_3 = _STL::_Rb_global<bool>::_M_decrement((int)j);
   }
-  if ( *(_DWORD *)(j_3 + 16) < *a3 )
+  if ( *(_DWORD *)(j_3 + 16) < *p_M_start )
   {
     v10 = _STL::_Rb_tree<CClientSocket *,CClientSocket *,_STL::_Identity<CClientSocket *>,_STL::less<CClientSocket *>,_STL::allocator<CClientSocket *>>::_M_insert(
             this,
-            &a3,
+            &p_M_start,
             (int)j_1,
             j,
-            a3,
+            p_M_start,
             0);
     goto LABEL_13;
   }
@@ -40107,11 +40087,11 @@ void __thiscall CListSession::~CListSession(CListSession *this)
 // 48FDEC: using guessed type void *CListSession::`vftable';
 
 //----- (00423848) --------------------------------------------------------
-void __thiscall CListSession::Init(CListSession *this, char *a2, char *Source)
+void __thiscall CListSession::Init(CListSession *this, char *_M_start, char *Source)
 {
   bool v4; // cl
 
-  CBaseSession::Init(this, a2);
+  CBaseSession::Init(this, _M_start);
   strcpy((char *)this + 834, Source);
   v4 = *Source != 0;
   *((_WORD *)this + 425) = -1;
@@ -42851,47 +42831,47 @@ void __thiscall CPracticeSession::OnPacket(CPracticeSession *this, CReceivedPack
   {
     switch ( (char)n140 )
     {
-      case -115:
+      case 141:
         CGameSession::OnBombKickThrow(this, n, (struct CClientSocket *)n8);
         break;
-      case -114:
+      case 142:
         CGameSession::OnSetBombTimer(this, n, (struct CClientSocket *)n8);
         break;
-      case -113:
+      case 143:
         CGameSession::OnMovableBoxMove(this, n, (struct CClientSocket *)n8);
         break;
-      case -112:
+      case 144:
         CGameSession::OnRequestEatItem(this, n, (struct CClientSocket *)n8);
         break;
-      case -111:
+      case 145:
         CGameSession::OnRequestEatObstacle(this, n, n8);
         break;
-      case -110:
+      case 146:
         CGameSession::OnSetBomberEvent(this, (int)this, n, (struct CClientSocket *)n8);
         break;
-      case -109:
+      case 147:
         CGameSession::OnSetEffect(this, n, (struct CClientSocket *)n8);
         break;
-      case -108:
+      case 148:
         CGameSession::OnDropObstacle(this, n, (struct CClientSocket *)n8);
         break;
-      case -107:
+      case 149:
         CGameSession::OnEventItem(this, n, (struct CClientSocket *)n8);
         break;
-      case -106:
+      case 150:
         CGameSession::OnDestroyBox(this, n, (struct CClientSocket *)n8);
         break;
-      case -105:
+      case 151:
         CGameSession::OnRequestGenerateGhost(this, n, (CSocket *)n8);
         break;
-      case -104:
+      case 152:
         CGameSession::OnRequestDestroyGhost(this, n, (struct CClientSocket *)n8);
         break;
-      case -71:
+      case 185:
         if ( *((_DWORD *)this + 213) != 0 && *((_DWORD *)this + 246) == 1 )
           CGameSession::OnNotifyUDPPacketLoss(this, n, (struct CClientSocket *)n8);
         break;
-      case -70:
+      case 186:
         (*(void (__thiscall **)(CPracticeSession *, CReceivedPacketBase *, CNamedObject *))(*(_DWORD *)this + 164))(
           this,
           n,
@@ -42908,25 +42888,25 @@ void __thiscall CPracticeSession::OnPacket(CPracticeSession *this, CReceivedPack
       CGameSession::OnBombIgnite(this, n, (struct CClientSocket *)n8);
       return;
     }
-    if ( (unsigned __int8)n140 <= 0x69u )
+    if ( (unsigned __int8)n140 <= 105u )
     {
-      if ( (unsigned __int8)n140 < 0x66u && (unsigned __int8)n140 != 96 )
+      if ( (unsigned __int8)n140 < 102u && (unsigned __int8)n140 != 96 )
       {
         switch ( n140 )
         {
-          case 'a':
+          case 97:
             CGameSession::OnSelectMap(this, n, (struct CClientSocket *)n8);
             break;
-          case 'b':
+          case 98:
             CPracticeSession::OnSelectColor(this, n, (struct CClientSocket *)n8);
             break;
-          case 'c':
+          case 99:
             (*(void (__thiscall **)(CPracticeSession *, CReceivedPacketBase *, CNamedObject *))(*(_DWORD *)this + 120))(
               this,
               n,
               n8);
             break;
-          case 'd':
+          case 100:
             CPracticeSession::OnOpenCloseSlot(this, n, (struct CClientSocket *)n8);
             break;
           default:
@@ -42945,12 +42925,12 @@ LABEL_22:
     }
     switch ( n140 )
     {
-      case 'k':
+      case 107:
         goto LABEL_22;
-      case 'l':
+      case 108:
         CBaseSession::OnPlayEmotion(this, n, (struct CClientSocket *)n8);
         break;
-      case 'n':
+      case 110:
         CPracticeSession::OnRequestAILevelChange(this, n, (struct CClientSocket *)n8);
         break;
       default:
@@ -45298,15 +45278,15 @@ _DWORD *__cdecl _STL::for_each<CGameEvent * const *,MakeAllPacket>(_DWORD *a1, _
 }
 
 //----- (00428B0E) --------------------------------------------------------
-_DWORD *__cdecl _STL::fill_n<CGameEvent * *,unsigned int,CGameEvent *>(_DWORD *a1, int i_1, _DWORD *a3)
+_DWORD *__cdecl _STL::fill_n<CGameEvent * *,unsigned int,CGameEvent *>(_DWORD *a1, int i, _DWORD *p_thisa)
 {
-  int i; // eax
+  int j; // eax
   _DWORD *v4; // edx
 
-  for ( i = i_1; i != 0; *v4 = *a3 )
+  for ( j = i; j != 0; *v4 = *p_thisa )
   {
     v4 = a1++;
-    --i;
+    --j;
   }
   return a1;
 }
@@ -63168,7 +63148,10 @@ unsigned int __thiscall CSendPacketBase::EncodeBufferAt(
 }
 
 //----- (0043A440) --------------------------------------------------------
-int __thiscall CSendPacketBase::EncodeOSStreamAt(CSendPacketBase *this, unsigned int uOffset, COSmartStream *osstream)
+unsigned int __thiscall CSendPacketBase::EncodeOSStreamAt(
+        CSendPacketBase *this,
+        unsigned int uOffset,
+        COSmartStream *osstream)
 {
   unsigned int BufferSize; // ebx
   int m_nCipherDegree; // eax
@@ -77799,20 +77782,20 @@ _DWORD *__cdecl _STL::search<_STL::reverse_iterator<char const *>,_STL::reverse_
         _DWORD *a1,
         int a2,
         int a3,
-        int a4,
-        int a5)
+        int Str_1,
+        int Str)
 {
   int v6; // [esp+4Ch] [ebp-10h]
   int v7; // [esp+58h] [ebp-4h]
 
-  if ( a3 == a2 || a5 == a4 )
+  if ( a3 == a2 || Str == Str_1 )
   {
     *a1 = a2;
     return a1;
   }
-  else if ( a5 == a4 - 1 )
+  else if ( Str == Str_1 - 1 )
   {
-    while ( a3 != a2 && *(char *)(a4 - 1) != *(char *)(a2 - 1) )
+    while ( a3 != a2 && *(char *)(Str_1 - 1) != *(char *)(a2 - 1) )
       --a2;
     *a1 = a2;
     return a1;
@@ -77821,16 +77804,16 @@ _DWORD *__cdecl _STL::search<_STL::reverse_iterator<char const *>,_STL::reverse_
   {
     while ( a3 != a2 )
     {
-      while ( a3 != a2 && *(char *)(a4 - 1) != *(char *)(a2 - 1) )
+      while ( a3 != a2 && *(char *)(Str_1 - 1) != *(char *)(a2 - 1) )
         --a2;
-      while ( a3 != a2 && *(char *)(a4 - 1) != *(char *)(a2 - 1) )
+      while ( a3 != a2 && *(char *)(Str_1 - 1) != *(char *)(a2 - 1) )
         --a2;
       if ( a3 == a2 )
       {
         *a1 = a3;
         return a1;
       }
-      v7 = a4 - 1;
+      v7 = Str_1 - 1;
       v6 = a2 - 1;
       if ( a3 == a2 - 1 )
       {
@@ -77839,7 +77822,7 @@ _DWORD *__cdecl _STL::search<_STL::reverse_iterator<char const *>,_STL::reverse_
       }
       while ( *(char *)(v7 - 1) == *(char *)(v6 - 1) )
       {
-        if ( a5 == --v7 )
+        if ( Str == --v7 )
         {
           *a1 = a2;
           return a1;
