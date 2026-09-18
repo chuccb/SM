@@ -36,7 +36,7 @@ import { CPacketSocket } from "../core/CPacketSocket.ts";
 import { CReceivedPacket, CSendPacket } from "../core/Packet.ts";
 import { CDBMan } from "../db/DBMan.ts";
 import { CData, CIDFMan } from "./CData.ts";
-import { HOSTHANDLE, SplitDatagram, UDPPacketLen, UDPPacketType } from "./MTUDP.ts";
+import { HOSTHANDLE, SplitDatagram } from "./MTUDP.ts";
 import { CLocalSocket } from "../lib/CenterLink.ts";
 import { CM_ReceivedPacket, MC_ReceivedPacket, SVRCLASS_GAME } from "../lib/S2S.ts";
 import {
@@ -48,7 +48,11 @@ import {
   GS_ReceivedPacket,
   SESSION_ReceivedPacket,
 } from "../lib/PacketIDs.ts";
-import { CDynInfoCalculator_GetLevel, kLevelTableSize } from "../login/LevelTable.ts";
+import {
+  CDynInfoCalculator_GetLevel,
+  CDynInfoCalculator_GetMaxExpInLevel,
+  kLevelTableSize,
+} from "../login/LevelTable.ts";
 
 /** Client-facing packet ids only the game server sends. */
 export const GS_ClientSend = {
@@ -127,6 +131,7 @@ export const GS_ClientSend = {
   OnSetBombTimerRes: 152, // CGameSession::Update tick [E1 n][n×(E2 bombId)(E1 kick)]
   OnReturnPrepareStage: 164, // CGameSession::DoReturnPrepareStage [E1 0]
   OnGameResult: 163, // CGameSession::SendGameResult (the results unit)
+  OnNeedStartGame: 121, // CGameSession::DeferBanChief [E1 0/1/2/3][E4 seconds]
   OnUdpLossBan: 195, // asm-only site in Update: empty body + stage=4 (UDP-loss kick)
   OnAirplaneItemProb: 173, // CGameSession::SendAirplaneItemProb [E1 prob]
   OnHackingKick: 196, // CGameSession::OnHackingSuspected [E1 slot]
@@ -1593,6 +1598,265 @@ export function CRC32(crc: number, data: Uint8Array, len: number): number {
 // ============================ CGameContext / in-play state ============================
 
 /**
+ * CBanChief (+12576) — the idle-room start-gate timers
+ * (FxServer.exe.lst:401010..401140).  All delays are timeGetTime ticks.
+ */
+export class CBanChief {
+  m_dwCanStartTime = 0; // +4 (SetCanStart)
+  m_nCanStart = 0; // +8 (SetCanStart)
+  m_nOddSlot = 0; // +12 (SetOddSlot)
+  m_dwOddSlotTime = 0; // +16 (SetOddSlot)
+  m_nWarnedBan = 0; // +20 (SetWarnedBan)
+  m_dwWarnedBanTime = 0; // +24 (SetWarnedBan)
+  m_nWarnedBanOdd = 0; // +28 (SetWarnedBanOddSlot)
+  m_dwWarnedBanOddTime = 0; // +32 (SetWarnedBanOddSlot)
+
+  /** CBanChief::Init (401101) — SetOddSlot(0) then SetCanStart(0). */
+  Init(): void {
+    this.SetOddSlot(0);
+    this.SetCanStart(0);
+  }
+
+  /** CBanChief::SetWarnedBanOddSlot (401010). */
+  SetWarnedBanOdd(n: number): void {
+    this.m_nWarnedBanOdd = n;
+    this.m_dwWarnedBanOddTime = n !== 0 ? CGameClock.Now() : 0;
+  }
+
+  /**
+   * CBanChief::IsBanChief (40102F) — true once timeGetTime-SetCanStart beats
+   * (flag ? 10000 : 20000) × superChief, superChief being the 1/3 flag from
+   * "Item/SuperChief".  The middle gameType argument is not read.
+   */
+  IsBanChief(nFlag: number, _gameType: number, superChief: number): boolean {
+    const elapsed = (CGameClock.Now() - this.m_dwCanStartTime) | 0;
+    const v = (nFlag !== 0 ? 10000 : 20000) * superChief;
+    return elapsed > v;
+  }
+
+  /** CBanChief::SetWarnedBan (401065). */
+  SetWarnedBan(n: number): void {
+    this.m_nWarnedBan = n;
+    this.m_dwWarnedBanTime = n !== 0 ? CGameClock.Now() : 0;
+  }
+
+  /** CBanChief::GetWarningDelay (401084) — ticks × 10000 (32-bit wrap). */
+  GetWarningDelay(ticks: number): number {
+    return Math.imul(ticks, 10000) >>> 0;
+  }
+
+  /** CBanChief::GetOddSlotInManner (401091) — ticks × 5000 (32-bit wrap). */
+  GetOddSlotInManner(ticks: number): number {
+    return Math.imul(ticks, 5000) >>> 0;
+  }
+
+  /** CBanChief::SetCanStart (4010BB) — also clears both warned states. */
+  SetCanStart(n: number): void {
+    this.m_nWarnedBan = 0;
+    this.m_dwWarnedBanTime = 0;
+    this.m_dwCanStartTime = CGameClock.Now();
+    this.m_nCanStart = n;
+  }
+
+  /** CBanChief::SetOddSlot (4010DA) — clears the odd-slot warned state. */
+  SetOddSlot(n: number): void {
+    this.m_nOddSlot = n;
+    this.m_dwOddSlotTime = n !== 0 ? CGameClock.Now() : 0;
+    this.m_nWarnedBanOdd = 0;
+    this.m_dwWarnedBanOddTime = 0;
+  }
+}
+
+/**
+ * CDynInfoCalculator — the 0x254-byte statistics block at CGameSession+11684
+ * (+0x2DA4).  CDynInfoCalculator::Init runs once per launch (the launch tail
+ * of CGameSession::LaunchGameStage); the bomber-event / game-result units
+ * then read it to award exp.  All offsets below are calculator relative.
+ */
+export class CDynInfoCalculator {
+  m_nPlayerCount = 0; // +4 (non-empty slots)
+  m_dwAvgWeight = 0; // +8 (float: Σ sqrt(level+100) / m_nPlayerCount)
+  m_dwColourWeight = new Float32Array(8); // +12 (per-colour average sqrt(level+100))
+  m_vtSlotWeight = new Float32Array(8); // +44 (+0x2C, per-slot sqrt(level+100))
+  m_nSaveMatrix = new Int32Array(64); // +76 (+0x4C, 8×8 first-save-per-colour marks)
+  m_vtKills = new Int32Array(8); // +332 (+0x14C, SetKillerIndex)
+  m_vtSaves = new Int32Array(8); // +364 (+0x16C, SetSaverIndex)
+  m_nUnk18C = new Int32Array(8); // +396 (+0x18C, zeroed only)
+  m_nUnk1AC = new Int32Array(8); // +428 (+0x1AC, zeroed only)
+  m_vtColour = new Int32Array(8).fill(-1); // +460 (+0x1CC, slot → colour)
+  m_vtColourCount = new Int32Array(8); // +492 (+0x1EC, players per colour)
+  m_nUnk20C = new Int32Array(8); // +524 (+0x20C, zeroed only)
+  m_nUnk22C = new Int32Array(8); // +556 (+0x22C, zeroed only)
+  m_nPremiumFlag = 0; // +588 (+0x24C, IsPremiumRewardCondition bypass — never set in FXGS)
+  m_nInvalidGame = 1; // +592 (+0x250, forced 1 by Init; 0 once a second socket is seen)
+
+  /**
+   * CDynInfoCalculator::Init (FxServer.exe.lst:40B337) — m_rgPlayer and the
+   * slot-state triples (the colour byte lives at slotstate + 3*slot + 2).
+   */
+  Init(users: (CUser | null)[], slotstates: Uint8Array): void {
+    this.m_nInvalidGame = 1; // mov [esi+250h], 1
+    this.m_nPremiumFlag = 0;
+    this.m_nPlayerCount = 0;
+    this.m_dwAvgWeight = 0;
+    for (let c = 0; c < 8; c++) {
+      this.m_vtColour[c] = -1;
+      this.m_vtSlotWeight[c] = 0;
+      this.m_vtColourCount[c] = 0;
+      this.m_vtSaves[c] = 0; // [eax-80h]
+      this.m_vtKills[c] = 0; // [eax-0A0h]
+      this.m_nUnk1AC[c] = 0; // [eax-40h]
+      this.m_nUnk18C[c] = 0; // [eax-60h]
+      this.m_nUnk20C[c] = 0; // [eax+20h]
+      this.m_nUnk22C[c] = 0; // [eax+40h]
+      this.m_dwColourWeight[c] = 0; // fldz / [eax-1C0h]
+    }
+    this.m_nSaveMatrix.fill(0); // memset(+4Ch, 0, 0x100)
+    let firstSocket: CClientSocket | null = null; // var_C
+    for (let slot = 0; slot < 8; slot++) {
+      const user = users[slot]!;
+      if (user === null) continue;
+      if (firstSocket === null) {
+        firstSocket = user.m_pSocket;
+      } else if (firstSocket !== user.m_pSocket) {
+        this.m_nInvalidGame = 0; // and [esi+250h], 0
+      }
+      this.m_nPlayerCount++;
+      const level = user.m_nLevel; // [edi+7C0h]
+      this.m_dwAvgWeight += Math.sqrt(level + 100.0); // sqrt ×1 → +8
+      const colour = slotstates[3 * slot + 2]! & 0x1f;
+      this.m_dwColourWeight[colour] += Math.sqrt(level + 100.0); // sqrt ×2 → +0xC+4*colour
+      this.m_vtColourCount[colour]++; // inc [+0x1EC+4*colour]
+      this.m_vtSlotWeight[slot] = Math.sqrt(level + 100.0); // sqrt ×3 → +0x2C+4*slot
+      this.m_vtColour[slot] = colour; // mov [eax], ecx
+    }
+    if (this.m_nPlayerCount !== 0) this.m_dwAvgWeight /= this.m_nPlayerCount;
+    for (let c = 0; c < 8; c++) {
+      if (this.m_vtColourCount[c] !== 0) this.m_dwColourWeight[c] /= this.vtColourCountAt(c);
+    }
+  }
+
+  private vtColourCountAt(c: number): number {
+    return this.m_vtColourCount[c]!;
+  }
+
+  /** CDynInfoCalculator::SetKillerIndex (40B1DC) — case 4 of OnSetBomberEvent. */
+  SetKillerIndex(killer: number): void {
+    this.m_vtKills[killer]!++;
+  }
+
+  /**
+   * CDynInfoCalculator::SetSaverIndex (40B1EC) — case 3 of OnSetBomberEvent.
+   * The first save by colour `saver` sets the 8×8 mark (row `slot`, column
+   * `saver`) and bumps that colour's save count.
+   */
+  SetSaverIndex(slot: number, saver: number): void {
+    const i = slot + saver * 8; // lea eax, [edx+esi*8]
+    if (this.m_nSaveMatrix[i] === 0) {
+      this.m_nSaveMatrix[i] = 1;
+      this.m_vtSaves[saver]!++;
+    }
+  }
+
+  /** CDynInfoCalculator::GetExpPercentage (40B29E) — cur exp ‰ inside its level. */
+  static GetExpPercentage(nCur: number): number {
+    const level = CDynInfoCalculator_GetLevel(nCur);
+    const nMaxExp = CDynInfoCalculator_GetMaxExpInLevel(level);
+    const nLowExp = CDynInfoCalculator_GetMaxExpInLevel(level - 1);
+    if (nLowExp === 0x7fffffff) return 0;
+    return Math.trunc(((nCur - nLowExp) * 1000) / (nMaxExp - nLowExp));
+  }
+
+  /** CDynInfoCalculator::IsPremiumRewardCondition (40B2FD). */
+  IsPremiumRewardCondition(): boolean {
+    if (this.m_nPremiumFlag !== 0) return true;
+    return CMainSystem.IsPremiumChannel();
+  }
+
+  /** CDynInfoCalculator::GetWinExp (40B4CE) — the winning-slot exp (clamped 50..200). */
+  GetWinExp(slot: number, pnRewardFlag: number[]): number {
+    pnRewardFlag[0] = 0; // mov [eax], edi (edi = 0)
+    if (this.m_nInvalidGame !== 0) return 0;
+    const colour = this.m_vtColour[slot]!;
+    if (colour < 0 || this.m_vtColourCount[colour] === 0) return 0;
+    if (this.m_dwColourWeight[colour] === 0) return 0;
+    let t =
+      (this.m_nPlayerCount * this.m_dwAvgWeight * 100.0 * this.m_vtColourCount[colour]!) /
+      (this.m_vtColourCount[colour]! * this.m_dwColourWeight[colour]!);
+    t *= this.m_vtSlotWeight[slot]! / this.m_dwColourWeight[colour]!; // fld [+2C+4n] / colourWeight
+    t *= 0.5;
+    t += this.m_vtSaves[slot]! * 20.0;
+    t += this.m_vtKills[slot]! * 20.0;
+    let v = Math.trunc(t);
+    if (v < 50) v = 50;
+    if (v > 200) v = 200;
+    if (this.IsPremiumRewardCondition()) v = Math.trunc((v * 11) / 10);
+    return v;
+  }
+
+  /** CDynInfoCalculator::GetDrawExp (40B5A0) — the tied-game exp (clamped 0..50). */
+  GetDrawExp(slot: number): number {
+    if (this.m_nInvalidGame !== 0) return 0;
+    const colour = this.m_vtColour[slot]!;
+    if (colour < 0 || this.m_vtColourCount[colour] === 0) return 0;
+    if (this.m_dwColourWeight[colour] === 0) return 0;
+    let t =
+      (this.m_nPlayerCount * this.m_dwAvgWeight * 10.0 * this.m_vtColourCount[colour]!) /
+      (this.m_vtColourCount[colour]! * this.m_dwColourWeight[colour]!);
+    t *= this.m_vtSlotWeight[slot]! / this.m_dwColourWeight[colour]!;
+    t *= 0.5;
+    t += this.m_vtSaves[slot]! * 20.0;
+    t += this.m_vtKills[slot]! * 20.0;
+    let v = Math.trunc(t);
+    if (v < 0) v = 0;
+    if (v > 50) v = 50;
+    if (this.IsPremiumRewardCondition()) v = Math.trunc((v * 11) / 10);
+    return v;
+  }
+
+  /**
+   * CDynInfoCalculator::GetKillNSaveExp (40B665) — premium channels only;
+   * a bad context logs ReportError("Invalid CDynInfoCalculator context").
+   */
+  GetKillNSaveExp(slot: number): number {
+    if (!CMainSystem.IsPremiumChannel()) return 0;
+    if (this.m_nInvalidGame !== 0) {
+      console.error("Invalid CDynInfoCalculator context");
+      return 0;
+    }
+    const colour = this.m_vtColour[slot]!;
+    if (colour < 0 || this.m_vtColourCount[colour] === 0 || this.m_dwColourWeight[colour] === 0) {
+      console.error("Invalid CDynInfoCalculator context");
+      return 0;
+    }
+    let v = Math.trunc(this.m_vtSaves[slot]! * 20.0 + this.m_vtKills[slot]! * 20.0);
+    if (v < 0) v = 0;
+    if (v > 140) v = 140;
+    return v;
+  }
+}
+
+/**
+ * CGameSession::IsSameNumberPerTeam (FxServer.exe.lst:41B044) — every
+ * occupied slot's colour must hold players / colours player counts.
+ */
+function IsSameNumberPerTeam(session: CGameSession): boolean {
+  const counts = new Int32Array(8); // var_20 (memset 0x20)
+  let teamCount = 0; // edi
+  for (let slot = 0; slot < 8; slot++) {
+    const user = session.m_rgPlayer[slot]!;
+    if (user === null) continue;
+    const c = session.GetColor(slot);
+    if (++counts[c] === 1) teamCount++;
+  }
+  if (teamCount < 2) return false;
+  for (let c = 0; c < 8; c++) {
+    if (counts[c] !== 0 && counts[c] !== Math.trunc(session.m_nCurPlayerNum / teamCount)) return false;
+  }
+  return true;
+}
+
+/**
  * CGameContext — the in-play object state (0x288C bytes at CGameSession+1184;
  * CGameSession::SetCurrentGameContext picks ctx 0).  Field offsets are ctx
  * relative (FxServer.exe.c:41CD9B CGameContext::Init).
@@ -1919,7 +2183,7 @@ export class CUdpLossRegulator {
           bestBoth = both[m]!;
         }
       }
-      if (best === -1) break;
+      if (best === -1 || bestBoth === 0) break; // nothing reported → stop
       for (let k = 0; k < 8; k++) {
         this.m_rgLoss[8 * best + k] = 0; // the row
         this.m_rgLoss[8 * k + best] = 0; // the column
@@ -1931,10 +2195,12 @@ export class CUdpLossRegulator {
       );
       CGameSessionTable.ms_pInstance!.DestroyPlayer(user.m_pSocket!, 0);
       if (user.m_nFree === 0) {
+        // [user+7A4] != 0 and [socket+244] == 0 — +244 is the IO-layer detach
+        // flag that FXGS logic never sets, so the port uses the connected flag
         const socket = user.m_pSocket;
-        if (socket && socket.GetUserCount() === 0) {
-          socket.SendPacket(new CSendPacket(GS_ClientSend.OnUdpLossBan));
-          socket.m_nPoolType = 4;
+        if (socket && socket.m_bConnected) {
+          socket.SendPacket(new CSendPacket(GS_ClientSend.OnUdpLossBan)); // 195, no payload
+          socket.m_nPoolType = 4; // [socket+1D4]
         }
       }
     }
@@ -1987,8 +2253,7 @@ export class CGameSession {
   m_aBomberIdx = new Int32Array(8).fill(-1); // +11572
   m_abDeleted = new Uint8Array(8); // +11604 (0 alive; 1 dead / 2 goal / 3 trap / 5 lap finish / 6 win / 7 draw)
   m_rgnUsedItem = new Int32Array(8); // +11652 (a special item was used this game)
-  m_rgnShopItem = new Int32Array(8); // +12112 (a shop item was used this game)
-  /** +12632/+12636 — per-slot {time, rank} lap pairs (LaunchGameStage fills -1). */
+  m_rgnShopItem = new Int32Array(8); // +12112 (a shop item was used this game)  /** +12632/+12636 — per-slot {time, rank} lap pairs (LaunchGameStage fills -1). */
   m_rgLapTime = new Int32Array(16).fill(-1);
   m_rgLapRank = new Int32Array(16).fill(-1);
   m_rgLapCount = new Int32Array(8); // +12696 (per-slot lap byte)
@@ -1999,15 +2264,24 @@ export class CGameSession {
   /** +988 — per-slot UDP peer hosts (3 × {ip dword, port u16, pad}); the UDP unit reads these. */
   m_rgUdpHost: Uint8Array[] = [0, 1, 2, 3, 4, 5, 6, 7].map(() => new Uint8Array(24));
   m_dwStartSeed = 0; // +12736 (the DoStartGame seed dword)
-  m_nBanChiefCanStart = 0; // +12580 (CBanChief +4 — SetCanStart)
-  m_nBanChiefOddSlot = 0; // +12592 (CBanChief +12 — SetOddSlot)
+  m_BanChief = new CBanChief(); // +12576 (the idle-room start gate)
   m_nObj0 = -1; // +11612
   m_nObj1 = -1; // +11616
+  m_rgbGameType = new Uint8Array(8); // +11604 (per-slot 0; case 4 → winner colour+7; DoReturnPrepareStage → 0)
+  m_rgColourCount = new Int32Array(8); // +12016 (per-colour occupied slots — GetGameDetailResult)
+  m_rgDetailCount = new Int32Array(8); // +12208 (per-colour 7s — GetGameDetailResult; CGameSession::Init zeroes +12048/+12240)
   m_nBombTickTime = 0; // +12552 (the last bomb-tick time)
   m_dwLastTickTime = 0; // +12548 (Update's per-tick timeGetTime marker)
   m_nGameType100 = 0; // +12728 (tmpl+100 at DoStartGame)
   m_GameClock = new CGameClock(); // +12732
   m_UdpLossRegulator = new CUdpLossRegulator(); // +12280
+  m_DynInfoCalculator = new CDynInfoCalculator(); // +11684 (the results unit)
+  m_dwLucciRate = 1; // +12276 (SendGameResult's exp/lucci multiplier)
+  /** scratch result fields carried across SendGameResult's per-user loop. */
+  m_rgbResult = 0; // var_34 (GetWinGameResult, 3 on draw, 2 on lose)
+  m_rgbGameDetailResult = 0; // var_8 (GetGameDetailResult, 3 on draw/lose)
+  m_dwPremiumFlag = 0; // var_10 / [this+2FF4] (the GetWinExp reward flag)
+
   m_SyncGameObjMan = new CSyncGameObjMan(); // +12788
   m_pCtx = new CGameContext(); // +1184 (SetCurrentGameContext(0))
   m_nGameVersion = 0; // +12568 (rand at Init)
@@ -2474,22 +2748,27 @@ export class CGameSession {
    * only runs while m_fPlaying is set.)
    */
   private SweepUdpLossOnLaunching(): void {
+    // 41DF53 — the grace is 25 s while the room is already flagged playing,
+    // 30 s in the waiting stage; the Report string switches with it.
+    const grace = this.m_fPlaying !== 0 ? 25000 : 30000;
     for (let slot = 0; slot < 8; slot++) {
       const user = this.m_rgPlayer[slot];
       if (!user) continue;
       if (this.m_rgUdpAlive[slot] !== 0) continue;
-      if (CGameClock.Now() - this.m_rgJoinTime[slot]! <= 25000) continue;
+      if (CGameClock.Now() - this.m_rgJoinTime[slot]! <= grace) continue;
       const ip = user.m_pSocket ? GetInfoStr(user.m_pSocket) : "";
       console.error(
-        `[GS] User[${ip}:${user.GetName()}] (${user.m_pSocket?.GetUserCount() ?? 0}P) banned from game session (${this.m_nIdx}) while <STARTING> by udp loss`,
+        `[GS] User[${ip}:${user.GetName()}] (${user.m_pSocket?.GetUserCount() ?? 0}P) banned from game session (${this.m_nIdx}) while ${this.m_fPlaying !== 0 ? "<STARTING>" : "<WAITING>"} by udp loss`,
       );
       this.DumpLog();
       CGameSessionTable.ms_pInstance!.DestroyPlayer(user.m_pSocket!, 0);
       if (user.m_nFree === 0) {
+        // [socket+244] == 0 — the IO-layer detach flag FXGS logic never sets,
+        // so the port uses the connected flag
         const socket = user.m_pSocket;
-        if (socket && socket.GetUserCount() === 0) {
-          socket.SendPacket(new CSendPacket(GS_ClientSend.OnUdpLossBan));
-          socket.m_nPoolType = 4;
+        if (socket && socket.m_bConnected) {
+          socket.SendPacket(new CSendPacket(GS_ClientSend.OnUdpLossBan)); // 195, no payload
+          socket.m_nPoolType = 4; // [socket+1D4]
         }
       }
     }
@@ -2854,8 +3133,7 @@ export class CGameSession {
     this.m_SyncGameObjMan.OnPlayerLeave(firstSlot);
     if (wasChief) {
       const oldSupreme = this.m_fSupreme;
-      this.m_nBanChiefCanStart = 0; // CBanChief::Init(+12576)
-      this.m_nBanChiefOddSlot = 0;
+      this.m_BanChief = new CBanChief(); // CBanChief::Init(+12576)
       this.SetNewChief(-1);
       if (this.m_nChiefSwapCount >= 0x2710 && oldSupreme === 0 && this.m_fSupreme !== 0 && this.m_fPlaying === 0) {
         dissolve = true;
@@ -2916,6 +3194,7 @@ export class CGameSession {
     if (this.fValid === 0) return;
     if (this.m_fPlaying === 0) {
       // !playing → vtbl+224 CBaseSession::DeferBanChief — the ban-chief unit.
+      this.DeferBanChief();
       return;
     }
     const time = Date.now();
@@ -3018,6 +3297,105 @@ export class CGameSession {
     if (exploded > 0 || died > 0) this.FlushPacket();
   }
 
+  /**
+   * CGameSession::DeferBanChief (vtbl+224, FxServer.exe.lst:41C15B) — the
+   * idle-room start gate.  The chief must press start within IsBanChief's
+   * window (10 s idle games / 20 s fresh rooms since SetCanStart, halved when
+   * he wears "Item/SuperChief" or holds Pm authority 25) or receive warning
+   * 121 (E1 1/2/3 per stage); expiry removes him (163 with result 2).  A
+   * start-flood gets the odd-slot grace (GetOddSlotInManner = count × 5 s)
+   * and its own warning; expiry restarts the whole CanStart cycle
+   * (SetCanStart(1)).  A chief-side decline (b) or the arrival of an
+   * already-started room resets the cycle (SetCanStart(0)).
+   */
+  DeferBanChief(): void {
+    if (this.m_fPlaying !== 0) {
+      // cmp [esi+354h], ebx — a playing room only resets the gate
+      this.m_BanChief.Init();
+      return;
+    }
+    const slot = this.m_nChiefSlotidx; // [+360]
+    if (slot < 0 || slot >= 8) return;
+    const user = this.m_rgPlayer[slot]!;
+    if (user === null || user.m_pSocket === null) return;
+    // neg/sbb/and 2/inc — "Item/SuperChief" stretches every gate ×3
+    const superChief = user.HasFunctionalItem("Item/SuperChief") ? 3 : 1;
+    const now = CGameClock.Now(); // timeGetTime
+    let oddGate = false; // 41C238
+    if (this.m_nGameType === 0) {
+      // [+34C] plain rooms: only 2+-player ones are gated
+      if (this.m_nMaxPlayerNum > 1) {
+        this.m_BanChief.SetOddSlot(0); // 41C202
+      } else if (CClientSocket.HasAuthority(25) !== 0) {
+        this.m_BanChief.SetOddSlot(0); // 41C1F5 → 41C202 (CUser::HasAuthority)
+      } else {
+        oddGate = true;
+      }
+    } else {
+      // event rooms: odd player counts are gated
+      if (this.m_nMaxPlayerNum % 2 === 0) {
+        this.m_BanChief.SetOddSlot(0); // 41C1E4 even → 41C202
+      } else if (CClientSocket.HasAuthority(25) !== 0) {
+        this.m_BanChief.SetOddSlot(0); // 41C1F5 → 41C202
+      } else {
+        oddGate = true;
+      }
+    }
+    if (oddGate) {
+      // 41C238 — the odd-slot grace (GetOddSlotInManner = now × 5000)
+      const bc = this.m_BanChief;
+      if (bc.m_nOddSlot === 0) {
+        bc.SetOddSlot(1);
+      } else if (now - bc.m_dwOddSlotTime > bc.GetOddSlotInManner(now)) {
+        if (bc.m_nWarnedBanOdd === 0) {
+          bc.SetWarnedBanOdd(1);
+          const p = new CSendPacket(GS_ClientSend.OnNeedStartGame);
+          p.Encode1(1);
+          p.Encode4(Math.trunc(bc.GetWarningDelay(now) / 1000));
+          this.SendPacket(p);
+        } else if (now - bc.m_dwWarnedBanOddTime > bc.GetWarningDelay(now)) {
+          const p = new CSendPacket(GS_ClientSend.OnNeedStartGame);
+          p.Encode1(3);
+          p.Encode4(Math.trunc(bc.GetWarningDelay(now) / 1000));
+          user.m_pSocket.SendPacket(p); // vtbl+68 — the chief only
+          // CBaseSessionTable vtbl+48 (the DestroyPlayer override) then +468 = 4
+          CGameSessionTable.ms_pInstance!.DestroyPlayer(user.m_pSocket, 0);
+          bc.SetCanStart(0); // 41C46C → SetCanStart(0)
+          return;
+        }
+      }
+    }
+    // 41C211 — the fresh-room start gate
+    if (this.CanStartGame(1) !== 0) {
+      // vtbl+220 refused → restart the whole cycle
+      this.m_BanChief.SetCanStart(0);
+      return;
+    }
+    if (this.m_BanChief.m_nCanStart === 0) {
+      this.m_BanChief.SetCanStart(1); // 41C231
+      return;
+    }
+    // 41C35B — the idle-game gate
+    if (CClientSocket.HasAuthority(25) !== 0) return;
+    const flag = this.m_nMaxPlayerNum - this.m_nCurPlayerNum < 0 ? 1 : 0;
+    if (!this.m_BanChief.IsBanChief(flag, this.m_nGameType, superChief)) return;
+    if (this.m_BanChief.m_nWarnedBan === 0) {
+      this.m_BanChief.SetWarnedBan(1);
+      const p = new CSendPacket(GS_ClientSend.OnNeedStartGame);
+      p.Encode1(0);
+      p.Encode4(Math.trunc(this.m_BanChief.GetWarningDelay(now) / 1000));
+      this.SendPacket(p);
+      return;
+    }
+    if (now - this.m_BanChief.m_dwWarnedBanTime <= this.m_BanChief.GetWarningDelay(now)) return;
+    const p2 = new CSendPacket(GS_ClientSend.OnNeedStartGame);
+    p2.Encode1(2);
+    p2.Encode4(Math.trunc(this.m_BanChief.GetWarningDelay(now) / 1000));
+    user.m_pSocket.SendPacket(p2); // vtbl+68 — the chief only
+    CGameSessionTable.ms_pInstance!.DestroyPlayer(user.m_pSocket, 0); // vtbl+48 (+468 = 4 in the tail)
+    this.m_BanChief.SetCanStart(0); // 41C46C
+  }
+
   /** CGameSession::DeferReturnPrepareStage (41B0B7) — 8 s after the end screen. */
   DeferReturnPrepareStage(): void {
     if (Date.now() - this.m_GameClock.m_dwEndTime > 0x1f40) this.DoReturnPrepareStage();
@@ -3087,17 +3465,142 @@ export class CGameSession {
   }
 
   /**
+   * CGameSession::GetWinGameResult (41B482) — 1 when gameType counts of the
+   * winner's colour (2/6) match the player counts and it is a two-team game.
+   */
+  GetWinGameResult(nWinnerTeam: number): number {
+    if (this.m_rgbGameType[nWinnerTeam]! > 2) return 0;
+    let flag = false;
+    for (let k = 0; k < 8; k++) {
+      const c = this.GetColor(k);
+      if (c !== nWinnerTeam && this.m_nCurPlayerNum > 2) flag = true;
+    }
+    if (flag) {
+      let count = 0;
+      for (let k = 0; k < 8; k++) {
+        if (this.m_rgbGameType[k] === 2 || this.m_rgbGameType[k] === 6) count++;
+      }
+      if (count === this.m_nCurPlayerNum) return 1;
+      return 0;
+    }
+    return 0;
+  }
+
+  /** CGameSession::GetGameDetailResult (41CA8C) — 2 / 1 / default 3. */
+  GetGameDetailResult(nWinnerTeam: number): number {
+    let v2 = 3;
+    for (let k = 0; k < 8; k++) {
+      if (this.m_nCurPlayerNum > 2 && this.m_nCurPlayerNum === this.m_rgDetailCount[k]! + 1) v2 = 2;
+      if (this.m_rgbGameType[k]! > 2 && this.m_rgbGameType[k] === this.m_rgColourCount[k]!) v2 = 1;
+    }
+    void nWinnerTeam;
+    return v2;
+  }
+
+  /**
    * CGameSession::SendGameResult (vtbl+216, FxServer.exe.lst:41FF51) — the
-   * results unit (163, per-user exp/lucci, DB IncDecExp).  Not ported yet;
-   * the game end only marks the phase transition in this unit.
+   * results unit.  Packet 163 carries every alive member's result block and a
+   * per-user tail; the DB dyn rows are updated through IncDecExp and the
+   * lobby rank list is refreshed.
    */
   SendGameResult(a2: number): void {
-    void a2;
+    const packet = new CSendPacket(GS_ClientSend.OnGameResult);
+    let flag = 0;
+    for (let i = 0; i < 8; i++) {
+      if (this.m_rgbGameType[i] === 5 || this.m_rgbGameType[i] === 6 || this.m_rgbGameType[i] === 7) flag = 1;
+    }
+    packet.Encode1(flag); // +16 (the same 163 was observed with 0/1)
+    packet.Encode1(a2 & 0xff); // +17
+    this.m_rgbResult = a2 === -1 ? 3 : 2; // var_34
+    this.m_rgbGameDetailResult = a2 === -1 ? 3 : 2; // var_8
+    for (let n8 = 0; n8 < 8; n8++) {
+      // [+12620] vtbl+44 — the recorder dword getter (FXGS never registers one)
+      packet.Encode4(0); // +18
+      const user = this.m_rgPlayer[n8]!;
+      if (user === null) {
+        packet.Encode1(0);
+        continue;
+      }
+      packet.Encode1(1);
+      packet.Encode2(user.m_nGlobalSerialNo); // [user+7AC]
+      const nOldExp = user.dyn.exp; // [user+0D4]
+      const nOldExpPctAtEntry = CDynInfoCalculator.GetExpPercentage(nOldExp);
+      let anyDiffTeam = 0;
+      for (let i = 0; i < 8; i++) {
+        if (this.m_rgPlayer[i] !== null && this.m_rgnUsedItem[i] !== 0 && (this.GetColor(i) & 0x1f) !== a2) anyDiffTeam = 1;
+      }
+      if (a2 === -1) {
+        console.error(`[GS] Game Result : Tie Game`);
+        let exp = this.m_DynInfoCalculator.GetDrawExp(n8);
+        exp = Math.trunc(exp * this.GetGameExpTimeFactor());
+        if (exp !== 0) user.IncDecExp(exp);
+        console.error(`[GS] ${user.GetName()}:D:${exp}`);
+      } else {
+        if ((this.GetColor(n8) & 0x1f) === a2) {
+          console.error(`[GS] Game Result : Win Team = ${a2}`);
+          const rewardFlag = [0];
+          let exp = this.m_DynInfoCalculator.GetWinExp(n8, rewardFlag);
+          exp = Math.trunc(exp * this.GetGameExpTimeFactor());
+          let boost = 1.0;
+          if (anyDiffTeam === 1) boost = boost * 1.1;
+          let premiumCount = 0;
+          for (let i = 0; i < 8; i++) {
+            if (this.GetColor(i) === a2) {
+              const w = this.m_rgPlayer[i]!;
+              if (w !== null && w.m_fPremiumTicket === 1) premiumCount++;
+            }
+          }
+          if (premiumCount >= 2 || this.m_dwLucciRate >= 2) boost = boost + 0.1;
+          exp = Math.trunc(exp * boost + 0.1);
+          if (exp !== 0) user.IncDecExp(exp);
+          this.m_dwPremiumFlag = rewardFlag[0]!; // [this+2FF4] var_10
+          this.m_rgbGameDetailResult = this.GetGameDetailResult(a2);
+          console.error(`[GS] ${user.GetName()}:W:${exp}`);
+        } else {
+          console.error(`[GS] Game Result : Lose Team`);
+          let exp = this.m_DynInfoCalculator.GetKillNSaveExp(n8);
+          exp = Math.trunc(exp * this.GetGameExpTimeFactor());
+          if (exp !== 0) user.IncDecExp(exp);
+          console.error(`[GS] ${user.GetName()}:L:${exp}`);
+        }
+      }
+      packet.Encode4(this.m_rgbResult!); // +20 var_34
+      packet.Encode4(user.dyn.money); // +24 [user+2EFC]
+      packet.Encode4(user.dyn.exp); // +28 [user+2EDC]
+      const nUpdatedExp = user.dyn.exp; // [+2EDC] again (IncDecExp applied)
+      if (nOldExpPctAtEntry > CDynInfoCalculator.GetExpPercentage(user.dyn.exp)) user.dyn.exp = 0; // [+2EDC] = 0
+      const nNewPct = CDynInfoCalculator.GetExpPercentage(user.dyn.exp);
+      packet.Encode4(nOldExpPctAtEntry); // +32
+      packet.Encode4(nNewPct); // +36
+      packet.Encode1(user.GetLookLevel() & 0xff); // +40
+      packet.Encode4(this.m_dwPremiumFlag); // +44 var_10 ([this+2FF4])
+      if (this.m_rgbGameDetailResult === 3 && nUpdatedExp === 0) packet.Encode1(0);
+      else packet.Encode1(this.m_rgbGameDetailResult);
+    }
+    // +12716 guild recorder — FXGS keeps no recorder and the guild tables
+    // never register one, so the whole guild-dyn block stays inert.
+    this.SendPacket(packet);
+  }
+
+  /** SendGameResult's time factor (the 41FE83 ladder). */
+  private GetGameExpTimeFactor(): number {
+    const elapsed = this.m_GameClock.ElapsedTime();
+    if (elapsed < 15000) return 0.0;
+    if (elapsed <= 45000) return (elapsed - 15000) / 30000.0;
+    return 1.0;
   }
 
   /** CGameSessionTable::CloseSession's empty check lives on +832. */
   IsEmpty(): boolean {
     return this.m_nCurPlayerNum === 0;
+  }
+
+  /**
+   * [this+852] — the vtbl+20 override marker DeferBanChief reads before its
+   * chief probe (CGameSession::DumpLog prints the room header in FXGS).
+   */
+  vtblHasDumpLog(): number {
+    return 0;
   }
 
   // ---- ready / map / color / bomber / slots (the 96..111 handlers) ----
@@ -3870,7 +4373,9 @@ export class CGameSession {
       packet.Encode1(this.GetColor(slot));
     }
     this.SendPacket(packet);
-    // CDynInfoCalculator::Init(+11684) — results-unit state
+    // CDynInfoCalculator::Init(+11684) — the results-unit weights (m_rgPlayer,
+    // and the slot-state triples whose +2 byte holds the colour)
+    this.m_DynInfoCalculator.Init(this.m_rgPlayer, this.m_rgSlotState);
     this.m_UdpLossRegulator.Init();
     for (let slot = 0; slot < 8; slot++) this.m_abDeleted[slot] = this.IsPlayerSet(slot) ? 0 : 1;
     this.SetPlaying(1);
@@ -4315,9 +4820,7 @@ export class CGameSession {
       }
       case 3: {
         const saver = n.Decode1();
-        if (saver < 8) {
-          // CDynInfoCalculator::SetSaverIndex — results-unit state
-        }
+        if (saver < 8) this.m_DynInfoCalculator.SetSaverIndex(slot, saver); // the first save feeds GetWinExp/GetDrawExp
         this.m_abDeleted[slot] = 0;
         this.SendPacketExclude(packet, socket);
         break;
@@ -4326,9 +4829,7 @@ export class CGameSession {
         // the death report
         let killer = n.Decode1();
         killer = (killer << 24) >> 24; // signed char
-        if (killer !== -1) {
-          // CDynInfoCalculator::SetKillerIndex — results-unit state
-        }
+        if (killer !== -1) this.m_DynInfoCalculator.SetKillerIndex(killer);
         packet.Encode1(killer);
         this.OnBomberDie(slot);
         const drops = n.Decode1();
@@ -4811,8 +5312,7 @@ export class CGameSession {
     for (let slot = 0; slot < 8; slot++) {
       if (!this.m_rgPlayer[slot]) this.m_rgUdpHost[slot]!.fill(0);
     }
-    this.m_nBanChiefCanStart = 0; // CBanChief::Init(+12576): SetCanStart(0)
-    this.m_nBanChiefOddSlot = 0; // SetOddSlot(0)
+    this.m_BanChief = new CBanChief(); // CBanChief::Init: SetCanStart(0)/SetOddSlot(0)
     this.m_dwLastAirplaneTime = 0; // +12624 (dword 3156)
     this.SendPacket(packet);
   }
@@ -6318,8 +6818,8 @@ export class CCenterProcess {
  */
 export function OnUDPPacket(payload: Uint8Array, host: HOSTHANDLE): void {
   const type = payload[0];
-  if (type === UDPPacketType.OnReadyForImmediateStart) {
-    if (payload.length !== UDPPacketLen[type]) {
+  if (type === 1) {
+    if (payload.length !== 35) {
       console.error(`[GS] Invalid CheckUDPPacket from the Host ${host.ip},${host.port}`);
       return;
     }
@@ -6335,8 +6835,8 @@ export function OnUDPPacket(payload: Uint8Array, host: HOSTHANDLE): void {
     CGameSessionTable.ms_pInstance!.OnReadyForImmediateStart(idx, serial, user, body);
     return;
   }
-  if (type === UDPPacketType.OnUDPPeerInfo) {
-    if (payload.length !== UDPPacketLen[type]) {
+  if (type === 11) {
+    if (payload.length !== 23) {
       console.error(`[GS] Invalid CheckUDPPacket from the Host ${host.ip},${host.port}`);
       return;
     }

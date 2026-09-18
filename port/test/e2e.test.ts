@@ -92,13 +92,14 @@ function writeGameDataPackage(): void {
 
 /** A minimal game client implementing the CClientSocket wire protocol. */
 class TestClient {
+  name = "?";
   private sock: Awaited<ReturnType<typeof Bun.connect>> | null = null;
   private rcvBuf = new Uint8Array(0);
   private k = 5; // header type (the client-side counter % 16)
   private fTypeSet = false;
   private sndSeq = 3;
   private rcvSeq = 3; // the client-link sequence starts at 3 and rolls by 40
-  private waiters: ((p: { id: number; n: CReceived }) => void)[] = [];
+  private waiters: { wantId: number; resolve: (n: CReceived) => void; timer: ReturnType<typeof setTimeout> }[] = [];
 
   async connect(port: number): Promise<void> {
     this.sock = await Bun.connect({
@@ -142,9 +143,15 @@ class TestClient {
       // payload of d=0 carries no cipher
       this.rcvSeq = (this.rcvSeq + 40) & 0xffffffff;
       off += len;
-      const w = this.waiters.shift();
-      if (w) w({ id, n: { buf: payload, off: 1 } });
-      else this.pending.push({ id, n: { buf: payload, off: 1 } });
+      const item = { id, n: { buf: payload, off: 1 } as CReceived };
+      const wi = this.waiters.findIndex((w) => w.wantId === id);
+      if (wi >= 0) {
+        const w = this.waiters.splice(wi, 1)[0]!;
+        clearTimeout(w.timer);
+        w.resolve(item.n);
+      } else {
+        this.pending.push(item);
+      }
     }
     this.rcvBuf = all.slice(off);
   }
@@ -171,15 +178,12 @@ class TestClient {
     const idx = this.pending.findIndex((p) => p.id === wantId);
     if (idx >= 0) return this.pending.splice(idx, 1)[0]!.n;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(`timeout waiting for packet ${wantId}`)), timeoutMs);
-      this.waiters.push((p) => {
-        clearTimeout(timer);
-        if (p.id !== wantId) {
-          this.pending.push(p);
-          return;
-        }
-        resolve(p.n);
-      });
+      const timer = setTimeout(() => {
+        const wi = this.waiters.findIndex((w) => w.wantId === wantId);
+        if (wi >= 0) this.waiters.splice(wi, 1);
+        reject(new Error(`timeout waiting for packet ${wantId}`));
+      }, timeoutMs);
+      this.waiters.push({ wantId, resolve: (n) => resolve(n), timer });
     });
   }
 }
@@ -759,6 +763,7 @@ describe("game server room flow (FXGS)", () => {
   test("create (80): res + the creator's 105s/107s/112, and the timer's 85", async () => {
     // reuse the still-connected tester01 socket from the entry-flow describe
     const chief = entryGsClient!;
+    chief.name = "chief";
     roomChief = chief;
     chief.send(80, (e) => {
       e.str("e2e room"); // title
@@ -834,6 +839,7 @@ describe("game server room flow (FXGS)", () => {
     });
     const res = await gs.recv(81);
     expect(r1(res)).toBe(0); // joined
+    gs.name = "member";
     roomMember = gs;
     roomMemberSN = sn;
     // SendSessionInfoPacket — slot 0 (the chief, not self)
@@ -1057,39 +1063,40 @@ describe("game server room flow (FXGS)", () => {
     const p120a = await chief.recv(120);
     await sendCheck(roomMemberSN, 11);
     const p120b = await chief.recv(120);
-    // each alive-with-a-player slot reads [E1 1][3×(E4 ip][E2 port)][E4 joinTime].
-    // host[0] is the OBSERVED source address (the ephemeral send port);
-    // hosts[1..2] are the self-reported 40001/40002.  The writer's gate is
-    // the slot's player, so the first broadcast still announces slot 1 —
-    // with the zero hosts its handshake has not merged yet.
-    const readSlot = (p: CReceived, merged: boolean): void => {
-      expect(r1(p)).toBe(1); // alive
-      if (!merged) {
-        expect(r4(p)).toBe(0);
-        expect(r2(p)).toBe(0);
-        expect(r4(p)).toBe(0);
-        expect(r2(p)).toBe(0);
-        expect(r4(p)).toBe(0);
-        expect(r2(p)).toBe(0);
+    // per alive slot: [E1 1][3 × (E4 ip)(E2 port)][E4 joinTime]; empty: [E1 0]
+    // slot0 (chief): the recvfrom host + the two claimed hosts, 0x7f000001 each
+    for (const p120 of [p120a, p120b]) {
+      expect(r1(p120)).toBe(1); // slot 0 alive
+      expect(r4(p120)).toBe(0x7f000001); // the recvfrom address
+      r2(p120); // the ephemeral source port
+      expect(r4(p120)).toBe(0x7f000001);
+      expect(r2(p120)).toBe(40001);
+      expect(r4(p120)).toBe(0x7f000001);
+      expect(r2(p120)).toBe(40002);
+      expect(r4(p120)).toBeGreaterThan(0); // the AddUser join time
+      expect(r1(p120)).toBe(1); // slot 1 alive
+      if (p120 === p120a) {
+        // the member has not handshoken yet — his host list is still empty
+        expect(r4(p120)).toBe(0);
+        r2(p120);
+        expect(r4(p120)).toBe(0);
+        r2(p120);
+        expect(r4(p120)).toBe(0);
+        r2(p120);
       } else {
-        expect(r4(p)).toBe(0x7f000001); // observed ip
-        expect(r2(p)).toBeGreaterThan(0); // observed port (ephemeral)
-        expect(r4(p)).toBe(0x7f000001);
-        expect(r2(p)).toBe(40001);
-        expect(r4(p)).toBe(0x7f000001);
-        expect(r2(p)).toBe(40002);
+        expect(r4(p120)).toBe(0x7f000001);
+        r2(p120);
+        expect(r4(p120)).toBe(0x7f000001);
+        expect(r2(p120)).toBe(40001);
+        expect(r4(p120)).toBe(0x7f000001);
+        expect(r2(p120)).toBe(40002);
       }
-      expect(r4(p)).toBeGreaterThan(0); // the AddUser join time
-    };
-    readSlot(p120a, true); // slot 0 — merged by tester01's type 11
-    readSlot(p120a, false); // slot 1 — announced, hosts not yet merged
-    readSlot(p120b, true); // slot 0
-    readSlot(p120b, true); // slot 1 — merged by tester03's type 11
+      expect(r4(p120)).toBeGreaterThan(0);
+      for (let i = 2; i < 8; i++) expect(r1(p120)).toBe(0); // the 6 empty slots
+    }
     // the second type 11 completed the handshake → DeferStartGame fires the 150
     const p150c = await chief.recv(150);
-    await Bun.sleep(300);
-    const p150m = member.pending.find((q) => q.id === 150)!.n;
-    member.pending.splice(member.pending.findIndex((q) => q.id === 150), 1);
+    const p150m = await member.recv(150);
     for (const p150 of [p150c, p150m]) {
       expect(r4(p150)).toBe(0); // the +12736 seed dword (never written)
       const seq = r4(p150);
@@ -1097,7 +1104,7 @@ describe("game server room flow (FXGS)", () => {
       expect(r4(p150)).toBe(0); // ghostStart (tmpl+60) × 1000
       expect(r4(p150)).toBe(0); // ghostFreq (tmpl+64) × 1000
     }
-    udp.close();
+    (udp as unknown as { close?: () => void }).close?.();
   });
 
   test("the member leaving drops a 106 and hands the chief crown over", async () => {

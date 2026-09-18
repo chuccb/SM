@@ -40,21 +40,6 @@ export function UpdateCRC8(dwCrcKey: number, p: Uint8Array, nSize: number): numb
   return crc;
 }
 
-/**
- * CUDPPacketDispatcher::OnUDPPacket — the only frame bodies the game server
- * understands (the launch-handshake check packets).
- */
-export const UDPPacketType = {
-  OnReadyForImmediateStart: 1, // 35 bytes — the map-CRC + per-user attribute check
-  OnUDPPeerInfo: 11, // 23 bytes — the peer address list
-} as const;
-
-/** The exact frame-payload lengths the dispatcher accepts (m_uLength checks). */
-export const UDPPacketLen: Record<number, number> = {
-  [UDPPacketType.OnReadyForImmediateStart]: 35,
-  [UDPPacketType.OnUDPPeerInfo]: 23,
-};
-
 export interface HOSTHANDLE {
   ip: number; // u32, network byte order as received
   port: number; // u16
@@ -105,7 +90,7 @@ export function BuildFrame(payload: Uint8Array): Uint8Array {
   const out = new Uint8Array(payload.length + 2);
   out[0] = payload.length + 1;
   out.set(payload, 1);
-  // the crc byte itself is validated by CRCing the whole frame back to 0
-  out[payload.length + 1] = UpdateCRC8(0, out, out.length - 1);
+  // UnreliableSendTo: crc over [totalLen][payload] (n bytes), written at [n]
+  out[payload.length + 1] = UpdateCRC8(0, out, payload.length + 1);
   return out;
 }

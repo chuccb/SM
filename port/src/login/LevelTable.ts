@@ -55,6 +55,15 @@ export const g_nLevel2ExpTable: readonly number[] = [
 
 export const kLevelTableSize = g_nLevel2ExpTable.length; // 0x1C2
 
+/**
+ * CDynInfoCalculator::GetMaxExpInLevel (FxServer.exe.lst:40B284) — the
+ * cumulative exp that finishes level `nLevel`; out-of-range levels give 0.
+ */
+export function CDynInfoCalculator_GetMaxExpInLevel(nLevel: number): number {
+  if (nLevel < 0 || nLevel >= kLevelTableSize) return 0;
+  return g_nLevel2ExpTable[nLevel]!;
+}
+
 /** CDynInfoCalculator::GetLevel — the binary search from CxLogin.exe.c:11524. */
 export function CDynInfoCalculator_GetLevel(nExp: number): number {
   let v1 = kLevelTableSize;
