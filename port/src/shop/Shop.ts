@@ -1483,22 +1483,15 @@ export class CCenterProcess {
    *  process"), then identify [E1 11][E4 idx^0x77][E2 7][E2 3] and
    *  setsockopt(0xFFFF, 4097, 0). */
   async Init(cfg: CServerConfig): Promise<void> {
-    for (;;) {
-      try {
-        await this.m_pSocket.ConnectToCenter(
-          cfg.GetAttribute("CenterIP"),
-          cfg.GetNumAttribute("CenterPort"),
-          SVRCLASS_SHOP,
-          cfg.GetNumAttribute("ServerIndex"),
-          7,
-          3,
-        );
-        break;
-      } catch {
-        console.error("[Shop] Connection failed. Try again.");
-        await Bun.sleep(3000);
-      }
-    }
+    // the 3 s retry loop lives in CLocalSocket.ConnectToCenter (FxShop.exe.c:4247)
+    await this.m_pSocket.ConnectToCenter(
+      cfg.GetAttribute("CenterIP"),
+      cfg.GetNumAttribute("CenterPort"),
+      SVRCLASS_SHOP,
+      cfg.GetNumAttribute("ServerIndex"),
+      7,
+      3,
+    );
     console.log("[Shop] Connection to Center Server established");
   }
 

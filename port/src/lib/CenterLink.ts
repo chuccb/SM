@@ -29,26 +29,37 @@ export class CLocalSocket extends CPacketSocket {
     this.SetSequence(LOCALSOCKET_SEQ_DELTA, LOCALSOCKET_SEQ_DELTA, LOCALSOCKET_SEQ, LOCALSOCKET_SEQ);
   }
 
-  /** CCenterProcess::ConnectToCenter — connect, exchange the identification bytes. */
+  /** CCenterProcess::ConnectToCenter — connect, exchange the identification bytes.
+   *  The original loops forever on a refused connect: Sleep(0xBB8) +
+   *  Report("Connection failed. Try again.") between attempts (CxLogin.exe.c:4885). */
   async ConnectToCenter(host: string, port: number, nServerClass: number, nSvrIdx: number, gameVersion = 0, clientVersion = 0): Promise<void> {
-    await Bun.connect({
-      hostname: host,
-      port,
-      socket: {
-        open: (t) => {
-          this.bunSocket = t;
-          this.m_bConnected = true;
-        },
-        data: (_t, data) => this.OnCenterData(new Uint8Array(data as Buffer)),
-        close: () => {
-          this.m_bConnected = false;
-          this.hooks.onClose(this);
-        },
-        error: (_t, err) => {
-          console.error(`[CLocalSocket] ${String(err)}`);
-        },
-      },
-    });
+    console.log("Try to connect center server.");
+    for (;;) {
+      try {
+        await Bun.connect({
+          hostname: host,
+          port,
+          socket: {
+            open: (t) => {
+              this.bunSocket = t;
+              this.m_bConnected = true;
+            },
+            data: (_t, data) => this.OnCenterData(new Uint8Array(data as Buffer)),
+            close: () => {
+              this.m_bConnected = false;
+              this.hooks.onClose(this);
+            },
+            error: (_t, err) => {
+              console.error(`[CLocalSocket] ${String(err)}`);
+            },
+          },
+        });
+        break;
+      } catch {
+        await Bun.sleep(0xbb8);
+        console.log("Connection failed. Try again.");
+      }
+    }
     // CServerSocket (center side) greets: [u2 version][u2 sd]; we read 4 raw
     // bytes then identify (CLocalSocket::ConnectToCenter, CxLogin.exe.c).
     const greeting = await this.waitGreeting();

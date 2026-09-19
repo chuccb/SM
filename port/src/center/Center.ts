@@ -47,7 +47,7 @@ export class CUser {
   nSID: number; // +80 — CUser::GetSID: the account SID the login server sent in MC 0
   nAuthencode = 0; // CUser::GetAuthencode / SetAuthenCode
   nLocalSerialNo: number; // the LS socket's local serial (p0 tail)
-  nConnStamp: number; // p0 head (the LS socket's address stamp)
+  nIP: number; // +32 — the CM 0 head D4: the client's in_addr (CUser::GetIP, CxCenter.exe.c:15124)
   fSimpleInfoModified = 0; // +56: premium-ticket flag from the LS
   nCommunitySvr = 0; // +76 (byte)
   nChannel = 0; // +60 (byte): the server class the user currently sits on
@@ -64,7 +64,7 @@ export class CUser {
     nSvrIdx: number,
     nSN: number,
     nLocalSerialNo: number,
-    nConnStamp: number,
+    nIP: number,
     man?: CxCenter,
   ) {
     this.strName = strName;
@@ -72,7 +72,7 @@ export class CUser {
     this.nSvrIdx = -0x80000000; // +64 sentinel before the ctor's SetSvrIdx
     this.nSID = nSN;
     this.nLocalSerialNo = nLocalSerialNo;
-    this.nConnStamp = nConnStamp;
+    this.nIP = nIP;
     // CUser::CUser (CxCenter.exe.c:21590) runs SetSvrIdx — the ctor's move
     // carries the Inc/DecConn bookkeeping.  (Tests may skip the table move
     // by omitting the manager.)
@@ -691,7 +691,7 @@ export class CxCenter {
    * response path below is the one the client observes.
    */
   OnAddNewUser(owner: CLocalServer, n: CReceivedPacket): void {
-    const nConnStamp = n.Decode4();
+    const nIP = n.Decode4(); // the client's in_addr (the LS reads CClientSocket+12)
     n.m_uOffset += 16; // machine id (DecodeBuffer into a scratch buffer)
     n.Decode4(); // game room code
     const count = n.Decode1();
@@ -703,7 +703,7 @@ export class CxCenter {
       const sn = n.Decode4();
       const fSimpleInfoModified = n.Decode1();
       const communitySvr = n.Decode1();
-      const u = new CUser(name, SVRCLASS_LOGIN, owner.nSvrIdx, sn, 0, nConnStamp, this);
+      const u = new CUser(name, SVRCLASS_LOGIN, owner.nSvrIdx, sn, 0, nIP, this);
       if (fSimpleInfoModified !== 0) u.fSimpleInfoModified = 1;
       else fAllSimpleInfo = 0;
       u.nCommunitySvr = communitySvr;

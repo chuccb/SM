@@ -6882,6 +6882,10 @@ export async function main(cfgFile: string, dbDir: string): Promise<void> {
   void connectPool;
   void channelPool;
 
+  // CCenterProcess::Init (FxServer.exe.c:13383) — the WinMain order is the
+  // center attach (with the endless 3 s retry loop) BEFORE CListenThread.
+  await center.Init(cfg);
+
   // CListenThread — the client listener (ServerIP/ServerPort)
   const port = cfg.GetNumAttribute("ServerPort") || 4848;
   const clientSockets = new WeakMap<object, CClientSocket>();
@@ -6948,6 +6952,4 @@ export async function main(cfgFile: string, dbDir: string): Promise<void> {
     sessionTable.FlushModifiedTableInfo();
     sessionTable.UpdateGameSessions();
   }, 0x190);
-
-  await center.Init(cfg);
 }

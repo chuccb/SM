@@ -52,6 +52,17 @@ const STR_ALREADY_PLAYING = "\xc7\xf6\xc0\xe7 \xb0\xd4\xc0\xd3\xc0\xbb \xc7\xcf\
 /** aPc (CxLogin.exe.lst: .text:0040F85C push offset aPc ; "PC") */
 const STR_PC = "PC";
 
+/** The client's IPv4 as the raw in_addr dword (CClientSocket+12, m_addr.sin_addr
+ *  read little-endian): 127.0.0.1 → 0x0100007f. The center stores it for
+ *  CUser::GetIP. IPv6 or unresolvable peers read 0 (the original is IPv4-only). */
+function PeerAddressDword(socket: CClientSocket): number {
+  let addr = socket.bunSocket?.remoteAddress ?? "";
+  if (addr.startsWith("::ffff:")) addr = addr.slice(7);
+  const m = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(addr);
+  if (!m) return 0;
+  return ((Number(m[1]) | (Number(m[2]) << 8) | (Number(m[3]) << 16) | (Number(m[4]) << 24)) >>> 0);
+}
+
 /** _Advertisement (FxAdvertisement row, 36-byte vector entry): strImage plus
  *  six dwords — Param1/2 ride the client-11 wire, Param4 repeats the ad
  *  inside the rotation pool, Param5/6 bound the visibility hour window. */
@@ -862,7 +873,7 @@ export class CCenterProcess {
   /** CCenterProcess::RegisterConnection (CxLogin.exe.c:4942) — center packet 0. */
   RegisterConnection(socket: CClientSocket): void {
     const packet = new CSendPacket(0); // MC OnAddNewUser
-    packet.Encode4(0); // the address-stamp D4 (the original sends the socket address bytes)
+    packet.Encode4(PeerAddressDword(socket)); // the client's in_addr (the D4 the center stores as CUser::GetIP)
     packet.EncodeBuffer(socket.GetMachineId(), 16);
     packet.Encode4(socket.GetGameRoomCode());
     const userCount = socket.GetUserCount();
@@ -1236,8 +1247,15 @@ export async function main(cfgFile: string, dbDir: string): Promise<void> {
   centerProcess.UpdateAdvertisement();
   centerProcess.UpdateGuildServerList();
 
-  // the client listener (CMainSystem init — ServerPort)
+  // the client listener (CMainSystem init — ServerPort). The original boots it
+  // last: CCenterProcess::Init (with the endless 3 s retry loop) runs before
+  // CListenThread::Resume, so the port only opens 3838 once the center is up.
   const port = cfg.GetNumAttribute("ServerPort") || 3838;
+  await centerProcess.ConnectToCenter(cfg);
+
+  // CTimerThread::Resume (CxLogin.exe.c:16048 — right after CCenterProcess::Init)
+  loginPool.StartTimer(centerProcess);
+
   const mainSystem = new CMainSystem(cfg);
   const clientSockets = new WeakMap<object, CClientSocket>();
   Bun.listen({
@@ -1265,9 +1283,4 @@ export async function main(cfgFile: string, dbDir: string): Promise<void> {
     },
   });
   console.log(`[LS] listening on :${port}`);
-
-  // CTimerThread::Resume (CxLogin.exe.c:16048 — created right after CCenterProcess::Init)
-  loginPool.StartTimer(centerProcess);
-
-  await centerProcess.ConnectToCenter(cfg);
 }

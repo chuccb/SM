@@ -367,22 +367,15 @@ export class CCenterProcess {
    * succeed, then report "Connection to Center Server established".
    */
   async Init(cfg: CServerConfig): Promise<void> {
-    for (;;) {
-      try {
-        await this.m_cLocalSocket.ConnectToCenter(
-          cfg.GetAttribute("CenterIP"),
-          cfg.GetNumAttribute("CenterPort"),
-          SVRCLASS_UTIL,
-          cfg.GetNumAttribute("ServerIndex"),
-          5, // gameVersion
-          3, // clientVersion
-        );
-        break;
-      } catch {
-        console.error("[FXUS] Connection failed. Try again.");
-        await Bun.sleep(3000);
-      }
-    }
+    // the 3 s retry loop lives in CLocalSocket.ConnectToCenter (CxUtil.exe.c:15596)
+    await this.m_cLocalSocket.ConnectToCenter(
+      cfg.GetAttribute("CenterIP"),
+      cfg.GetNumAttribute("CenterPort"),
+      SVRCLASS_UTIL,
+      cfg.GetNumAttribute("ServerIndex"),
+      5, // gameVersion
+      3, // clientVersion
+    );
     console.log("[FXUS] Connection to Center Server established");
   }
 
