@@ -214,7 +214,7 @@ export class CenterClientSocket extends CPacketSocket {
     // CServerSocket on the center side (CxCenter.exe.c:14833): mirrors CLocalSocket.
     this.SetHeaderType(ms_nLocalSocketHeaderTypeCounter++ & 0x8000000f);
     this.SetHeaderCode(189, 96, 231);
-    this.SetSequence(40, 40, 0, 0);
+    this.SetSequence(0, 0, 40, 40); // the port's self-consistent local-link variant (see src/lib/S2S.ts)
   }
 
   /** CLocalServerMan::OnConnEstablished — the greeting goes out on accept. */

@@ -18,8 +18,8 @@ export class TestClient {
     return this.fClosed;
   }
   private fTypeSet = false;
-  private sndSeq = 3;
-  private rcvSeq = 3; // the client-link sequence starts at 3 and rolls by 40
+  private sndSeq = 40; // the client-link sequence starts at 40 and rolls by 3 (lst:4098C9)
+  private rcvSeq = 40;
   private waiters: { wantId: number; resolve: (n: CReceived) => void; timer: ReturnType<typeof setTimeout> }[] = [];
 
   /**
@@ -105,7 +105,7 @@ export class TestClient {
       const t = payload[0]!;
       const id = gsDecode(this.k, t);
       // payload of d=0 carries no cipher
-      this.rcvSeq = (this.rcvSeq + 40) & 0xffffffff;
+      this.rcvSeq = (this.rcvSeq + 3) & 0xffffffff;
       off += len;
       if (!this.helloSeen) {
         // the first server frame must be the accept packet 0 (CSendPacket(0,0)
@@ -168,7 +168,7 @@ export class TestClient {
       const crc = UpdateCRC8(this.rcvSeq & 0xff, payload, 0, payloadLen);
       if (crc !== all[off + len - 1]!) throw new Error(`crc8 mismatch: ${crc} != ${all[off + len - 1]}`);
       const id = payload[0]! ^ 0x5a;
-      this.rcvSeq = (this.rcvSeq + 40) & 0xffffffff;
+      this.rcvSeq = (this.rcvSeq + 3) & 0xffffffff;
       off += len;
       this.dispatch(id, payload, 1, 2);
     }
@@ -188,7 +188,7 @@ export class TestClient {
     out[2] = lenField & 0xff;
     SimpleStreamEncrypt3(payload, 0, out, 3, payload.length, this.sndSeq);
     out[total - 1] = UpdateCRC8(this.sndSeq & 0xff, payload, 0, payload.length);
-    this.sndSeq = (this.sndSeq + 40) & 0xffffffff;
+    this.sndSeq = (this.sndSeq + 3) & 0xffffffff;
     if (process.env.TC_DEBUG) console.error(`[TCDBG] client send2 id=${id} total=${total} code=${out[0]!.toString(16)} k=${this.k} sndSeq=${this.sndSeq}`);
     let wn = -1;
     try {
@@ -231,7 +231,7 @@ export class TestClient {
     const payload = [typeByte, ...e.b];
     const total = payload.length + 3;
     const code = ((this.k + 231) ^ ((192 + this.sndSeq) & 0xff)) & 0xff;
-    this.sndSeq = (this.sndSeq + 40) & 0xffffffff;
+    this.sndSeq = (this.sndSeq + 3) & 0xffffffff;
     const out = new Uint8Array(total);
     out[0] = code;
     out[1] = (payload.length >> 8) & 0xff; // length field = the payload count

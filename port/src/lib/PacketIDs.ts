@@ -128,13 +128,14 @@ export const US_ReceivedPacket = {
   OnEstimateRTT: 20, // CUserPool::OnPacket
 } as const;
 
-/** CClientSocket (client-facing) crypto constants — FxServer.exe.c:9848.
- *  SetSequence(40, 40, 3, 3): the sequence starts at 3 and rolls by 40. */
+/** CClientSocket (client-facing) crypto constants — CxLogin.exe.lst:4098B6
+ *  / FxServer.exe.lst:407D19. SetHeaderCode(rcv=0xC0, snd=0x66, mod=0xE7);
+ *  SetSequence(40, 40, 3, 3) = the sequence starts at 40 and rolls by 3. */
 export const CLIENTSOCKET_HEADER_CODE_RCV = 192; // 0xC0
 export const CLIENTSOCKET_HEADER_CODE_SND = 102; // 0x66
 export const CLIENTSOCKET_HEADER_CODE_MODIFIER = 231; // 0xE7
-export const CLIENTSOCKET_SEQ_DELTA = 40;
-export const CLIENTSOCKET_SEQ = 3;
+export const CLIENTSOCKET_SEQ = 40;
+export const CLIENTSOCKET_SEQ_DELTA = 3;
 
 // CMainPool::OnPacket (FxShop.exe.c:20547) — the FxShop client dispatch on the
 // 9801 listener.  The type byte is the shared client namespace; the shop

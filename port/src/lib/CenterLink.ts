@@ -26,7 +26,7 @@ export class CLocalSocket extends CPacketSocket {
       LOCALSOCKET_HEADER_CODE_SND,
       LOCALSOCKET_HEADER_CODE_MODIFIER,
     );
-    this.SetSequence(LOCALSOCKET_SEQ_DELTA, LOCALSOCKET_SEQ_DELTA, LOCALSOCKET_SEQ, LOCALSOCKET_SEQ);
+    this.SetSequence(LOCALSOCKET_SEQ, LOCALSOCKET_SEQ, LOCALSOCKET_SEQ_DELTA, LOCALSOCKET_SEQ_DELTA);
   }
 
   /** CCenterProcess::ConnectToCenter — connect, exchange the identification bytes.

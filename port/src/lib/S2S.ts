@@ -13,16 +13,23 @@ export const SVRCLASS_SHOP = 11;
 export const SVRCLASS_UTIL = 99;
 
 /**
- * CLocalSocket::CLocalSocket — SetHeaderCode(96, 189, 231);
- * SetSequence(40, 40, 0, 0) = deltas 40, sequences 0: the local link carries
- * a static check code and NO packet-type conversion (fMakeConvert stays
- * false because the CRC-key sequence is 0).
+ * CLocalSocket::CLocalSocket — SetHeaderCode(rcv=96, snd=189, mod=231)
+ * (CxLogin.exe.lst:40C1F3). The original local link runs SetSequence(40, 40,
+ * 0, 0) — a static check code with the deg-0 type conversion enabled — but
+ * the conversion rows only line up when both ends share the header type,
+ * and the original's accept side stamps SetHeaderType(counter++ % 16)
+ * (CxCenter 40E1FE) while the connect side derives a constant 1 from the
+ * static code ((40+96)^96-231). How the original reconciles those rows is
+ * not resolved yet; until it is, the port runs the self-consistent variant
+ * below (seq 0 → conversion off, code rolls (ht+231)^(base+seq) by 40).
+ * The center link only ever connects port servers to each other, so this
+ * is not client-observable.
  */
 export const LOCALSOCKET_HEADER_CODE_RCV = 96;
 export const LOCALSOCKET_HEADER_CODE_SND = 189;
 export const LOCALSOCKET_HEADER_CODE_MODIFIER = 231;
-export const LOCALSOCKET_SEQ_DELTA = 40;
 export const LOCALSOCKET_SEQ = 0;
+export const LOCALSOCKET_SEQ_DELTA = 40;
 
 /** CServerSocket (center-side accept) mirrors it: SetHeaderCode(189, 96, 231). */
 

@@ -619,7 +619,7 @@ export class CClientSocket extends CPacketSocket {
     CClientSocket.ms_nHeaderTypeCounter++;
     this.SetHeaderType(nHeaderType);
     this.SetHeaderCode(CLIENTSOCKET_HEADER_CODE_RCV, CLIENTSOCKET_HEADER_CODE_SND, CLIENTSOCKET_HEADER_CODE_MODIFIER);
-    this.SetSequence(CLIENTSOCKET_SEQ_DELTA, CLIENTSOCKET_SEQ_DELTA, CLIENTSOCKET_SEQ, CLIENTSOCKET_SEQ);
+    this.SetSequence(CLIENTSOCKET_SEQ, CLIENTSOCKET_SEQ, CLIENTSOCKET_SEQ_DELTA, CLIENTSOCKET_SEQ_DELTA);
     CClientSocket.ms_tblSN2Obj.set(this.m_nLocalSerialNo, this);
   }
 

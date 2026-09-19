@@ -86,7 +86,7 @@ export class CClientSocket extends CPacketSocket {
     this.m_nLocalSerialNo = CClientSocket.ms_nLocalSerialNo++;
     this.SetHeaderType((CClientSocket.ms_nLocalSerialNo - 1) % 16);
     this.SetHeaderCode(CLIENTSOCKET_HEADER_CODE_RCV, CLIENTSOCKET_HEADER_CODE_SND, CLIENTSOCKET_HEADER_CODE_MODIFIER);
-    this.SetSequence(CLIENTSOCKET_SEQ_DELTA, CLIENTSOCKET_SEQ_DELTA, CLIENTSOCKET_SEQ, CLIENTSOCKET_SEQ);
+    this.SetSequence(CLIENTSOCKET_SEQ, CLIENTSOCKET_SEQ, CLIENTSOCKET_SEQ_DELTA, CLIENTSOCKET_SEQ_DELTA);
   }
 
   /** CClientSocket::AddNewUsers — n fresh users REPLACE the old array. */

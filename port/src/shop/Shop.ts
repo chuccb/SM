@@ -217,7 +217,7 @@ export class CClientSocket extends CPacketSocket {
     this.SetHeaderType(CClientSocket.ms_nHeaderTypeCounter % 16);
     CClientSocket.ms_nHeaderTypeCounter++;
     this.SetHeaderCode(CLIENTSOCKET_HEADER_CODE_RCV, CLIENTSOCKET_HEADER_CODE_SND, CLIENTSOCKET_HEADER_CODE_MODIFIER);
-    this.SetSequence(CLIENTSOCKET_SEQ_DELTA, CLIENTSOCKET_SEQ_DELTA, CLIENTSOCKET_SEQ, CLIENTSOCKET_SEQ);
+    this.SetSequence(CLIENTSOCKET_SEQ, CLIENTSOCKET_SEQ, CLIENTSOCKET_SEQ_DELTA, CLIENTSOCKET_SEQ_DELTA);
     this.SetCipherDegree(2); // CFxShopApp::SetUp — the client sockets are ciphered
     CClientSocket.ms_tblSN2Obj.set(this.m_nLocalSerialNo, this);
   }
@@ -1093,7 +1093,7 @@ export class CWebSocket extends CPacketSocket {
     // CWebSocket::CWebSocket (30541) — the same header/sequence set as the
     // client sockets; the (Web) accept path does NOT raise the cipher degree.
     this.SetHeaderCode(192, 102, 231);
-    this.SetSequence(40, 40, 3, 3);
+    this.SetSequence(40, 40, 3, 3); // (rcvSeq, sndSeq, rcvDelta, sndDelta)
     this.m_nLocalSerialNo = 1 + CWebSocket.ms_tblSerialNo2Socket.size;
     CWebSocket.ms_tblSerialNo2Socket.set(this.m_nLocalSerialNo, this);
   }

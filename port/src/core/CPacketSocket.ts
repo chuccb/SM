@@ -82,26 +82,20 @@ export abstract class CPacketSocket {
   }
 
   /**
-   * CPacketSocket::SetSequence(rcvSeqDelta, sndSeqDelta, rcvSeq, sndSeq).
-   * The callee stores arg1→+30, arg2→+34, arg3→+38, arg4→+3C, and usage is:
-   * +30/+34 are the CRC-key sequences (they roll by +38/+3C per packet and
-   * their non-zero-ness enables the packet-type conversion table), +38/+3C
-   * are the deltas.  The shipped callers pass pairwise-symmetric constants —
-   * client links SetSequence(40, 40, 3, 3), local links SetSequence(40, 40,
-   * 0, 0) — so the assembly alone cannot tell which pair lands in the seq
-   * slots; the semantics decide: under (delta, delta, seq, seq) the local
-   * links run rcvSeq = 0 → no type conversion (both ends pass the type byte
-   * straight through; with the roles swapped each end would derive a
-   * different conversion row — 1 vs 113 — and gsConvertTableDecode[113] is
-   * provably not the inverse of encode row 1, so that reading cannot work),
-   * while the client links run seq = 3 rolling by 40, deriving the shared
-   * conversion row from the first check code.
+   * CPacketSocket::SetSequence(nRcvSeq, nSndSeq, nRcvSeqDelta, nSndSeqDelta) —
+   * the original argument order. The lst push labels are decisive (the last
+   * push is nRcvSeq): client links SetSequence(40, 40, 3, 3) — the sequence
+   * starts at 40 and rolls by 3 (CxLogin.exe.lst:4098C9, FxServer.exe.lst:
+   * 407D19) — and local links SetSequence(40, 40, 0, 0) — a constant check
+   * code, no rolling (CxLogin.exe.lst:40C22A). With a zero delta the code
+   * byte is the bare base and deg-0 frames carry no rolling at all; a
+   * non-zero seq enables the deg-1/2 type conversion table.
    */
-  SetSequence(nRcvSeqDelta: number, nSndSeqDelta: number, nRcvSeq: number, nSndSeq: number): void {
-    this.m_nPacketRcvSeqDelta = nRcvSeqDelta;
-    this.m_nPacketSndSeqDelta = nSndSeqDelta;
+  SetSequence(nRcvSeq: number, nSndSeq: number, nRcvSeqDelta: number, nSndSeqDelta: number): void {
     this.m_nPacketRcvSeq = nRcvSeq;
     this.m_nPacketSndSeq = nSndSeq;
+    this.m_nPacketRcvSeqDelta = nRcvSeqDelta;
+    this.m_nPacketSndSeqDelta = nSndSeqDelta;
   }
 
   /** CPacketSocket::SetCipherDegree */
