@@ -3,7 +3,7 @@
  * by the login / game / shop / util servers.
  */
 import { CPacketSocket, type IPacketSocketHooks } from "../core/CPacketSocket.ts";
-import {
+import { CipherDegree,
   CReceivedPacket,
   CSendPacket,
   enSocket,
@@ -126,7 +126,7 @@ export class CLocalSocket extends CPacketSocket {
 
   static makeReceived(): CReceivedPacket {
     const p = new CReceivedPacket();
-    p.SetCipherDegree(0);
+    p.SetCipherDegree(CipherDegree.kPacketRaw);
     return p;
   }
 }

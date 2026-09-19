@@ -13,7 +13,7 @@
  * the packet to decide which variant to request (CLoginPool::OnRequestEnterChannelStage).
  */
 import { COSmartStream } from "../core/SmartStream.ts";
-import { CSendPacket } from "../core/Packet.ts";
+import { CipherDegree, CSendPacket } from "../core/Packet.ts";
 
 export class CChannelCache {
   m_nChannelNo = 0;
@@ -27,9 +27,9 @@ export class CChannelCache {
   m_nEnterableType: number[] = []; // p3 field c
   m_nHashValue = 0;
   /** cached packets: full / match / state */
-  m_packetFull = new CSendPacket(10, 2);
-  m_packetMatch = new CSendPacket(10, 2);
-  m_packetState = new CSendPacket(13, 2);
+  m_packetFull = new CSendPacket(10, CipherDegree.kPacketEncryptedCRC8);
+  m_packetMatch = new CSendPacket(10, CipherDegree.kPacketEncryptedCRC8);
+  m_packetState = new CSendPacket(13, CipherDegree.kPacketEncryptedCRC8);
 
   /** CChannelCache::SetChannelNo */
   SetChannelNo(a2: number): void {
@@ -82,7 +82,7 @@ export class CChannelCache {
   /** CChannelCache::MakeInfoPacket */
   MakeInfoPacket(): void {
     if (this.m_nChannelNo === 0) console.error("call MakeInfoPacket. but m_nChannelNo = 0");
-    const full = new CSendPacket(10, 2);
+    const full = new CSendPacket(10, CipherDegree.kPacketEncryptedCRC8);
     full.Encode1(1);
     const os = new COSmartStream();
     os.Encode2(this.m_nChannelNo & 0xffff);
@@ -100,7 +100,7 @@ export class CChannelCache {
     this.m_packetFull = full;
     console.log(`ChannelCache: n(${this.m_nChannelNo}) hash(0x${this.m_nHashValue.toString(16).toUpperCase()})`);
 
-    const match = new CSendPacket(10, 2);
+    const match = new CSendPacket(10, CipherDegree.kPacketEncryptedCRC8);
     match.Encode1(0);
     this.m_packetMatch = match;
   }
@@ -108,7 +108,7 @@ export class CChannelCache {
   /** CChannelCache::MakeStatePacket */
   MakeStatePacket(): void {
     if (this.m_nChannelNo === 0) console.error("call MakeStatePacket. but m_nChannelNo = 0");
-    const state = new CSendPacket(13, 2);
+    const state = new CSendPacket(13, CipherDegree.kPacketEncryptedCRC8);
     state.Encode2(this.m_nChannelNo & 0xffff);
     for (let i = 0; i < this.m_nChannelNo; i++) state.Encode2(this.m_nUserCount[i] ?? 0);
     this.m_packetState = state;

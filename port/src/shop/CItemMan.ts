@@ -14,7 +14,7 @@
  * packet at the socket (vtbl+68).
  */
 import { CDBMan } from "../db/DBMan.ts";
-import { CSendPacket } from "../core/Packet.ts";
+import { CipherDegree, CSendPacket } from "../core/Packet.ts";
 import { COSmartStream } from "../core/SmartStream.ts";
 import { SC_SendPacket } from "../lib/PacketIDs.ts";
 
@@ -215,7 +215,7 @@ export class CItemMan {
       stream.EncodeStr(str);
     }
     this.m_nStringHash = stream.GetHashValue();
-    const packet = new CSendPacket(SC_SendPacket.OnStringTable, 2); // InitPacket(type) — degree 2
+    const packet = new CSendPacket(SC_SendPacket.OnStringTable, CipherDegree.kPacketEncryptedCRC8); // InitPacket(type) — degree 2
     packet.EncodeOSStream(stream);
     this.m_pStringTablePacket = packet;
   }
@@ -248,7 +248,7 @@ export class CItemMan {
       stream.Encode1(item.MoneyType);
     }
     this.m_nShopItemHash = stream.GetHashValue();
-    const packet = new CSendPacket(SC_SendPacket.OnShopItemList, 2); // InitPacket(type) — degree 2
+    const packet = new CSendPacket(SC_SendPacket.OnShopItemList, CipherDegree.kPacketEncryptedCRC8); // InitPacket(type) — degree 2
     packet.EncodeOSStream(stream);
     this.m_pShopItemListPacket = packet;
   }
@@ -265,7 +265,7 @@ export class CItemMan {
       stream.Encode4(p.Validitylevel);
     }
     this.m_nPackageMapHash = stream.GetHashValue();
-    const packet = new CSendPacket(SC_SendPacket.OnPackageMap, 2); // InitPacket(type) — degree 2
+    const packet = new CSendPacket(SC_SendPacket.OnPackageMap, CipherDegree.kPacketEncryptedCRC8); // InitPacket(type) — degree 2
     packet.EncodeOSStream(stream);
     this.m_pPackageMapPacket = packet;
   }

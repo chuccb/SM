@@ -7,7 +7,7 @@
  * Framing: [headerCode:1][length:2 BE][payload...] where length is the TOTAL
  * packet size and payload[0] is the (table-converted) packet type.
  */
-import {
+import { CipherDegree,
   CReceivedPacket,
   CSendPacket,
   enSocket,

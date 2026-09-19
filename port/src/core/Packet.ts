@@ -21,6 +21,21 @@ import { UpdateCRC32, UpdateCRC8 } from "./CRC.ts";
 import { DecodeHeader, EncodeHeader } from "./PacketHeaderConverter.ts";
 import type { COSmartStream, CISmartStream } from "./SmartStream.ts";
 
+/**
+ * CSendPacketBase::m_nCipherDegree — the wire framing of a packet
+ * (CSendPacketBase::GetOutgoingPacketLength / CReceivedPacketBase::
+ * GetIncomingPacketLength switch on it).
+ */
+export const CipherDegree = {
+  /** [code][E2 BE len-3][body] — the accept packet, monitor and billing frames. */
+  kPacketRaw: 0,
+  /** [code][E2 BE (len-7)^a569][SES3(seq)][E4 crc32] — the billing link. */
+  kPacketEncrypted: 1,
+  /** [code][E2 BE (len-4)^a569][SES3(seq)][E1 crc8] — every client link. */
+  kPacketEncryptedCRC8: 2,
+} as const;
+export type CipherDegree = (typeof CipherDegree)[keyof typeof CipherDegree];
+
 /** enSocket */
 export const enSocket = {
   kioOk: 0x0,
@@ -91,7 +106,7 @@ export class CSendPacket extends CMemBlock {
   constructor(nPacketType = 0, nCipherDegree = 0) {
     super();
     this.Alloc(0x40);
-    this.m_nCipherDegree = nCipherDegree <= 2 ? nCipherDegree : 0;
+    this.m_nCipherDegree = nCipherDegree <= CipherDegree.kPacketEncryptedCRC8 ? nCipherDegree : CipherDegree.kPacketRaw;
     this.m_uOffset = 0;
     this.m_nPacketType = nPacketType;
     this.Encode1(nPacketType);
@@ -99,7 +114,7 @@ export class CSendPacket extends CMemBlock {
 
   /** CSendPacketBase::InitPacket — reuse of a pooled packet. */
   InitPacket(nPacketType: number, nCipherDegree = this.m_nCipherDegree): this {
-    if (nCipherDegree <= 2) this.m_nCipherDegree = nCipherDegree;
+    if (nCipherDegree <= CipherDegree.kPacketEncryptedCRC8) this.m_nCipherDegree = nCipherDegree;
     this.m_nPacketType = nPacketType;
     this.m_uOffset = 0;
     this.Encode1(nPacketType);
@@ -107,7 +122,7 @@ export class CSendPacket extends CMemBlock {
   }
 
   SetCipherDegree(nCipherDegree: number): void {
-    if (nCipherDegree <= 2) this.m_nCipherDegree = nCipherDegree;
+    if (nCipherDegree <= CipherDegree.kPacketEncryptedCRC8) this.m_nCipherDegree = nCipherDegree;
   }
 
   GetCipherDegree(): number {
@@ -131,7 +146,7 @@ export class CSendPacket extends CMemBlock {
 
   Encode1At(uOffset: number, n: number): number {
     this.Ensure(uOffset + 1);
-    if (this.m_nCipherDegree >= 1 && this.m_nCipherDegree <= 2) {
+    if (this.m_nCipherDegree >= CipherDegree.kPacketEncrypted && this.m_nCipherDegree <= CipherDegree.kPacketEncryptedCRC8) {
       this.m_pBlock[uOffset] = (n ^ B.ENCRYPT_MASK_1) & 0xff;
     } else {
       this.m_pBlock[uOffset] = n & 0xff;
@@ -141,14 +156,14 @@ export class CSendPacket extends CMemBlock {
 
   Encode2At(uOffset: number, n: number): number {
     this.Ensure(uOffset + 2);
-    if (this.m_nCipherDegree >= 1 && this.m_nCipherDegree <= 2) n ^= B.ENCRYPT_MASK_2;
+    if (this.m_nCipherDegree >= CipherDegree.kPacketEncrypted && this.m_nCipherDegree <= CipherDegree.kPacketEncryptedCRC8) n ^= B.ENCRYPT_MASK_2;
     B.Encode2(this.m_pBlock, uOffset, n);
     return 2;
   }
 
   Encode4At(uOffset: number, n: number): number {
     this.Ensure(uOffset + 4);
-    if (this.m_nCipherDegree >= 1 && this.m_nCipherDegree <= 2) n = (n ^ B.ENCRYPT_MASK_4) >>> 0;
+    if (this.m_nCipherDegree >= CipherDegree.kPacketEncrypted && this.m_nCipherDegree <= CipherDegree.kPacketEncryptedCRC8) n = (n ^ B.ENCRYPT_MASK_4) >>> 0;
     B.Encode4(this.m_pBlock, uOffset, n >>> 0);
     return 4;
   }
@@ -189,7 +204,7 @@ export class CSendPacket extends CMemBlock {
 
   EncodeOSStreamAt(uOffset: number, osstream: COSmartStream): number {
     const nBufferSize = osstream.GetBufferSize();
-    if (!(this.m_nCipherDegree >= 1 && this.m_nCipherDegree <= 2)) {
+    if (!(this.m_nCipherDegree >= CipherDegree.kPacketEncrypted && this.m_nCipherDegree <= CipherDegree.kPacketEncryptedCRC8)) {
       return this.EncodeBufferAt(uOffset, osstream.GetBuffer(), nBufferSize);
     }
     this.Ensure(uOffset + 4);
@@ -229,7 +244,7 @@ export class CSendPacket extends CMemBlock {
     nHeaderType: number,
     dwCrcKey: number,
   ): number {
-    if (this.m_nCipherDegree === 0) {
+    if (this.m_nCipherDegree === CipherDegree.kPacketRaw) {
       B.Encode2(pBuf, pBufOff + 1, len - 3);
       B.EncodeBuffer(pBuf, pBufOff + 3, this.m_pBlock, 0, len - 3);
       if (fMakeConvert) {
@@ -238,7 +253,7 @@ export class CSendPacket extends CMemBlock {
       }
       return 1;
     }
-    if (this.m_nCipherDegree === 2) {
+    if (this.m_nCipherDegree === CipherDegree.kPacketEncryptedCRC8) {
       B.Encode2(pBuf, pBufOff + 1, (len - 4) ^ B.ENCRYPT_MASK_2);
       SimpleStreamEncrypt3(this.m_pBlock, 0, pBuf, pBufOff + 3, len - 4, dwCrcKey);
       const updated = UpdateCRC8(dwCrcKey & 0xff, this.m_pBlock, 0, len - 4);
@@ -246,7 +261,7 @@ export class CSendPacket extends CMemBlock {
       B.Encode1(pBuf, pBufOff + len - 1, updated);
       return 1;
     }
-    if (this.m_nCipherDegree === 1) {
+    if (this.m_nCipherDegree === CipherDegree.kPacketEncrypted) {
       B.Encode2(pBuf, pBufOff + 1, (len - 7) ^ B.ENCRYPT_MASK_2);
       SimpleStreamEncrypt3(this.m_pBlock, 0, pBuf, pBufOff + 3, len - 7, dwCrcKey);
       const n = UpdateCRC32(dwCrcKey >>> 0, this.m_pBlock, 0, len - 7);
@@ -265,7 +280,7 @@ export class CReceivedPacket extends CMemBlock {
   m_nCipherDegree = 0;
 
   SetCipherDegree(nCipherDegree: number): void {
-    if (nCipherDegree <= 2) this.m_nCipherDegree = nCipherDegree;
+    if (nCipherDegree <= CipherDegree.kPacketEncryptedCRC8) this.m_nCipherDegree = nCipherDegree;
   }
 
   GetCipherDegree(): number {
@@ -279,7 +294,7 @@ export class CReceivedPacket extends CMemBlock {
     this.m_uOffset = 0;
     this.m_uLength = len;
     if (len !== 0) {
-      if (this.m_nCipherDegree >= 1 && this.m_nCipherDegree <= 2) {
+      if (this.m_nCipherDegree >= CipherDegree.kPacketEncrypted && this.m_nCipherDegree <= CipherDegree.kPacketEncryptedCRC8) {
         this.m_nPacketType = B.Decrypt1(this.m_pBlock, 0);
       } else {
         this.m_nPacketType = B.Decode1(this.m_pBlock, 0);
@@ -308,7 +323,7 @@ export class CReceivedPacket extends CMemBlock {
     nHeaderType: number,
     dwCrcKey: number,
   ): boolean {
-    if (this.m_nCipherDegree === 0) {
+    if (this.m_nCipherDegree === CipherDegree.kPacketRaw) {
       const len3 = len - 3;
       if (len3 > 0 && this.Alloc(len3) !== 0) {
         this.m_pBlock.set(pBuf.subarray(pBufOff + 3, pBufOff + 3 + len3));
@@ -327,7 +342,7 @@ export class CReceivedPacket extends CMemBlock {
       }
       return false;
     }
-    if (this.m_nCipherDegree === 2) {
+    if (this.m_nCipherDegree === CipherDegree.kPacketEncryptedCRC8) {
       const len4 = len - 4;
       if (len4 > 0 && this.Alloc(len4) !== 0) {
         const v10 = B.Decode1(pBuf, pBufOff + len - 1);
@@ -339,7 +354,7 @@ export class CReceivedPacket extends CMemBlock {
       }
       return false;
     }
-    if (this.m_nCipherDegree === 1) {
+    if (this.m_nCipherDegree === CipherDegree.kPacketEncrypted) {
       const len7 = len - 7;
       if (len7 <= 0 || this.Alloc(len7) === 0) return false;
       const v13 = B.Decode4(pBuf, pBufOff + len - 4);
@@ -368,7 +383,7 @@ export class CReceivedPacket extends CMemBlock {
 
   Decode1At(uOffset: number): number {
     if (uOffset + 1 > this.m_uLength) return 0;
-    if (this.m_nCipherDegree >= 1 && this.m_nCipherDegree <= 2) return B.Decrypt1(this.m_pBlock, uOffset);
+    if (this.m_nCipherDegree >= CipherDegree.kPacketEncrypted && this.m_nCipherDegree <= CipherDegree.kPacketEncryptedCRC8) return B.Decrypt1(this.m_pBlock, uOffset);
     return B.Decode1(this.m_pBlock, uOffset);
   }
 
@@ -380,7 +395,7 @@ export class CReceivedPacket extends CMemBlock {
 
   Decode4At(uOffset: number): number {
     if (uOffset + 4 > this.m_uLength) return 0;
-    if (this.m_nCipherDegree >= 1 && this.m_nCipherDegree <= 2) return B.Decrypt4(this.m_pBlock, uOffset);
+    if (this.m_nCipherDegree >= CipherDegree.kPacketEncrypted && this.m_nCipherDegree <= CipherDegree.kPacketEncryptedCRC8) return B.Decrypt4(this.m_pBlock, uOffset);
     return B.Decode4(this.m_pBlock, uOffset);
   }
 
@@ -395,7 +410,7 @@ export class CReceivedPacket extends CMemBlock {
   }
 
   DecodeISStreamAt(uOffset: number, isstream: CISmartStream): number {
-    if (!(this.m_nCipherDegree >= 1 && this.m_nCipherDegree <= 2)) {
+    if (!(this.m_nCipherDegree >= CipherDegree.kPacketEncrypted && this.m_nCipherDegree <= CipherDegree.kPacketEncryptedCRC8)) {
       const uOffset1 = uOffset;
       const used = isstream.SetBuffer(this.m_pBlock.subarray(uOffset));
       return this.m_uLength >= uOffset1 + used ? used : 0;

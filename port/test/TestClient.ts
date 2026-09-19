@@ -4,6 +4,7 @@
  */
 import { SimpleStreamDecrypt3, SimpleStreamEncrypt3 } from "../src/core/StreamCipher.ts";
 import { UpdateCRC8 } from "../src/core/CRC.ts";
+import { CipherDegree, type CipherDegree as TCipherDegree } from "../src/core/Packet.ts";
 import { gsConvertTableEncode, gsConvertTableDecode } from "../src/core/PacketHeaderConverter.ts";
 
 /** A minimal game client implementing the CClientSocket wire protocol. */
@@ -32,8 +33,8 @@ export class TestClient {
    *    but builds every client-bound packet with the degree-2 CSendPacket
    *    ctor → plain out, cipher 2 in.
    */
-  sndDeg = 0;
-  rcvDeg = 0;
+  sndDeg: TCipherDegree = CipherDegree.kPacketRaw;
+  rcvDeg: TCipherDegree = CipherDegree.kPacketRaw;
   private fHelloDone = false;
   /** CClientSocket::Read — every server sends the accept packet 0 on accept;
    *  the client adopts the header type from its E4 field before sending. */
@@ -41,9 +42,9 @@ export class TestClient {
   private helloResolve: (() => void) | null = null;
   private helloSeen = false;
 
-  async connect(port: number, opts?: { sndDeg?: 0 | 2; rcvDeg?: 0 | 2 }): Promise<void> {
-    this.sndDeg = opts?.sndDeg ?? 0;
-    this.rcvDeg = opts?.rcvDeg ?? 0;
+  async connect(port: number, opts?: { sndDeg?: TCipherDegree; rcvDeg?: TCipherDegree }): Promise<void> {
+    this.sndDeg = opts?.sndDeg ?? CipherDegree.kPacketRaw;
+    this.rcvDeg = opts?.rcvDeg ?? CipherDegree.kPacketRaw;
     this.hello = new Promise((resolve, reject) => {
       this.helloResolve = resolve;
       setTimeout(() => reject(new Error("timeout waiting for the accept packet 0")), 4000);
@@ -78,7 +79,7 @@ export class TestClient {
   }
 
   private onData(data: Uint8Array): void {
-    if (this.rcvDeg === 2 && this.fHelloDone) return this.onData2(data);
+    if (this.rcvDeg === CipherDegree.kPacketEncryptedCRC8 && this.fHelloDone) return this.onData2(data);
     const all = concat(this.rcvBuf, data);
     let off = 0;
     for (;;) {
@@ -126,7 +127,7 @@ export class TestClient {
       }
       // cipher-2 links: the hello was plain; the following frames switch to
       // the cipher-2 parser.
-      if (this.rcvDeg === 2) this.fHelloDone = true;
+      if (this.rcvDeg === CipherDegree.kPacketEncryptedCRC8) this.fHelloDone = true;
     }
     this.rcvBuf = all.slice(off);
   }

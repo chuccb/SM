@@ -11,7 +11,7 @@
  */
 import { CServerConfig } from "../core/Config.ts";
 import { CDBMan } from "../db/DBMan.ts";
-import { CReceivedPacket, CSendPacket, enSocket } from "../core/Packet.ts";
+import { CipherDegree, CReceivedPacket, CSendPacket, enSocket } from "../core/Packet.ts";
 import { CPacketSocket, type IPacketSocketHooks } from "../core/CPacketSocket.ts";
 import { CLocalSocket } from "../lib/CenterLink.ts";
 import {
@@ -218,7 +218,7 @@ export class CClientSocket extends CPacketSocket {
     CClientSocket.ms_nHeaderTypeCounter++;
     this.SetHeaderCode(CLIENTSOCKET_HEADER_CODE_RCV, CLIENTSOCKET_HEADER_CODE_SND, CLIENTSOCKET_HEADER_CODE_MODIFIER);
     this.SetSequence(CLIENTSOCKET_SEQ, CLIENTSOCKET_SEQ, CLIENTSOCKET_SEQ_DELTA, CLIENTSOCKET_SEQ_DELTA);
-    this.SetCipherDegree(2); // CFxShopApp::SetUp — the client sockets are ciphered
+    this.SetCipherDegree(CipherDegree.kPacketEncryptedCRC8); // CFxShopApp::SetUp — the client sockets are ciphered
     CClientSocket.ms_tblSN2Obj.set(this.m_nLocalSerialNo, this);
   }
 
@@ -333,7 +333,7 @@ export class CUserPool {
    *  [E4 t] → client 20 [E4 t][E4 now]. */
   OnPacket(n: CReceivedPacket, socket: CClientSocket): void {
     if (n.Decode1() !== SS_ReceivedPacket.OnEstimateRTT) return;
-    const packet = new CSendPacket(SC_SendPacket.OnEstimateRTTRes, 2);
+    const packet = new CSendPacket(SC_SendPacket.OnEstimateRTTRes, CipherDegree.kPacketEncryptedCRC8);
     const t = n.Decode4();
     const now = Date.now() & 0x7fffffff;
     packet.Encode4(t);
@@ -532,7 +532,7 @@ export class CMainPool extends CUserPool {
     }
     if (!target || !target.m_pSocket) return;
     const result = n.Decode1();
-    const p = new CSendPacket(SC_SendPacket.OnResConnectToSvr, 2);
+    const p = new CSendPacket(SC_SendPacket.OnResConnectToSvr, CipherDegree.kPacketEncryptedCRC8);
     p.Encode1(result);
     if (result === 1) {
       const svrType = n.Decode1();
@@ -632,7 +632,7 @@ export class CMainPool extends CUserPool {
     // client 18 OnInitialInfo
     const itemMan = CItemMan.ms_pInstance!;
     const system = CxShop.ms_pInstance!;
-    const p = new CSendPacket(SC_SendPacket.OnInitialInfo, 2);
+    const p = new CSendPacket(SC_SendPacket.OnInitialInfo, CipherDegree.kPacketEncryptedCRC8);
     if (target.m_nAuthenCode === 1) {
       p.Encode1(1);
       p.Encode1(101);
@@ -656,11 +656,11 @@ export class CMainPool extends CUserPool {
     // never fills the in-memory vectors — purchases go straight to the DB —
     // so in practice this branch stays silent, exactly like the original).
     if (users.some((u) => u && u.m_vecUserInventory.length > 0)) {
-      const p207 = new CSendPacket(SC_SendPacket.OnPreInventory, 2);
+      const p207 = new CSendPacket(SC_SendPacket.OnPreInventory, CipherDegree.kPacketEncryptedCRC8);
       p207.Encode1(users.length);
       for (const u of users) this.MakePreInventoryPacket(u!, p207);
       target.m_pSocket?.SendPacket(p207);
-      const p201 = new CSendPacket(SC_SendPacket.OnUserInventory, 2);
+      const p201 = new CSendPacket(SC_SendPacket.OnUserInventory, CipherDegree.kPacketEncryptedCRC8);
       p201.Encode1(users.length);
       for (const u of users) this.MakeUserInventoryPacket(u!, p201);
       target.m_pSocket?.SendPacket(p201);
@@ -792,14 +792,14 @@ export class CMainPool extends CUserPool {
     this.db.prSetMoney(id, -shopItem.Price);
     user.m_nCash -= shopItem.Price;
     // success: client 204 [E1 0][8B SystemTimeToVariantTime double]
-    const p = new CSendPacket(SC_SendPacket.OnPurchaseRes, 2);
+    const p = new CSendPacket(SC_SendPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
     p.Encode1(0);
     p.EncodeBuffer(variantTime(new Date()), 8);
     user.m_pSocket?.SendPacket(p);
   }
 
   PurchaseError(user: CUser, code: number, msg: string): void {
-    const p = new CSendPacket(SC_SendPacket.OnPurchaseRes, 2);
+    const p = new CSendPacket(SC_SendPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
     p.Encode1(code);
     p.EncodeStr(msg);
     user.m_pSocket?.SendPacket(p);
@@ -846,7 +846,7 @@ export class CMainPool extends CUserPool {
   OnRequestCharge(_n: CReceivedPacket, socket: CClientSocket): void {
     const user = socket.GetUser(socket.m_nSelectedUserIdx);
     if (!user || user.m_fTranxInProgress !== 0) return;
-    const p = new CSendPacket(SC_SendPacket.OnReqPurchaseRes, 2);
+    const p = new CSendPacket(SC_SendPacket.OnReqPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
     p.Encode1(CxShop.ms_pInstance!.m_nFXAttr & 0xff);
     p.Encode4(user.GetGlobalSerialNo());
     p.Encode4(user.m_nCash);
@@ -856,7 +856,7 @@ export class CMainPool extends CUserPool {
 
   /** CMainPool::OnRequestUserItemList — client 217 → 202 PutUserItemList. */
   OnRequestUserItemList(_n: CReceivedPacket, socket: CClientSocket): void {
-    const p = new CSendPacket(SC_SendPacket.OnUserItemList, 2);
+    const p = new CSendPacket(SC_SendPacket.OnUserItemList, CipherDegree.kPacketEncryptedCRC8);
     CItemMan.ms_pInstance!.PutUserItemList(p);
     socket.SendPacket(p);
   }
@@ -869,14 +869,14 @@ export class CMainPool extends CUserPool {
     const user = socket.GetUser(socket.m_nSelectedUserIdx);
     if (!user) return;
     if (this.db.prConfirmUnregisteredId(targetId) === 0) {
-      const p = new CSendPacket(SC_SendPacket.OnPurchaseRes, 2);
+      const p = new CSendPacket(SC_SendPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
       p.Encode1(3);
       p.EncodeStr(ERR_PURCHASE);
       socket.SendPacket(p);
       return;
     }
     if (!CBillingProcess.ms_pInstance || !CBillingProcess.ms_pInstance.IsConnected()) {
-      const p = new CSendPacket(SC_SendPacket.OnPurchaseRes, 2);
+      const p = new CSendPacket(SC_SendPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
       p.Encode1(5);
       p.EncodeStr(ERR_PURCHASE);
       socket.SendPacket(p);
@@ -899,7 +899,7 @@ export class CMainPool extends CUserPool {
       CBillingProcess.ms_pInstance?.RequestCheckCoupon(user);
       return;
     }
-    const p = new CSendPacket(SC_SendPacket.OnUseCouponRes, 2);
+    const p = new CSendPacket(SC_SendPacket.OnUseCouponRes, CipherDegree.kPacketEncryptedCRC8);
     p.Encode1(7);
     socket.SendPacket(p);
   }
@@ -913,7 +913,7 @@ export class CMainPool extends CUserPool {
     const cart = this.db.prGetUserCartList(user.GetName());
     const list = cart.stockSN;
     const count = list ? list.split(",").filter((x) => x.length > 0).length : 0;
-    const p = new CSendPacket(SC_SendPacket.OnCartList, 2);
+    const p = new CSendPacket(SC_SendPacket.OnCartList, CipherDegree.kPacketEncryptedCRC8);
     p.Encode1(count);
     if (count !== 0) p.EncodeStr(list);
     socket.SendPacket(p);
@@ -972,7 +972,7 @@ export class CMainPool extends CUserPool {
       if (user.m_anCart[user.m_nCartCount]) user.m_anCart[user.m_nCartCount]!.cnt--;
     }
     // the cart receipt: client 204 [E1 0][8B variant time]
-    const p = new CSendPacket(SC_SendPacket.OnPurchaseRes, 2);
+    const p = new CSendPacket(SC_SendPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
     p.Encode1(0);
     p.EncodeBuffer(variantTime(new Date()), 8);
     user.m_pSocket?.SendPacket(p);
@@ -1000,7 +1000,7 @@ export class CMainPool extends CUserPool {
     if (!user) return;
     const buf = new Uint8Array(500);
     const len = CTranxCtrl.ms_pInstance!.GetData(a, b, c, buf, serial);
-    const p = new CSendPacket(SC_SendPacket.OnTranxData, 2);
+    const p = new CSendPacket(SC_SendPacket.OnTranxData, CipherDegree.kPacketEncryptedCRC8);
     p.Encode2(len);
     p.EncodeBuffer(buf.subarray(0, len), len);
     p.Encode4(serial);
@@ -1013,7 +1013,7 @@ export class CMainPool extends CUserPool {
    *  but ENCODED as an E4.  The list is what the center pushed as CM 6. */
   OnRequestShopSvrInfo(_n: CReceivedPacket, socket: CClientSocket): void {
     const center = CCenterProcess.ms_pInstance!;
-    const p = new CSendPacket(SC_SendPacket.OnShopSvrInfo, 2);
+    const p = new CSendPacket(SC_SendPacket.OnShopSvrInfo, CipherDegree.kPacketEncryptedCRC8);
     p.Encode4(center.m_nSvrCount);
     for (let i = 0; i < center.m_nSvrCount; i++) {
       p.Encode4(center.m_anSvrIP[i]!);
@@ -1404,12 +1404,12 @@ export class CBillingProcess {
     if (result === 1) {
       const len2 = n.Decode1();
       n.DecodeRest();
-      const p = new CSendPacket(SC_SendPacket.OnRemainCash, 2);
+      const p = new CSendPacket(SC_SendPacket.OnRemainCash, CipherDegree.kPacketEncryptedCRC8);
       p.Encode1(1);
       p.Encode4(cash);
       user.m_pSocket?.SendPacket(p);
     } else {
-      const p = new CSendPacket(SC_SendPacket.OnRemainCash, 2);
+      const p = new CSendPacket(SC_SendPacket.OnRemainCash, CipherDegree.kPacketEncryptedCRC8);
       p.Encode1(0);
       p.EncodeStr("");
       user.m_pSocket?.SendPacket(p);
@@ -1430,7 +1430,7 @@ export class CBillingProcess {
     const user = CLocalUserTable.ms_pInstance!.FindUserFromGlobalSerialNo(serial);
     if (!user) return;
     if (result !== 1) {
-      const p = new CSendPacket(SC_SendPacket.OnPurchaseRes, 2);
+      const p = new CSendPacket(SC_SendPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
       p.Encode1(1);
       p.EncodeStr(ERR_PURCHASE);
       user.m_pSocket?.SendPacket(p);
@@ -1553,7 +1553,7 @@ export class CCenterProcess {
   /** CCenterProcess::OnAdminNotifyMsg — CM 8 [EStr] → broadcast client 26. */
   OnAdminNotifyMsg(n: CReceivedPacket): void {
     const str = n.DecodeStr();
-    const p = new CSendPacket(SC_SendPacket.OnAdminNotifyMsg, 2);
+    const p = new CSendPacket(SC_SendPacket.OnAdminNotifyMsg, CipherDegree.kPacketEncryptedCRC8);
     p.EncodeStr(str);
     CUserPool.SendAll(CUserPool.CreateSocketList(CMainPool.ms_pInstance!), p);
   }
@@ -1675,7 +1675,7 @@ export class CxShop {
             socket.m_strPeerAddress = t.remoteAddress;
             // CListenThread::Proc — the accept packet, then SetCipherDegree(2) before Read
             this.mainSystem.OnConnEstablished(socket);
-            socket.SetCipherDegree(2);
+            socket.SetCipherDegree(CipherDegree.kPacketEncryptedCRC8);
           } catch (e) {
             console.error("[Shop] client accept failed", e);
           }

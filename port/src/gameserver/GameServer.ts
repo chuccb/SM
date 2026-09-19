@@ -33,7 +33,7 @@
  */
 import { CServerConfig } from "../core/Config.ts";
 import { CPacketSocket } from "../core/CPacketSocket.ts";
-import { CReceivedPacket, CSendPacket } from "../core/Packet.ts";
+import { CipherDegree, CReceivedPacket, CSendPacket } from "../core/Packet.ts";
 import { CDBMan } from "../db/DBMan.ts";
 import { CData, CIDFMan } from "./CData.ts";
 import { HOSTHANDLE, SplitDatagram } from "./MTUDP.ts";
@@ -880,7 +880,7 @@ export class CUserPool {
   /** CUserPool::OnPacket — the 20 RTT fallback with the GS anti-cheat checks. */
   OnPacket(n: CReceivedPacket, socket: CClientSocket): void {
     if (n.Decode1() !== GS_ReceivedPacket.OnEstimateRTT) return;
-    const packet = new CSendPacket(GS_ClientSend.OnEstimateRTTRes, 2);
+    const packet = new CSendPacket(GS_ClientSend.OnEstimateRTTRes, CipherDegree.kPacketEncryptedCRC8);
     const v3 = n.Decode4();
     const hash = n.Decode4();
     const now = Date.now() & 0x7fffffff;
@@ -1057,7 +1057,7 @@ export class CConnectPool extends CUserPool {
         if (u.GetGuildSerialNo() > 0) {
           const inserted = CGuildTable.ms_pInstance!.Insert(u.GetGuildSerialNo());
           if (inserted === 0 && CMainSystem.ms_pInstance!.m_nChannelType === 77) {
-            const p = new CSendPacket(GS_ClientSend.OnGuildBanRes, 2);
+            const p = new CSendPacket(GS_ClientSend.OnGuildBanRes, CipherDegree.kPacketEncryptedCRC8);
             users[0]!.m_pSocket?.SendPacket(p);
             for (const u2 of users) if (u2) u2.m_pSocket?.PostClosePacket();
             return;
@@ -1075,27 +1075,27 @@ export class CConnectPool extends CUserPool {
     }
 
     // → client 210 [E1 attr]; move the socket into the channel pool.
-    const p210 = new CSendPacket(GS_ClientSend.OnEnterGame, 2);
+    const p210 = new CSendPacket(GS_ClientSend.OnEnterGame, CipherDegree.kPacketEncryptedCRC8);
     p210.Encode1(CMainSystem.ms_pInstance!.m_fInventoryDB);
     const socket = users[0]!.m_pSocket!;
     socket.SendPacket(p210);
     if (this.DeleteSocket(socket) !== 0 && CChannelPool.ms_pInstance!.AddNewSocket(socket) !== 0) {
       let sent = false;
       if (users[0]!.m_nFlushCount === 0) {
-        const p202 = new CSendPacket(GS_ClientSend.OnUserItemList, 2);
+        const p202 = new CSendPacket(GS_ClientSend.OnUserItemList, CipherDegree.kPacketEncryptedCRC8);
         CUserItemMan.ms_pInstance!.PutUserItemList(p202);
         socket.SendPacket(p202);
         sent = true;
       }
       if (users.some((u) => u && u.m_nPreInventoryCount > 0)) {
-        const p207 = new CSendPacket(GS_ClientSend.OnPreInventory, 2);
+        const p207 = new CSendPacket(GS_ClientSend.OnPreInventory, CipherDegree.kPacketEncryptedCRC8);
         p207.Encode1(count);
         for (const u of users) u!.MakePreInventoryPacket(p207);
         socket.SendPacket(p207);
         sent = true;
       }
       if (sent) {
-        const p201 = new CSendPacket(GS_ClientSend.OnUserInventory, 2);
+        const p201 = new CSendPacket(GS_ClientSend.OnUserInventory, CipherDegree.kPacketEncryptedCRC8);
         p201.Encode1(count);
         for (const u of users) u!.MakeUserInventoryPacket(p201);
         socket.SendPacket(p201);
@@ -2024,7 +2024,7 @@ export class CSyncGameObjMan {
         continue;
       }
       this.Delegate(id, slot);
-      const packet = new CSendPacket(GS_ClientSend.OnObjInitial, 2);
+      const packet = new CSendPacket(GS_ClientSend.OnObjInitial, CipherDegree.kPacketEncryptedCRC8);
       packet.Encode2(id);
       packet.Encode1(slot);
       this.m_pGameSession.SendPacket(packet);
@@ -2054,7 +2054,7 @@ export class CSyncGameObjMan {
       return;
     }
     this.Delegate(objId, slot);
-    const packet = new CSendPacket(GS_ClientSend.OnObjCreate, 2);
+    const packet = new CSendPacket(GS_ClientSend.OnObjCreate, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode2(objId);
     packet.Encode1(slot);
     packet.Encode2(objType);
@@ -2074,7 +2074,7 @@ export class CSyncGameObjMan {
     const crc = n.Decode4();
     for (const set of this.m_rgSetObj) set.delete(objId);
     this.m_mapObj.delete(objId);
-    const packet = new CSendPacket(GS_ClientSend.OnObjDestroy, 2);
+    const packet = new CSendPacket(GS_ClientSend.OnObjDestroy, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode2(objId);
     packet.Encode4(crc);
     session.SendPacket(packet);
@@ -2099,7 +2099,7 @@ export class CSyncGameObjMan {
         } else {
           this.m_mapObj.delete(objId);
         }
-        const packet = new CSendPacket(GS_ClientSend.OnObjDestroy, 2);
+        const packet = new CSendPacket(GS_ClientSend.OnObjDestroy, CipherDegree.kPacketEncryptedCRC8);
         packet.Encode2(objId);
         packet.Encode4(0);
         session.SendPacket(packet);
@@ -2198,7 +2198,7 @@ export class CUdpLossRegulator {
         // flag that FXGS logic never sets, so the port uses the connected flag
         const socket = user.m_pSocket;
         if (socket && socket.m_bConnected) {
-          socket.SendPacket(new CSendPacket(GS_ClientSend.OnUdpLossBan, 2)); // 195, no payload
+          socket.SendPacket(new CSendPacket(GS_ClientSend.OnUdpLossBan, CipherDegree.kPacketEncryptedCRC8)); // 195, no payload
           socket.m_nPoolType = 4; // [socket+1D4]
         }
       }
@@ -2546,7 +2546,7 @@ export class CGameSession {
 
   /** CBaseSession::MakeSessionInfoPacket — 105/107 for every slot. */
   MakeSessionInfoPacket(socket: CClientSocket): void {
-    const packet = new CSendPacket(0, 2);
+    const packet = new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8);
     for (let slot = 0; slot < this.m_nMaxSlot; slot++) {
       if (this.m_rgPlayer[slot]) this.MakeSetPlayerPacket(slot, socket === this.m_rgPlayer[slot]!.m_pSocket ? 1 : 0, packet);
       else this.MakeSetSlotStatePacket(slot, packet);
@@ -2557,7 +2557,7 @@ export class CGameSession {
   /** CBaseSession::SendSessionInfoPacket / CGameSession override — 105s + 112. */
   SendSessionInfoPacket(socket: CClientSocket): void {
     this.MakeSessionInfoPacket(socket);
-    const packet = new CSendPacket(GS_ClientSend.OnSessionMapIdx, 2);
+    const packet = new CSendPacket(GS_ClientSend.OnSessionMapIdx, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode2(this.m_nMapIdx & 0xffff);
     socket.QueuePacket(packet);
     socket.FlushPendingPackets();
@@ -2565,7 +2565,7 @@ export class CGameSession {
 
   /** CBaseSession::SendJoinPacket — the newcomer's self 105s. */
   SendJoinPacket(socket: CClientSocket): void {
-    const packet = new CSendPacket(0, 2);
+    const packet = new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8);
     const n = socket.GetUserCount();
     for (let i = 0; i < n; i++) {
       const user = socket.GetUser(i);
@@ -2582,7 +2582,7 @@ export class CGameSession {
 
   /** CBaseSession::SendResetPlayer — 106 for the leaver's users. */
   SendResetPlayer(socket: CClientSocket, a3: number): void {
-    const packet = new CSendPacket(0, 2);
+    const packet = new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8);
     const n = socket.GetUserCount();
     for (let i = 0; i < n; i++) {
       const user = socket.GetUser(i);
@@ -2717,7 +2717,7 @@ export class CGameSession {
         }
       }
     }
-    const packet = new CSendPacket(GS_ClientSend.OnUDPPeerInfo, 2);
+    const packet = new CSendPacket(GS_ClientSend.OnUDPPeerInfo, CipherDegree.kPacketEncryptedCRC8);
     for (let slot = 0; slot < 8; slot++) {
       if (this.m_rgPlayer[slot]) {
         packet.Encode1(1);
@@ -2766,7 +2766,7 @@ export class CGameSession {
         // so the port uses the connected flag
         const socket = user.m_pSocket;
         if (socket && socket.m_bConnected) {
-          socket.SendPacket(new CSendPacket(GS_ClientSend.OnUdpLossBan, 2)); // 195, no payload
+          socket.SendPacket(new CSendPacket(GS_ClientSend.OnUdpLossBan, CipherDegree.kPacketEncryptedCRC8)); // 195, no payload
           socket.m_nPoolType = 4; // [socket+1D4]
         }
       }
@@ -2926,19 +2926,19 @@ export class CGameSession {
       for (let slot = 0; slot < this.m_nMaxSlot; slot++) {
         const user = this.m_rgPlayer[slot];
         if (user && slot !== this.m_nChiefSlotidx && this.IsChief(user.m_pSocket!)) {
-          const packet = new CSendPacket(0, 2);
+          const packet = new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8);
           this.MakeSetSlotStatePacket(slot, packet);
           this.PutPacket(packet);
         }
       }
     }
     if (old >= 0) {
-      const packet = new CSendPacket(0, 2);
+      const packet = new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8);
       this.MakeSetSlotStatePacket(old, packet);
       this.PutPacket(packet);
     }
     if (this.m_nChiefSlotidx >= 0) {
-      const packet = new CSendPacket(0, 2);
+      const packet = new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8);
       this.MakeSetSlotStatePacket(this.m_nChiefSlotidx, packet);
       this.PutPacket(packet);
     }
@@ -2978,7 +2978,7 @@ export class CGameSession {
   /** CListSession::DoBangPok — 122 to everyone, then out to the lobby. */
   DoBangPok(): void {
     for (const socket of [...this.m_setSocket]) {
-      const p = new CSendPacket(GS_ClientSend.OnBangPok, 2);
+      const p = new CSendPacket(GS_ClientSend.OnBangPok, CipherDegree.kPacketEncryptedCRC8);
       socket.SendPacket(p);
       socket.m_nPoolType = 4; // v2[117] = 4 (MoveToExchangeSession)
       CGameSessionTable.ms_pInstance!.MoveToExchangeSession(socket, 0);
@@ -2997,7 +2997,7 @@ export class CGameSession {
   /** CBaseSession::DoChangeTitle + the CListSession modified bit. */
   DoChangeTitle(title: string): void {
     this.m_strName = title;
-    const packet = new CSendPacket(GS_ClientSend.OnChangeTitle, 2);
+    const packet = new CSendPacket(GS_ClientSend.OnChangeTitle, CipherDegree.kPacketEncryptedCRC8);
     packet.EncodeStr(title);
     this.SendPacket(packet);
     this.m_fModified |= 0x10;
@@ -3007,7 +3007,7 @@ export class CGameSession {
   DoOpenCloseSlot(slot: number, close: number): void {
     if (slot < 0 || slot >= this.m_nMaxSlot) return;
     if (this.m_rgPlayer[slot]) close = 0;
-    const packet = new CSendPacket(GS_ClientSend.OnOpenCloseSlotRes, 2);
+    const packet = new CSendPacket(GS_ClientSend.OnOpenCloseSlotRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(((slot << 4) | (close & 0xf)) & 0xff);
     this.SendPacket(packet);
     const p = slot * 3;
@@ -3165,13 +3165,13 @@ export class CGameSession {
       let n8 = 0;
       while (n8 < 8 && !(this.m_rgPlayer[n8] !== null && this.m_rgSlotGhost[n8] === -1)) n8++;
       if (n8 >= 8) {
-        const p = new CSendPacket(GS_ClientSend.OnGhostDestroy, 2);
+        const p = new CSendPacket(GS_ClientSend.OnGhostDestroy, CipherDegree.kPacketEncryptedCRC8);
         p.Encode1(ghost);
         this.SendPacket(p);
         this.m_rgSlotGhost[slot] = -1;
         this.m_rgGhostSlot[ghost] = -1;
       } else {
-        const p = new CSendPacket(GS_ClientSend.OnGhostGenerate, 2);
+        const p = new CSendPacket(GS_ClientSend.OnGhostGenerate, CipherDegree.kPacketEncryptedCRC8);
         p.Encode1(ghost);
         p.Encode1(n8);
         this.SendPacket(p);
@@ -3228,7 +3228,7 @@ export class CGameSession {
     let exploded = 0;
     if (ctx.m_nBombCount > 0) {
       // 152 — the bomb clock: every armed bomb counts down by the elapsed ms
-      const packet = new CSendPacket(GS_ClientSend.OnSetBombTimerRes, 2);
+      const packet = new CSendPacket(GS_ClientSend.OnSetBombTimerRes, CipherDegree.kPacketEncryptedCRC8);
       const countOffset = packet.m_uOffset;
       packet.Encode1(0);
       let i = 0;
@@ -3271,7 +3271,7 @@ export class CGameSession {
       }
       if (allDown) grace = 6000; // everybody down/goal/trapped: the short fuse
     }
-    const packet2 = new CSendPacket(GS_ClientSend.OnBomberEvent, 2);
+    const packet2 = new CSendPacket(GS_ClientSend.OnBomberEvent, CipherDegree.kPacketEncryptedCRC8);
     packet2.Encode1(80);
     packet2.Encode2(0);
     packet2.Encode2(0);
@@ -3348,12 +3348,12 @@ export class CGameSession {
       } else if (now - bc.m_dwOddSlotTime > bc.GetOddSlotInManner(now)) {
         if (bc.m_nWarnedBanOdd === 0) {
           bc.SetWarnedBanOdd(1);
-          const p = new CSendPacket(GS_ClientSend.OnNeedStartGame, 2);
+          const p = new CSendPacket(GS_ClientSend.OnNeedStartGame, CipherDegree.kPacketEncryptedCRC8);
           p.Encode1(1);
           p.Encode2(Math.trunc(bc.GetWarningDelay(now) / 1000));
           this.SendPacket(p);
         } else if (now - bc.m_dwWarnedBanOddTime > bc.GetWarningDelay(now)) {
-          const p = new CSendPacket(GS_ClientSend.OnNeedStartGame, 2);
+          const p = new CSendPacket(GS_ClientSend.OnNeedStartGame, CipherDegree.kPacketEncryptedCRC8);
           p.Encode1(3);
           p.Encode2(Math.trunc(bc.GetWarningDelay(now) / 1000));
           user.m_pSocket.SendPacket(p); // vtbl+68 — the chief only
@@ -3380,14 +3380,14 @@ export class CGameSession {
     if (!this.m_BanChief.IsBanChief(flag, this.m_nGameType, superChief)) return;
     if (this.m_BanChief.m_nWarnedBan === 0) {
       this.m_BanChief.SetWarnedBan(1);
-      const p = new CSendPacket(GS_ClientSend.OnNeedStartGame, 2);
+      const p = new CSendPacket(GS_ClientSend.OnNeedStartGame, CipherDegree.kPacketEncryptedCRC8);
       p.Encode1(0);
       p.Encode2(Math.trunc(this.m_BanChief.GetWarningDelay(now) / 1000));
       this.SendPacket(p);
       return;
     }
     if (now - this.m_BanChief.m_dwWarnedBanTime <= this.m_BanChief.GetWarningDelay(now)) return;
-    const p2 = new CSendPacket(GS_ClientSend.OnNeedStartGame, 2);
+    const p2 = new CSendPacket(GS_ClientSend.OnNeedStartGame, CipherDegree.kPacketEncryptedCRC8);
     p2.Encode1(2);
     p2.Encode2(Math.trunc(this.m_BanChief.GetWarningDelay(now) / 1000));
     user.m_pSocket.SendPacket(p2); // vtbl+68 — the chief only
@@ -3402,7 +3402,7 @@ export class CGameSession {
 
   /** CGameSession::DoReturnPrepareStage (41B0DA). */
   DoReturnPrepareStage(): void {
-    const packet = new CSendPacket(GS_ClientSend.OnReturnPrepareStage, 2);
+    const packet = new CSendPacket(GS_ClientSend.OnReturnPrepareStage, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(0);
     this.SendPacket(packet);
     this.m_nGamePhase = 0;
@@ -3503,7 +3503,7 @@ export class CGameSession {
    * lobby rank list is refreshed.
    */
   SendGameResult(a2: number): void {
-    const packet = new CSendPacket(GS_ClientSend.OnGameResult, 2);
+    const packet = new CSendPacket(GS_ClientSend.OnGameResult, CipherDegree.kPacketEncryptedCRC8);
     let flag = 0;
     for (let i = 0; i < 8; i++) {
       if (this.m_rgbGameType[i] === 5 || this.m_rgbGameType[i] === 6 || this.m_rgbGameType[i] === 7) flag = 1;
@@ -3627,7 +3627,7 @@ export class CGameSession {
       socket.PostClosePacket();
       return;
     }
-    const packet = new CSendPacket(0, 2);
+    const packet = new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8);
     const count = socket.GetUserCount();
     for (let i = 0; i < count; i++) {
       const user = socket.GetUser(i);
@@ -3669,7 +3669,7 @@ export class CGameSession {
       this.m_fModified |= 2;
       this.m_nMapIdx = mapIdx;
     }
-    const packet = new CSendPacket(GS_ClientSend.OnSessionMapIdx, 2);
+    const packet = new CSendPacket(GS_ClientSend.OnSessionMapIdx, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode2(this.m_nMapIdx & 0xffff);
     this.PutPacket(packet);
     this.FlushPacket();
@@ -3700,7 +3700,7 @@ export class CGameSession {
           const want = v20[k % teams]!;
           this.m_rgSlotState[p] = (this.m_rgSlotState[p]! ^ (want ^ this.m_rgSlotState[p]!)) & 0x1f;
           k++;
-          const sp = new CSendPacket(0, 2);
+          const sp = new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8);
           this.MakeSetSlotStatePacket(slot, sp);
           this.PutPacket(sp);
         }
@@ -3781,7 +3781,7 @@ export class CGameSession {
         const p = slot * 3 + 2;
         const want = v19[this.GetColor(slot)]! & 0xff;
         this.m_rgSlotState[p] = (this.m_rgSlotState[p]! ^ (want ^ this.m_rgSlotState[p]!)) & 0x1f;
-        const sp = new CSendPacket(0, 2);
+        const sp = new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8);
         this.MakeSetSlotStatePacket(slot, sp);
         this.PutPacket(sp);
       }
@@ -3814,7 +3814,7 @@ export class CGameSession {
     }
     if (slot >= 0 && slot < this.m_nMaxSlot) {
       this.SetColor(slot, colorIdx); // DoSelectColor
-      const packet = new CSendPacket(GS_ClientSend.OnSelectColorRes, 2);
+      const packet = new CSendPacket(GS_ClientSend.OnSelectColorRes, CipherDegree.kPacketEncryptedCRC8);
       packet.Encode1(((slot << 4) | (colorIdx & 0xf)) & 0xff);
       this.SendPacket(packet);
       return;
@@ -3847,7 +3847,7 @@ export class CGameSession {
       if (slot >= 0 && slot < this.m_nMaxSlot) {
         const p = slot * 3 + 1;
         this.m_rgSlotState[p] = (this.m_rgSlotState[p]! ^ ((bomberIdx ^ this.m_rgSlotState[p]!) & 0x3f));
-        const packet = new CSendPacket(GS_ClientSend.OnSelectBomberRes, 2);
+        const packet = new CSendPacket(GS_ClientSend.OnSelectBomberRes, CipherDegree.kPacketEncryptedCRC8);
         packet.Encode1(((slot << 4) | (bomberIdx & 0xf)) & 0xff);
         this.SendPacket(packet);
         return;
@@ -3923,18 +3923,18 @@ export class CGameSession {
   /** CGameSession::SendGameTypeNormal — +948 = 0, packet 93. */
   SendGameTypeNormal(): void {
     this.m_nGameTypeMod = 0;
-    this.SendPacket(new CSendPacket(GS_ClientSend.OnGameTypeNormal, 2));
+    this.SendPacket(new CSendPacket(GS_ClientSend.OnGameTypeNormal, CipherDegree.kPacketEncryptedCRC8));
   }
 
   /** CGameSession::SendGameTypeMod — +948 = 1, packet 92. */
   SendGameTypeMod(): void {
     this.m_nGameTypeMod = 1;
-    this.SendPacket(new CSendPacket(GS_ClientSend.OnGameTypeMod, 2));
+    this.SendPacket(new CSendPacket(GS_ClientSend.OnGameTypeMod, CipherDegree.kPacketEncryptedCRC8));
   }
 
   /** CGameSession::SendGameType — the join tail (92 or 93). */
   SendGameType(socket: CClientSocket): void {
-    socket.SendPacket(new CSendPacket(this.m_nGameTypeMod !== 0 ? GS_ClientSend.OnGameTypeMod : GS_ClientSend.OnGameTypeNormal, 2));
+    socket.SendPacket(new CSendPacket(this.m_nGameTypeMod !== 0 ? GS_ClientSend.OnGameTypeMod : GS_ClientSend.OnGameTypeNormal, CipherDegree.kPacketEncryptedCRC8));
   }
 
   // ---- ban votes (104/105 → 113/114) ----
@@ -3960,7 +3960,7 @@ export class CGameSession {
       return;
     }
     if (this.m_nBanSerial !== 0) {
-      const p = new CSendPacket(GS_ClientSend.OnBanPlayerRes, 2);
+      const p = new CSendPacket(GS_ClientSend.OnBanPlayerRes, CipherDegree.kPacketEncryptedCRC8);
       p.Encode1(1);
       socket.SendPacket(p);
       return;
@@ -4001,7 +4001,7 @@ export class CGameSession {
         this.m_nBanSerial = 0;
         const targetSocket = targetUser.m_pSocket!;
         this.MoveOut(targetSocket);
-        const p = new CSendPacket(GS_ClientSend.OnBanPlayerRes, 2);
+        const p = new CSendPacket(GS_ClientSend.OnBanPlayerRes, CipherDegree.kPacketEncryptedCRC8);
         p.Encode1(4);
         this.SendPacket(p);
         return;
@@ -4020,7 +4020,7 @@ export class CGameSession {
       const chief = this.m_rgPlayer[this.m_nChiefSlotidx]!;
       const chiefSocket = chief.m_pSocket!;
       this.MoveOut(chiefSocket);
-      const p = new CSendPacket(GS_ClientSend.OnBanPlayerRes, 2);
+      const p = new CSendPacket(GS_ClientSend.OnBanPlayerRes, CipherDegree.kPacketEncryptedCRC8);
       p.Encode1(5);
       p.EncodeStr(chief.GetName());
       this.SendPacket(p);
@@ -4038,7 +4038,7 @@ export class CGameSession {
     }
     this.DeferBanPlayer();
     if (this.m_nBanSerial !== 0) {
-      const ask = new CSendPacket(GS_ClientSend.OnBanVoteRequest, 2);
+      const ask = new CSendPacket(GS_ClientSend.OnBanVoteRequest, CipherDegree.kPacketEncryptedCRC8);
       ask.Encode4(serial);
       ask.EncodeStr(targetUser.GetName());
       const chiefSocket = chiefUser.m_pSocket!;
@@ -4053,7 +4053,7 @@ export class CGameSession {
         sent.add(member);
         member.SendPacket(ask);
       }
-      const res = new CSendPacket(GS_ClientSend.OnBanPlayerRes, 2);
+      const res = new CSendPacket(GS_ClientSend.OnBanPlayerRes, CipherDegree.kPacketEncryptedCRC8);
       res.Encode1(0);
       socket.SendPacket(res);
     }
@@ -4102,7 +4102,7 @@ export class CGameSession {
     }
     if (targetSlot === -1) {
       this.m_nBanSerial = 0;
-      const p = new CSendPacket(GS_ClientSend.OnBanPlayerRes, 2);
+      const p = new CSendPacket(GS_ClientSend.OnBanPlayerRes, CipherDegree.kPacketEncryptedCRC8);
       p.Encode1(4);
       this.SendPacket(p);
       return;
@@ -4114,7 +4114,7 @@ export class CGameSession {
       const targetSocket = target.m_pSocket!;
       this.MoveOut(targetSocket);
       targetSocket.m_nPoolType = 4;
-      const p = new CSendPacket(GS_ClientSend.OnBanPlayerRes, 2);
+      const p = new CSendPacket(GS_ClientSend.OnBanPlayerRes, CipherDegree.kPacketEncryptedCRC8);
       p.Encode1(2);
       p.EncodeStr(target.GetName());
       this.SendPacket(p);
@@ -4123,7 +4123,7 @@ export class CGameSession {
     if (2 * no >= total || yes + no >= total) {
       this.m_nBanSerial = 0;
       const target = this.m_rgPlayer[targetSlot]!;
-      const p = new CSendPacket(GS_ClientSend.OnBanPlayerRes, 2);
+      const p = new CSendPacket(GS_ClientSend.OnBanPlayerRes, CipherDegree.kPacketEncryptedCRC8);
       p.Encode1(3);
       p.EncodeStr(target.GetName());
       this.SendPacket(p);
@@ -4151,7 +4151,7 @@ export class CGameSession {
     const c = n.Decode2();
     const user = this.m_rgPlayer[slot];
     if (user && user.m_pSocket === socket) {
-      const packet = new CSendPacket(GS_ClientSend.OnPlayEmotion, 2);
+      const packet = new CSendPacket(GS_ClientSend.OnPlayEmotion, CipherDegree.kPacketEncryptedCRC8);
       packet.Encode1(slot);
       packet.Encode1(a);
       packet.Encode1(b);
@@ -4182,7 +4182,7 @@ export class CGameSession {
       return;
     }
     const text = `${user0.GetName()} : ${msg}`;
-    const packet = new CSendPacket(GS_ClientSend.OnWhisperRes, 2);
+    const packet = new CSendPacket(GS_ClientSend.OnWhisperRes, CipherDegree.kPacketEncryptedCRC8);
     packet.EncodeStr(text);
     const slot = this.GetSlotidx(user0);
     const color = this.GetColor(slot);
@@ -4297,7 +4297,7 @@ export class CGameSession {
       }
     }
     if (n > 0) {
-      const packet = new CSendPacket(GS_ClientSend.OnBomberEvent, 2);
+      const packet = new CSendPacket(GS_ClientSend.OnBomberEvent, CipherDegree.kPacketEncryptedCRC8);
       packet.Encode1(80);
       packet.Encode2(0);
       packet.Encode2(0);
@@ -4325,7 +4325,7 @@ export class CGameSession {
    * dword +12776 is dead code: the body is always the two raw dwords.
    */
   SendAirplaneItemProb(): void {
-    const packet = new CSendPacket(GS_ClientSend.OnAirplaneItemProb, 2);
+    const packet = new CSendPacket(GS_ClientSend.OnAirplaneItemProb, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode4(this.m_nMapArg72 >>> 0);
     packet.Encode4(this.m_dwArg76 >>> 0);
     this.SendPacket(packet);
@@ -4337,7 +4337,7 @@ export class CGameSession {
 
   /** CGameSession::LaunchGameStage — packet 116 (FxServer.exe.c:37254). */
   LaunchGameStage(): void {
-    const packet = new CSendPacket(GS_ClientSend.OnStartGame, 2);
+    const packet = new CSendPacket(GS_ClientSend.OnStartGame, CipherDegree.kPacketEncryptedCRC8);
     // DoLaunchGameStageEx is an empty `retn` in the original
     packet.Encode4(Date.now() & 0xffffffff);
     packet.Encode4(this.m_nGameMapIdx);
@@ -4448,13 +4448,13 @@ export class CGameSession {
     if (v22[7] !== -1) claim(7);
     this.SetMapIdxPlayingByLevel(chiefUser.dyn.exp, CClientSocket.HasAuthority(23), chiefUser.m_fPremiumTicket);
     const can = this.CanStartGame(0);
-    const res = new CSendPacket(GS_ClientSend.OnStartGameRes, 2);
+    const res = new CSendPacket(GS_ClientSend.OnStartGameRes, CipherDegree.kPacketEncryptedCRC8);
     res.Encode1(can);
     socket.SendPacket(res);
     if (can !== 0) return;
     if (CGameMapTmplList.ms_pInstance!.GetMapMaxTeam(this.m_nGameMapIdx) < 8) {
       let changed = false;
-      const packet = new CSendPacket(0, 2);
+      const packet = new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8);
       for (let slot = 0; slot < 8; slot++) {
         if (!this.IsPlayerSet(slot)) continue;
         const want = v22[this.GetColor(slot)]!;
@@ -4503,7 +4503,7 @@ export class CGameSession {
     if (code === 3 || code === 8) return;
     if (code >= names.length) {
       console.error(`[GS] Hacking suspected [${user0.GetName()}]: illegal hacking code (OnHackingSuspected)`);
-      const p = new CSendPacket(GS_ClientSend.OnHackingKick, 2);
+      const p = new CSendPacket(GS_ClientSend.OnHackingKick, CipherDegree.kPacketEncryptedCRC8);
       p.Encode1(slot);
       this.SendPacketExclude(p, socket);
       socket.SendPacketAndDestroy(p);
@@ -4512,7 +4512,7 @@ export class CGameSession {
     console.error(`[GS] [${user0.GetName()}] reported [${target.GetName()}] committed hacking (${names[code]}).`);
     if (target.m_pSocket === socket) {
       console.error(`[GS] Hacking suspected [${target.GetName()}] (${GetInfoStr(socket)}) by itself. Disconnect.`);
-      const p = new CSendPacket(GS_ClientSend.OnHackingKick, 2);
+      const p = new CSendPacket(GS_ClientSend.OnHackingKick, CipherDegree.kPacketEncryptedCRC8);
       p.Encode1(slot);
       this.SendPacketExclude(p, socket);
       socket.SendPacketAndDestroy(p);
@@ -4533,7 +4533,7 @@ export class CGameSession {
     }
     if (reports < Math.floor(players / 2)) return;
     console.error(`[GS] Hacking suspected [${target.GetName()}] by major of the session. Disconnect.`);
-    const p = new CSendPacket(GS_ClientSend.OnHackingKick, 2);
+    const p = new CSendPacket(GS_ClientSend.OnHackingKick, CipherDegree.kPacketEncryptedCRC8);
     p.Encode1(slot);
     this.SendPacketExclude(p, target.m_pSocket!);
     target.m_pSocket!.SendPacketAndDestroy(p);
@@ -4593,7 +4593,7 @@ export class CGameSession {
       fFlag16: attr & 0x40 ? 1 : 0,
     };
     ctx.m_rgBomb[ctx.m_nBombCount] = bomb;
-    const packet = new CSendPacket(GS_ClientSend.OnBombIgniteRes, 2);
+    const packet = new CSendPacket(GS_ClientSend.OnBombIgniteRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(slot);
     packet.Encode1(((pos >> 4) << 4) | (pos & 0xf));
     packet.Encode1(attr);
@@ -4624,7 +4624,7 @@ export class CGameSession {
     bomb.y = newPos & 0xf;
     bomb.fMoving = 1;
     bomb.timer = n.Decode2();
-    const packet = new CSendPacket(GS_ClientSend.OnBombKickThrowRes, 2);
+    const packet = new CSendPacket(GS_ClientSend.OnBombKickThrowRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(slotCode);
     packet.Encode2(bombId);
     packet.Encode1(((newPos >> 4) << 4) | (newPos & 0xf));
@@ -4652,7 +4652,7 @@ export class CGameSession {
     const b = n.Decode1();
     const c = n.Decode1();
     const d = n.Decode1();
-    const packet = new CSendPacket(GS_ClientSend.OnMovableBoxMoveRes, 2);
+    const packet = new CSendPacket(GS_ClientSend.OnMovableBoxMoveRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(a);
     packet.Encode1(b);
     packet.Encode1(c);
@@ -4694,7 +4694,7 @@ export class CGameSession {
     }
     if (this.m_pCtx.m_rgnBoxItem[box] !== 0) return;
     this.m_pCtx.m_rgnBoxItem[box] = 1;
-    const packet = new CSendPacket(GS_ClientSend.OnRequestEatItemRes, 2);
+    const packet = new CSendPacket(GS_ClientSend.OnRequestEatItemRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(slot);
     packet.Encode1(box);
     packet.Encode1(item);
@@ -4732,7 +4732,7 @@ export class CGameSession {
     }
     if (this.m_pCtx.m_rgnObstacle[obstacleId] !== 0) return;
     this.m_pCtx.m_rgnObstacle[obstacleId] = 1;
-    const packet = new CSendPacket(GS_ClientSend.OnRequestEatObstacleRes, 2);
+    const packet = new CSendPacket(GS_ClientSend.OnRequestEatObstacleRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(slot);
     packet.Encode1(pos);
     this.SendPacket(packet);
@@ -4744,7 +4744,7 @@ export class CGameSession {
     const slotCode = n.Decode1();
     const a = n.Decode2();
     const b = n.Decode2();
-    const packet = new CSendPacket(GS_ClientSend.OnBomberEvent, 2);
+    const packet = new CSendPacket(GS_ClientSend.OnBomberEvent, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(slotCode);
     packet.Encode2(a);
     packet.Encode2(b);
@@ -4873,7 +4873,7 @@ export class CGameSession {
 
   /** CGameSession::OnSetEffect (147, FxServer.exe.c:41CA78) — the raw buffer relay. */
   OnSetEffect(n: CReceivedPacket, socket: CClientSocket): void {
-    const packet = new CSendPacket(GS_ClientSend.OnEffectRes, 2);
+    const packet = new CSendPacket(GS_ClientSend.OnEffectRes, CipherDegree.kPacketEncryptedCRC8);
     packet.EncodeBuffer(n.m_pBlock.subarray(n.m_uOffset), n.m_uLength - n.m_uOffset);
     this.SendPacketExclude(packet, socket);
   }
@@ -4883,7 +4883,7 @@ export class CGameSession {
     const a = n.Decode1();
     const pos = n.Decode1();
     this.m_pCtx.m_rgnObstacle[(pos & 0xf) + 15 * (pos >> 4)] = 0;
-    const packet = new CSendPacket(GS_ClientSend.OnDropObstacleRes, 2);
+    const packet = new CSendPacket(GS_ClientSend.OnDropObstacleRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(a);
     packet.Encode1(pos);
     this.SendPacketExclude(packet, socket);
@@ -4899,7 +4899,7 @@ export class CGameSession {
     const itemName = n.DecodeStr();
     const eater = socket.GetUser(idx)!;
     console.log(`[GS] Event Item(${itemName}) eaten by User(${eater.GetName()}) in the session(${this.m_nIdx})`);
-    const packet = new CSendPacket(GS_ClientSend.OnSystemMsg, 2); // id 30 (OnEventItemMsg shares the OnSystemMsg id)
+    const packet = new CSendPacket(GS_ClientSend.OnSystemMsg, CipherDegree.kPacketEncryptedCRC8); // id 30 (OnEventItemMsg shares the OnSystemMsg id)
     packet.EncodeStr(eater.GetName());
     this.SendPacket(packet);
   }
@@ -4909,7 +4909,7 @@ export class CGameSession {
     const a = n.Decode1();
     const b = n.Decode1();
     const c = n.Decode1();
-    const packet = new CSendPacket(GS_ClientSend.OnDestroyBoxRes, 2);
+    const packet = new CSendPacket(GS_ClientSend.OnDestroyBoxRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(a);
     packet.Encode1(b);
     packet.Encode1(c);
@@ -4962,7 +4962,7 @@ export class CGameSession {
         this.m_rgGhostSlot[ghost] = slot;
         this.m_rgSlotGhost[slot] = ghost;
         this.m_nGhostCount++;
-        const packet = new CSendPacket(GS_ClientSend.OnGhostGenerate, 2);
+        const packet = new CSendPacket(GS_ClientSend.OnGhostGenerate, CipherDegree.kPacketEncryptedCRC8);
         packet.Encode1(ghost);
         packet.Encode1(slot | 0x80);
         packet.Encode1(tag);
@@ -4987,7 +4987,7 @@ export class CGameSession {
       this.m_rgGhostSlot[idx] = -1;
       this.m_rgSlotGhost[slot] = -1;
       this.m_nGhostCount--;
-      const packet = new CSendPacket(GS_ClientSend.OnGhostDestroy, 2);
+      const packet = new CSendPacket(GS_ClientSend.OnGhostDestroy, CipherDegree.kPacketEncryptedCRC8);
       packet.Encode1(idx);
       this.SendPacket(packet);
     } else {
@@ -5038,7 +5038,7 @@ export class CGameSession {
         else place[i]!++;
       }
     }
-    const packet = new CSendPacket(GS_ClientSend.OnLapInfoRes, 2);
+    const packet = new CSendPacket(GS_ClientSend.OnLapInfoRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(count);
     for (let i = 0; i < 8; i++) {
       const lapped = this.m_rgPlayer[i] !== null && !(this.m_rgLapTime[2 * i] === -1 && this.m_rgLapRank[2 * i] === -1);
@@ -5059,7 +5059,7 @@ export class CGameSession {
     if (this.m_dwLastAirplaneTime + 7000 > now) return;
     const count = n.Decode1();
     if (count === 0 || count > 3) console.error(`[GS] Strange Request Airplane, nCount=${count}`);
-    const packet = new CSendPacket(GS_ClientSend.OnRequestAirplaneRes, 2);
+    const packet = new CSendPacket(GS_ClientSend.OnRequestAirplaneRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode4((now + 2000) >>> 0);
     packet.Encode1(count);
     const boxes: number[] = [];
@@ -5097,7 +5097,7 @@ export class CGameSession {
   OnReqEatBula(n: CReceivedPacket, _socket: CClientSocket): void {
     const slot = n.Decode1();
     const count = n.Decode1();
-    const packet = new CSendPacket(GS_ClientSend.OnReqEatBulaRes, 2);
+    const packet = new CSendPacket(GS_ClientSend.OnReqEatBulaRes, CipherDegree.kPacketEncryptedCRC8);
     const countOffset = packet.m_uOffset;
     packet.Encode1(0);
     if (count > 0) {
@@ -5120,7 +5120,7 @@ export class CGameSession {
     const slot = n.Decode1();
     const total = n.Decode1();
     const color = this.GetColor(slot);
-    const packet = new CSendPacket(GS_ClientSend.OnReqTakeHouseRes, 2);
+    const packet = new CSendPacket(GS_ClientSend.OnReqTakeHouseRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(slot);
     const houseCountOffset = packet.m_uOffset;
     packet.Encode1(0);
@@ -5200,7 +5200,7 @@ export class CGameSession {
     const user0 = socket.GetUser(0);
     const senderSlot = user0 ? user0.m_nSlotIdx : 8;
     if (senderSlot < 8) {
-      const packet = new CSendPacket(GS_ClientSend.OnRequestUDPRelayRes, 2);
+      const packet = new CSendPacket(GS_ClientSend.OnRequestUDPRelayRes, CipherDegree.kPacketEncryptedCRC8);
       packet.Encode1(senderSlot);
       target.m_pSocket?.SendPacket(packet);
     }
@@ -5299,7 +5299,7 @@ export class CGameSession {
     CGameSessionTable.ms_pInstance!.ClearModifiedFlag(this.m_nIdx); // the table vtbl+12
     this.m_nBombTickTime = 0; // +12552 (dword 3138)
     this.m_nGamePhase = 1;
-    const packet = new CSendPacket(GS_ClientSend.OnStartGame2, 2);
+    const packet = new CSendPacket(GS_ClientSend.OnStartGame2, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode4(this.m_dwStartSeed);
     packet.Encode4((this.m_nGameSerial ^ this.m_nGameVersion) >>> 0);
     this.m_nGameSerial = (this.m_nGameSerial + 1) >>> 0;
@@ -5473,7 +5473,7 @@ export class CGameSessionTable {
 
   /** CGameSessionTable::PutAllSessionInfo — packet 83 per valid room. */
   PutAllSessionInfo(socket: CClientSocket): void {
-    const packet = new CSendPacket(GS_ClientSend.OnSessionSimpleInfo, 2);
+    const packet = new CSendPacket(GS_ClientSend.OnSessionSimpleInfo, CipherDegree.kPacketEncryptedCRC8);
     for (const session of this.m_apGameSession) {
       if (!session || session.fValid === 0) continue;
       session.MakeSimpleInfoPacket(packet);
@@ -5565,7 +5565,7 @@ export class CGameSessionTable {
   KickImp(socket: CClientSocket): number {
     if (socket.m_fImpPoint === 0) return 0;
     console.error(`[GS] Fatal Revenge: Kick imp's ass [${socket.GetUser(0)?.GetName() ?? "NULL"}] !`);
-    const p = new CSendPacket(GS_ClientSend.OnKickoffUser, 2);
+    const p = new CSendPacket(GS_ClientSend.OnKickoffUser, CipherDegree.kPacketEncryptedCRC8);
     p.EncodeStr("abnormal state, disconnect user.");
     socket.SendPacketAndDestroy(p);
     return 1;
@@ -5590,7 +5590,7 @@ export class CGameSessionTable {
   /** CGameSessionTable::DoCreateSession (FxServer.exe.c:38917). */
   DoCreateSession(socket: CClientSocket, title: string, password: string, selects: number[], gameType: number): void {
     if (this.KickImp(socket) !== 0) return;
-    const res = new CSendPacket(GS_ClientSend.OnCreateSessionRes, 2);
+    const res = new CSendPacket(GS_ClientSend.OnCreateSessionRes, CipherDegree.kPacketEncryptedCRC8);
     const na = socket.GetUserCount();
     if (na <= 0) return;
     for (let i = 0; i < na; i++) {
@@ -5645,7 +5645,7 @@ export class CGameSessionTable {
   DoJoinSession(socket: CClientSocket, idx: number, serial: number, password: string, selects: number[]): void {
     if (this.KickImp(socket) !== 0) return;
     const na = socket.GetUserCount();
-    const res = new CSendPacket(GS_ClientSend.OnJoinSessionRes, 2);
+    const res = new CSendPacket(GS_ClientSend.OnJoinSessionRes, CipherDegree.kPacketEncryptedCRC8);
     if (idx >= 255) {
       console.error("[GS] Invalid game session slot index (DoJoinSession)");
       return;
@@ -5700,7 +5700,7 @@ export class CGameSessionTable {
       this.DoJoinSession(socket, session.m_nIdx, session.m_nSerialNo, session.m_szPassword, selects);
       return;
     }
-    const res = new CSendPacket(GS_ClientSend.OnJoinSessionRes, 2);
+    const res = new CSendPacket(GS_ClientSend.OnJoinSessionRes, CipherDegree.kPacketEncryptedCRC8);
     res.Encode1(2);
     socket.SendPacket(res);
   }
@@ -5759,7 +5759,7 @@ export class CGameSessionTable {
   FlushModifiedInfo(): void {
     for (const session of this.m_apGameSession) {
       if (!session || session.fValid === 0) continue;
-      const packet = new CSendPacket(0, 2);
+      const packet = new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8);
       if (session.MakeModifiedPacket(packet) !== 0) {
         CChannelPool.ms_pInstance?.SendAll(packet, 1);
       }
@@ -5783,13 +5783,13 @@ export class CGameSessionTable {
       if (!session) continue;
       const flags = this.m_acTableFlags[n]!;
       if ((flags & 1) !== 0) {
-        const packet = new CSendPacket(0, 2);
+        const packet = new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8);
         session.MakeCreatedPacket(packet);
         this.m_acTableFlags[n] = 0;
         this.m_acTableFlags[n]! |= 2;
         CChannelPool.ms_pInstance?.SendAll(packet, 1);
       } else if ((flags & 4) !== 0) {
-        const packet = new CSendPacket(0, 2);
+        const packet = new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8);
         session.MakeDestroyedPacket(packet);
         this.m_acTableFlags[n] = 0;
         CChannelPool.ms_pInstance?.SendAll(packet, 1);
@@ -5862,7 +5862,7 @@ export class CChatPool extends CUserPool {
       return;
     }
     if (msg.length === 0) {
-      const p = new CSendPacket(GS_ClientSend.OnSystemMsg, 2);
+      const p = new CSendPacket(GS_ClientSend.OnSystemMsg, CipherDegree.kPacketEncryptedCRC8);
       p.EncodeStr(" ");
       socket.SendPacket(p);
       return;
@@ -5874,7 +5874,7 @@ export class CChatPool extends CUserPool {
       return;
     }
     const text = `${senders.join(", ")} : ${msg}`;
-    const p = new CSendPacket(GS_ClientSend.OnChatMsg, 2);
+    const p = new CSendPacket(GS_ClientSend.OnChatMsg, CipherDegree.kPacketEncryptedCRC8);
     if (socket.GetUser(0)!.GetSessionIdx() === -1 || socket.GetUser(0)!.GetSessionIdx() === 0xffff) p.EncodeStr("//");
     p.EncodeStr(text);
     const idx = socket.GetUser(0)!.GetSessionIdx();
@@ -5891,7 +5891,7 @@ export class CChatPool extends CUserPool {
     const msg = n.DecodeStr();
     const target = CLocalUserTable.ms_pInstance!.FindUserFromId(to);
     if (!target) {
-      const p = new CSendPacket(GS_ClientSend.OnWhisperFail, 2);
+      const p = new CSendPacket(GS_ClientSend.OnWhisperFail, CipherDegree.kPacketEncryptedCRC8);
       p.Encode1(0);
       p.EncodeStr(to);
       socket.SendPacket(p);
@@ -5903,7 +5903,7 @@ export class CChatPool extends CUserPool {
       socket.PostClosePacket();
       return;
     }
-    const p = new CSendPacket(GS_ClientSend.OnWhisperRes, 2);
+    const p = new CSendPacket(GS_ClientSend.OnWhisperRes, CipherDegree.kPacketEncryptedCRC8);
     p.EncodeStr(`${senders.join(", ")} : ${msg}`);
     target.m_pSocket?.SendPacket(p);
   }
@@ -5922,7 +5922,7 @@ export class CChatPool extends CUserPool {
       socket.PostClosePacket();
       return;
     }
-    const p = new CSendPacket(GS_ClientSend.OnItemMsg, 2);
+    const p = new CSendPacket(GS_ClientSend.OnItemMsg, CipherDegree.kPacketEncryptedCRC8);
     p.EncodeStr(`${user.GetName()} : ${msg}`);
     const idx = socket.GetUser(0)!.GetSessionIdx();
     if (idx === -1 || idx === 0xffff) {
@@ -5935,7 +5935,7 @@ export class CChatPool extends CUserPool {
   /** CChatPool::OnSystemMsg — packet 30 to the session or the lobby. */
   OnSystemMsg(n: CReceivedPacket, socket: CClientSocket): void {
     const msg = n.DecodeStr();
-    const p = new CSendPacket(GS_ClientSend.OnSystemMsg, 2);
+    const p = new CSendPacket(GS_ClientSend.OnSystemMsg, CipherDegree.kPacketEncryptedCRC8);
     p.EncodeStr(msg);
     const idx = socket.GetUser(0)?.GetSessionIdx() ?? -1;
     if (idx === -1 || idx === 0xffff) this.SendAll(p, 1);
@@ -5999,7 +5999,7 @@ export class CChatPool extends CUserPool {
       socket.PostClosePacket();
       return;
     }
-    const p = new CSendPacket(GS_ClientSend.OnShoutMsg, 2);
+    const p = new CSendPacket(GS_ClientSend.OnShoutMsg, CipherDegree.kPacketEncryptedCRC8);
     p.EncodeStr(`${user.GetName()} : ${msg}`);
     this.SendAll(p, 0);
   }
@@ -6114,7 +6114,7 @@ export class CChannelPool extends CChatPool {
 
   /** CChannelPool::OnAddNewSocket — packet 15 + the rank/guild lists. */
   OnAddNewSocket(socket: CClientSocket): void {
-    const p = new CSendPacket(GS_ClientSend.OnChannelAnnounce, 2);
+    const p = new CSendPacket(GS_ClientSend.OnChannelAnnounce, CipherDegree.kPacketEncryptedCRC8);
     socket.SendPacket(p);
     this.InsertRankList(socket);
     this.PutUserSimpleInfoPacket(socket, 0);
@@ -6177,7 +6177,7 @@ export class CChannelPool extends CChatPool {
 
   /** CChannelPool::PutUserSimpleInfoPacket — packet 70 (9 per page). */
   PutUserSimpleInfoPacket(socket: CClientSocket, n: number): void {
-    const packet = new CSendPacket(GS_ClientSend.OnRequestUserSimpleInfoRes, 2);
+    const packet = new CSendPacket(GS_ClientSend.OnRequestUserSimpleInfoRes, CipherDegree.kPacketEncryptedCRC8);
     const total = this.m_vtRankList.length;
     const pages = total <= 0 ? 0 : Math.floor((total - 1) / 9) + 1;
     let page = n < 0 ? 0 : n;
@@ -6196,7 +6196,7 @@ export class CChannelPool extends CChatPool {
     const user = socket.GetUser(0);
     if (!user || user.m_nGuildSN === 0) return;
     const list = this.m_vtGuildMember.get(user.m_nGuildSN) ?? [];
-    const packet = new CSendPacket(GS_ClientSend.OnGuildMemberListRes, 2);
+    const packet = new CSendPacket(GS_ClientSend.OnGuildMemberListRes, CipherDegree.kPacketEncryptedCRC8);
     const pages = list.length <= 0 ? 0 : Math.floor((list.length - 1) / 9) + 1;
     let page = n < 0 ? 0 : n;
     if (page > pages - 1) page = pages - 1;
@@ -6211,7 +6211,7 @@ export class CChannelPool extends CChatPool {
 
   /** the MakeChannelsStatePacket/MakeChannelsGameStatePacket carrier pair */
   private SendChannelsState(socket: CClientSocket): void {
-    const packet = new CSendPacket(0, 2);
+    const packet = new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8);
     CCenterProcess.ms_pInstance!.MakeChannelsStatePacket(packet);
     socket.SendPacket(packet);
     CCenterProcess.ms_pInstance!.MakeChannelsGameStatePacket(packet);
@@ -6222,7 +6222,7 @@ export class CChannelPool extends CChatPool {
   OnEnterLobbyStage(socket: CClientSocket): void {
     CGameSessionTable.ms_pInstance!.DestroyPlayer(socket, 0);
     socket.m_nPoolType = 1;
-    const p = new CSendPacket(GS_ClientSend.OnChannelAnnounce, 2);
+    const p = new CSendPacket(GS_ClientSend.OnChannelAnnounce, CipherDegree.kPacketEncryptedCRC8);
     socket.SendPacket(p);
     CGameSessionTable.ms_pInstance!.PutAllSessionInfo(socket);
   }
@@ -6264,7 +6264,7 @@ export class CChannelPool extends CChatPool {
       const version = n.Decode2();
       const r = CCenterProcess.ms_pInstance!.CheckEnterGame(type, target, version);
       if (r !== 1) {
-        const p = new CSendPacket(GS_ClientSend.OnReqConnectToSvrFail, 2);
+        const p = new CSendPacket(GS_ClientSend.OnReqConnectToSvrFail, CipherDegree.kPacketEncryptedCRC8);
         p.Encode1(r);
         socket.SendPacket(p);
         return;
@@ -6288,7 +6288,7 @@ export class CChannelPool extends CChatPool {
       if (!user) break;
     }
     const result = n.Decode1();
-    const p = new CSendPacket(GS_ClientSend.OnReqConnectToSvrRes, 2);
+    const p = new CSendPacket(GS_ClientSend.OnReqConnectToSvrRes, CipherDegree.kPacketEncryptedCRC8);
     p.Encode1(result);
     if (result === 1) {
       p.Encode1(n.Decode1()); // the target server class
@@ -6310,7 +6310,7 @@ export class CChannelPool extends CChatPool {
     const idx = n.Decode1();
     if (idx >= socket.GetUserCount()) return;
     const user = socket.GetUser(idx)!;
-    const packet = new CSendPacket(GS_ClientSend.OnRequestMyInfoRes, 2);
+    const packet = new CSendPacket(GS_ClientSend.OnRequestMyInfoRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(idx);
     packet.EncodeStr(user.account.strName);
     packet.Encode1(user.account.Gender);
@@ -6360,7 +6360,7 @@ export class CChannelPool extends CChatPool {
 
   /** CChannelPool::SendUserDetailInfo — the local-user 71 body. */
   SendUserDetailInfo(socket: CClientSocket, user: CUser): void {
-    const packet = new CSendPacket(GS_ClientSend.OnRequestUserInfoDetailRes, 2);
+    const packet = new CSendPacket(GS_ClientSend.OnRequestUserInfoDetailRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(1);
     packet.EncodeStr(user.GetName());
     packet.EncodeStr(user.account.strName);
@@ -6414,7 +6414,7 @@ export class CChannelPool extends CChatPool {
       CCenterProcess.ms_pInstance?.SendPacket(p);
       return;
     }
-    const packet = new CSendPacket(GS_ClientSend.OnRequestUserLocationRes, 2);
+    const packet = new CSendPacket(GS_ClientSend.OnRequestUserLocationRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(1);
     packet.EncodeStr(user.GetName());
     packet.Encode1(10);
@@ -6428,7 +6428,7 @@ export class CChannelPool extends CChatPool {
     const sn = n.Decode4();
     const guild = CGuildTable.ms_pInstance!.FindGuildFromSerialNo(sn);
     if (!guild) return;
-    const packet = new CSendPacket(GS_ClientSend.OnRequestGuildInfoRes, 2);
+    const packet = new CSendPacket(GS_ClientSend.OnRequestGuildInfoRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode4(guild.m_nGuildSN);
     packet.EncodeStr(guild.strName);
     packet.Encode2(guild.m_nMarkRevision);
@@ -6450,7 +6450,7 @@ export class CChannelPool extends CChatPool {
     const name = n.DecodeStr();
     const target = CLocalUserTable.ms_pInstance!.FindUserFromId(name);
     if (!target) return;
-    const packet = new CSendPacket(GS_ClientSend.OnInviteUser, 2);
+    const packet = new CSendPacket(GS_ClientSend.OnInviteUser, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode2(idx);
     packet.Encode4(serial);
     packet.EncodeStr(socket.GetUser(0)!.GetName());
@@ -6466,7 +6466,7 @@ export class CChannelPool extends CChatPool {
 
   /** CChannelPool::OnRequestUserItemList — packet 209. */
   OnRequestUserItemList(socket: CClientSocket): void {
-    const packet = new CSendPacket(GS_ClientSend.OnUserItemList, 2);
+    const packet = new CSendPacket(GS_ClientSend.OnUserItemList, CipherDegree.kPacketEncryptedCRC8);
     CUserItemMan.ms_pInstance!.PutUserItemList(packet);
     socket.SendPacket(packet);
   }
@@ -6498,7 +6498,7 @@ export class CMainSystem {
   /** CMainSystem::OnConnEstablished — the connect-time packet 0
    *  (CSendPacket(&v3, 0, 0) — plain on every server). */
   OnConnEstablished(socket: CClientSocket): void {
-    const packet = new CSendPacket(GS_ClientSend.OnConnect, 0);
+    const packet = new CSendPacket(GS_ClientSend.OnConnect, CipherDegree.kPacketRaw);
     packet.Encode2(3);
     packet.Encode2(7);
     packet.Encode4(socket.m_nHeaderType);
@@ -6703,7 +6703,7 @@ export class CCenterProcess {
     const user = CLocalUserTable.ms_pInstance!.FindUserFromId(name);
     if (!user) return;
     const code = n.Decode1();
-    const p = new CSendPacket(GS_ClientSend.OnSvrReservedMsg, 2);
+    const p = new CSendPacket(GS_ClientSend.OnSvrReservedMsg, CipherDegree.kPacketEncryptedCRC8);
     p.Encode1(code);
     if (code === 1) p.EncodeStr(n.DecodeStr());
     user.m_pSocket?.SendPacket(p);
@@ -6712,7 +6712,7 @@ export class CCenterProcess {
   /** CCenterProcess::OnAdminNotifyMsg — CM 8 → client 26 to everyone. */
   OnAdminNotifyMsg(n: CReceivedPacket): void {
     const msg = n.DecodeStr();
-    const p = new CSendPacket(GS_ClientSend.OnAdminNotifyMsg, 2);
+    const p = new CSendPacket(GS_ClientSend.OnAdminNotifyMsg, CipherDegree.kPacketEncryptedCRC8);
     p.EncodeStr(msg);
     CChannelPool.ms_pInstance?.SendAll(p, 0);
   }
@@ -6720,7 +6720,7 @@ export class CCenterProcess {
   /** CCenterProcess::OnSystemMsg — CM 13 → client 30 to everyone. */
   OnSystemMsg(n: CReceivedPacket): void {
     const msg = n.DecodeStr();
-    const p = new CSendPacket(GS_ClientSend.OnSystemMsg, 2);
+    const p = new CSendPacket(GS_ClientSend.OnSystemMsg, CipherDegree.kPacketEncryptedCRC8);
     p.EncodeStr(msg);
     CChannelPool.ms_pInstance?.SendAll(p, 0);
   }
@@ -6756,7 +6756,7 @@ export class CCenterProcess {
     if (!asker || !asker.m_pSocket) return;
     if (r === 1) {
       // SendUserLocation → 72
-      const p = new CSendPacket(GS_ClientSend.OnRequestUserLocationRes, 2);
+      const p = new CSendPacket(GS_ClientSend.OnRequestUserLocationRes, CipherDegree.kPacketEncryptedCRC8);
       p.Encode1(1);
       p.EncodeStr(name);
       p.Encode1(type);
@@ -6766,7 +6766,7 @@ export class CCenterProcess {
     } else {
       // SendUserDetailInfo → 71 (DB-backed)
       const info = this.db.prGetUserInfo(name);
-      const p = new CSendPacket(GS_ClientSend.OnRequestUserInfoDetailRes, 2);
+      const p = new CSendPacket(GS_ClientSend.OnRequestUserInfoDetailRes, CipherDegree.kPacketEncryptedCRC8);
       if (info.retval === 0) {
         p.Encode1(1);
         p.EncodeStr(name);

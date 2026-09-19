@@ -16,7 +16,7 @@
  */
 import { CServerConfig } from "../core/Config.ts";
 import { CPacketSocket } from "../core/CPacketSocket.ts";
-import { CReceivedPacket, CSendPacket } from "../core/Packet.ts";
+import { CipherDegree, CReceivedPacket, CSendPacket } from "../core/Packet.ts";
 import {
   CLIENTSOCKET_HEADER_CODE_MODIFIER,
   CLIENTSOCKET_HEADER_CODE_RCV,
@@ -73,6 +73,10 @@ export class CUser {
 /** CClientSocket (CxUtil) — one connected admin tool. */
 export class CClientSocket extends CPacketSocket {
   static ms_nLocalSerialNo = 1;
+  /** dword_49F968 — the per-connection header-type counter. It starts at 0
+   *  and is separate from the serial: the first client connection gets
+   *  header type 0 (CxLogin.exe.c:9898, CxUtil.exe.c:17717). */
+  static ms_nHeaderTypeCounter = 0;
 
   m_nLocalSerialNo = 0; // +236
   m_apUser: CUser[] = []; // +476 (the array is 476, the count 472)
@@ -83,8 +87,12 @@ export class CClientSocket extends CPacketSocket {
       // the vtable routes completed packets into CMainPool::OnPacket
       onPacket: (_sock, packet) => CMainPool.ms_pInstance?.OnPacket(packet, this),
     });
+    // dword_49F968: the header type comes from the counter's PRE-increment
+    // value (v5 = counter; counter = v5 + 1; SetHeaderType(v5 % 16)) — the
+    // first client connection gets header type 0.
+    this.SetHeaderType(CClientSocket.ms_nHeaderTypeCounter % 16);
+    CClientSocket.ms_nHeaderTypeCounter++;
     this.m_nLocalSerialNo = CClientSocket.ms_nLocalSerialNo++;
-    this.SetHeaderType((CClientSocket.ms_nLocalSerialNo - 1) % 16);
     this.SetHeaderCode(CLIENTSOCKET_HEADER_CODE_RCV, CLIENTSOCKET_HEADER_CODE_SND, CLIENTSOCKET_HEADER_CODE_MODIFIER);
     this.SetSequence(CLIENTSOCKET_SEQ, CLIENTSOCKET_SEQ, CLIENTSOCKET_SEQ_DELTA, CLIENTSOCKET_SEQ_DELTA);
   }
@@ -177,7 +185,7 @@ export class CMainSystem {
     const User = rConnectedSocket.GetUser(0)!;
     User.SetGlobalSerialNo(++this.m_nConnNo);
     if (CLocalUserTable.ms_pInstance?.Insert(User) === 0) console.error("Error! Failed to Add User");
-    const packet = new CSendPacket(UTIL_ClientSend.OnConnect, 0);
+    const packet = new CSendPacket(UTIL_ClientSend.OnConnect, CipherDegree.kPacketRaw);
     packet.Encode2(3);
     packet.Encode2(5);
     packet.Encode4(rConnectedSocket.m_nHeaderType);
@@ -447,7 +455,7 @@ export async function main(cfgFile: string): Promise<void> {
         socket.bunSocket = t as Bun.Socket<any>;
         socket.m_bConnected = true;
         CMainSystem.ms_pInstance!.OnConnEstablished(socket);
-        socket.SetCipherDegree(0);
+        socket.SetCipherDegree(CipherDegree.kPacketRaw);
       },
       data: (t, data) => {
         socketOf.get(t)?.OnReceive(new Uint8Array(data as Buffer));

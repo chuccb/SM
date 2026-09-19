@@ -9,7 +9,7 @@ import { main as loginMain } from "../src/login/Login.ts";
 import { CRC32, main as gameMain } from "../src/gameserver/GameServer.ts";
 import { CLocalSocket } from "../src/lib/CenterLink.ts";
 import { SVRCLASS_UTIL, MC_ReceivedPacket } from "../src/lib/S2S.ts";
-import { CSendPacket } from "../src/core/Packet.ts";
+import { CSendPacket, CipherDegree } from "../src/core/Packet.ts";
 import { SimpleStreamEncrypt3, SimpleStreamDecrypt3 } from "../src/core/StreamCipher.ts";
 import { mkdirSync, rmSync } from "node:fs";
 import { inflateSync } from "node:zlib";
@@ -148,7 +148,7 @@ describe("login flow", () => {
   const client = new TestClient();
 
   test("AskMultiServer returns the full variant first", async () => {
-    await client.connect(13838, { sndDeg: 2, rcvDeg: 2 });
+    await client.connect(13838, { sndDeg: CipherDegree.kPacketEncryptedCRC8, rcvDeg: CipherDegree.kPacketEncryptedCRC8 });
     client.send(1, (e) => {
       e.u32be(0);
       e.u32be(0);
@@ -253,7 +253,7 @@ describe("login flow", () => {
 
   test("double login is rejected with packet 3 code 2", async () => {
     const client2 = new TestClient();
-    await client2.connect(13838, { sndDeg: 2, rcvDeg: 2 });
+    await client2.connect(13838, { sndDeg: CipherDegree.kPacketEncryptedCRC8, rcvDeg: CipherDegree.kPacketEncryptedCRC8 });
     client2.send(3, (e) => {
       e.u8(1);
       encStrInto(e, "tester01", 0x11223344);
@@ -375,7 +375,7 @@ describe("game server entry flow (FXGS)", () => {
   const gs = entryGsClient;
 
   test("connect pushes packet 0 [E2 3][E2 7][E4 headerType]", async () => {
-    await gs.connect(14848, { rcvDeg: 2 });
+    await gs.connect(14848, { rcvDeg: CipherDegree.kPacketEncryptedCRC8 });
     const p0 = await gs.recv(0);
     expect(r2(p0)).toBe(3); // the center protocol version
     expect(r2(p0)).toBe(7);
@@ -554,7 +554,7 @@ function encStrInto(e: Encoder, s: string, key: number): void {
 /** Register + log in through the LS, then walk the full GS entry path. */
 async function enterGame(name: string): Promise<{ ls: TestClient; gs: TestClient; sn: number }> {
   const ls = new TestClient();
-  await ls.connect(13838, { sndDeg: 2, rcvDeg: 2 });
+  await ls.connect(13838, { sndDeg: CipherDegree.kPacketEncryptedCRC8, rcvDeg: CipherDegree.kPacketEncryptedCRC8 });
   ls.pending.length = 0;
   ls.send(5, (e) => {
     e.str(name); // s1 = ID
@@ -598,7 +598,7 @@ async function enterGame(name: string): Promise<{ ls: TestClient; gs: TestClient
   r4(p6); // ip
   expect(r2(p6)).toBe(14848);
   const gs = new TestClient();
-  await gs.connect(14848, { rcvDeg: 2 });
+  await gs.connect(14848, { rcvDeg: CipherDegree.kPacketEncryptedCRC8 });
   await gs.recv(0);
   gs.send(7, (e) => {
     e.u8(1);
