@@ -10,6 +10,7 @@
  *        shipped FXGS_00{idx}.cfg / FXSS_00{idx}.cfg, --idx picks the file)
  */
 import { CServerConfig } from "./core/Config.ts";
+import { PacketLog } from "./core/PacketLog.ts";
 import { mkdirSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { CxCenter } from "./center/Center.ts";
@@ -25,6 +26,15 @@ if (process.argv.includes("--ip")) {
 }
 const dbDir = join(import.meta.dir, "..", "db");
 mkdirSync(dbDir, { recursive: true });
+
+// PacketLog (CA_PACKET_LOG) is off by default like every diagnostic; say so
+// once at boot so a silent trace is never mistaken for a broken one.
+if (!PacketLog.Enabled()) {
+  console.log("PacketLog: off — set CA_PACKET_LOG=1 (console) or CA_PACKET_LOG=<file> to trace every packet.");
+} else {
+  const v = process.env.CA_PACKET_LOG!;
+  console.log(`PacketLog: on → ${v === "1" ? "console" : v} (CA_PACKET_LOG_HEX caps each dump).`);
+}
 
 /** Resolve a --cfg value: absolute paths pass through (also on Windows,
  *  where "C:\\..." does not start with "/"), relative ones anchor at the
