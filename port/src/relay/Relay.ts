@@ -255,7 +255,7 @@ export class MTUDPServer {
 
   /** The Bun socket callback — one datagram. */
   private OnDatagram(_socket: unknown, data: Uint8Array, fromPort: number, fromAddr: string): void {
-    if (PacketLog.Enabled()) PacketLog.Datagram("recv", data, this.m_szLogTag);
+    if (PacketLog.ShowsInfra()) PacketLog.Datagram("recv", data, this.m_szLogTag);
     const ip = ipToDword(fromAddr);
     this.ProcessIncomingData(data, data.byteLength, ip, fromPort, Date.now() & 0xffffffff);
   }
@@ -315,7 +315,7 @@ export class MTUDPServer {
     buf[n2] = UpdateCRC8(0, buf, n2);
     this.m_dwBytesSend = (this.m_dwBytesSend + n2 + 1) >>> 0;
     this.m_hSocket?.send(buf, hostshort, dwordToIp(hostlong));
-    if (PacketLog.Enabled()) PacketLog.Datagram("send", src, this.m_szLogTag);
+    if (PacketLog.ShowsInfra()) PacketLog.Datagram("send", src, this.m_szLogTag);
     return 0;
   }
 

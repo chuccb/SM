@@ -616,6 +616,7 @@ export class CClientSocket extends CPacketSocket {
       onPacket: (_sock, packet) => CMainSystem.ms_pInstance?.DispatchClient(packet, this),
     });
     this.m_szLogTag = "GS";
+    this.m_fClientLink = true;
     this.m_nLocalSerialNo = CClientSocket.ms_tblSN2Obj.size + 1;
     const nHeaderType = CClientSocket.ms_nHeaderTypeCounter % 16;
     CClientSocket.ms_nHeaderTypeCounter++;
@@ -6929,7 +6930,7 @@ export async function main(cfgFile: string, dbDir: string): Promise<void> {
     port: port + MTUDP_UDP_PORT_OFFSET,
     socket: {
       data: (_socket, data, port, address) => {
-        if (PacketLog.Enabled()) PacketLog.Datagram("recv", new Uint8Array(data as Buffer), udpLogTag);
+        if (PacketLog.ShowsClient()) PacketLog.Datagram("recv", new Uint8Array(data as Buffer), udpLogTag);
         // network order: BE Encode4 puts a.b.c.d back on the wire
         const host: HOSTHANDLE = {
           ip: String(address)

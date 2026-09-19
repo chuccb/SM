@@ -215,6 +215,7 @@ export class CClientSocket extends CPacketSocket {
       onClose: () => this.Close(),
     });
     this.m_szLogTag = "Shop";
+    this.m_fClientLink = true;
     this.m_nLocalSerialNo = CClientSocket.ms_tblSN2Obj.size + 1;
     this.SetHeaderType(CClientSocket.ms_nHeaderTypeCounter % 16);
     CClientSocket.ms_nHeaderTypeCounter++;
@@ -1093,6 +1094,7 @@ export class CWebSocket extends CPacketSocket {
       onClose: () => this.Close(),
     });
     this.m_szLogTag = "Shop";
+    this.m_fClientLink = true;
     // CWebSocket::CWebSocket (30541) — the same header/sequence set as the
     // client sockets; the (Web) accept path does NOT raise the cipher degree.
     this.SetHeaderCode(192, 102, 231);

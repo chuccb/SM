@@ -5,6 +5,8 @@
  *   CA_PACKET_LOG=1        trace lines to the console
  *   CA_PACKET_LOG=<path>   append trace lines to that file instead
  *   CA_PACKET_LOG_HEX=<n>  hex-dump cap per packet in bytes (default 128)
+ *   CA_PACKET_LOG_SCOPE=client|all  client links only (default) or + S2S/
+ *                          monitor/billing/Relay infra links
  *
  * Purely observational: with the variable unset every hook is one boolean
  * check and nothing is emitted, so client-observable behavior is identical.
@@ -48,6 +50,19 @@ export class PacketLog {
   static Enabled(): boolean {
     const v = process.env.CA_PACKET_LOG;
     return v !== undefined && v !== "" && v !== "0";
+  }
+
+  /** CA_PACKET_LOG_SCOPE — "client" (default) traces only the client-facing
+   *  links (CClientSocket / CWebSocket / the client MTUDP paths); "all" adds
+   *  the infra links (S2S to center, monitor, billing, Relay). */
+  static ShowsClient(): boolean {
+    return PacketLog.Enabled();
+  }
+
+  static ShowsInfra(): boolean {
+    if (!PacketLog.Enabled()) return false;
+    const v = process.env.CA_PACKET_LOG_SCOPE;
+    return v !== undefined && v !== "" && v !== "client";
   }
 
   /** PacketLog::Configure — name the local server for the [tag] prefix. */

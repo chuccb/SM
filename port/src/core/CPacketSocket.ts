@@ -55,6 +55,13 @@ export abstract class CPacketSocket {
    *  this socket's server tag (m_szLogTag). */
   m_szLogTable: string | null = null;
 
+  /** PacketLog scope marker: true on the client-facing sockets (the game
+   *  clients and the shop web clients), false on the infra links (S2S
+   *  CLocalSocket / CenterClientSocket, MonitorSocket, CBillingSocketTw).
+   *  CA_PACKET_LOG_SCOPE picks which of the two groups traces (default:
+   *  client only). */
+  m_fClientLink = false;
+
   /** PacketLog server tag — snapshotted at construction (single-process mode
    *  runs every server's main() sequentially, so the global tag alone would
    *  mislabel everyone after the first boot). Client-socket classes pin their
@@ -210,7 +217,7 @@ export abstract class CPacketSocket {
     buf.copyWithin(0, incoming, this.m_nRcvCnt);
     this.m_nRcvCnt = rest;
     this.m_nPacketRcvSeq = (this.m_nPacketRcvSeq + this.m_nPacketRcvSeqDelta) & 0xffffffff;
-    if (PacketLog.Enabled()) {
+    if (this.m_fClientLink ? PacketLog.ShowsClient() : PacketLog.ShowsInfra()) {
       PacketLog.Packet(this.LogPeer, this.m_szLogTag, "recv", packet.m_nPacketType, packet.m_nCipherDegree, packet.m_pBlock.subarray(0, packet.m_uLength), this.m_szLogTable);
     }
     return enSocket.kioOk;
@@ -237,7 +244,7 @@ export abstract class CPacketSocket {
     this.MarkCheckCode(this.m_mbSndBuffer, this.m_nSndCnt);
     this.m_nPacketSndSeq = (this.m_nPacketSndSeq + this.m_nPacketSndSeqDelta) & 0xffffffff;
     this.m_nSndCnt += outgoing;
-    if (PacketLog.Enabled()) {
+    if (this.m_fClientLink ? PacketLog.ShowsClient() : PacketLog.ShowsInfra()) {
       PacketLog.Packet(this.LogPeer, this.m_szLogTag, "send", packet.m_nPacketType, packet.m_nCipherDegree, packet.m_pBlock.subarray(0, packet.m_uOffset), this.m_szLogTable);
     }
     return enSocket.kioOk;

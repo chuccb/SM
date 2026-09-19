@@ -166,6 +166,7 @@ export class CClientSocket extends CPacketSocket {
       onPacket: (_sock, packet) => CLoginPool.ms_pInstance?.OnPacket(packet, this),
     });
     this.m_szLogTag = "LS";
+    this.m_fClientLink = true;
     // dword_49F968: the header type comes from the counter's PRE-increment
     // value (v5 = counter; counter = v5 + 1; SetHeaderType(v5 % 16)) — the
     // first client connection gets header type 0.

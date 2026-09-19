@@ -168,7 +168,7 @@ export class MTUDPServer {
   m_szLogTag = PacketLog.tag;
 
   ProcessIncomingData(pSrc: Uint8Array, host: HOSTHANDLE): void {
-    if (PacketLog.Enabled()) PacketLog.Datagram("recv", pSrc, this.m_szLogTag);
+    if (PacketLog.ShowsClient()) PacketLog.Datagram("recv", pSrc, this.m_szLogTag);
     let pHost = this.m_mpHost.get(ipPortKey(host.ip, host.port));
     if (pHost === undefined) {
       const pCreated = this.HostCreate(host.ip, host.port);
@@ -217,7 +217,7 @@ export class MTUDPServer {
     const frame = BuildFrame(a2.subarray(0, a3));
     const fSent = this.m_nSocket!.send(frame, a5, u32ToAddress(a4));
     this.m_nBytesSend += frame.length;
-    if (PacketLog.Enabled()) PacketLog.Datagram("send", a2.subarray(0, a3), this.m_szLogTag);
+    if (PacketLog.ShowsClient()) PacketLog.Datagram("send", a2.subarray(0, a3), this.m_szLogTag);
     if (!fSent) {
       console.error(`MTUDPBase::ResendData() - Sent 0 of ${frame.length} bytes.`);
     }

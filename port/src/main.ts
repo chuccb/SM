@@ -33,7 +33,9 @@ if (!PacketLog.Enabled()) {
   console.log("PacketLog: off — set CA_PACKET_LOG=1 (console) or CA_PACKET_LOG=<file> to trace every packet.");
 } else {
   const v = process.env.CA_PACKET_LOG!;
-  console.log(`PacketLog: on → ${v === "1" ? "console" : v} (CA_PACKET_LOG_HEX caps each dump).`);
+  const scope = process.env.CA_PACKET_LOG_SCOPE;
+  const scopeNote = !scope || scope === "client" ? "client links only" : "all links incl. S2S";
+  console.log(`PacketLog: on → ${v === "1" ? "console" : v} (${scopeNote}; CA_PACKET_LOG_HEX caps each dump).`);
 }
 
 /** Resolve a --cfg value: absolute paths pass through (also on Windows,

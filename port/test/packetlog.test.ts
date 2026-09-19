@@ -8,10 +8,11 @@ import { CSendPacket, CipherDegree, enSocket } from "../src/core/Packet.ts";
 /** minimal concrete socket — deg0, static header code, no rolling seq */
 class LogTestSocket extends CPacketSocket {}
 
-function makeSocket(tableKey: string | null = null): LogTestSocket {
+function makeSocket(tableKey: string | null = null, clientLink = true): LogTestSocket {
   const s = new LogTestSocket();
   s.m_bConnected = true;
   s.m_szLogTable = tableKey;
+  s.m_fClientLink = clientLink;
   s.SetHeaderCode(102, 102, 0);
   s.SetSequence(0, 0, 0, 0);
   s.SetCipherDegree(CipherDegree.kPacketEncryptedCRC8);
@@ -29,6 +30,7 @@ describe("PacketLog", () => {
   const saved = {
     log: process.env.CA_PACKET_LOG,
     hex: process.env.CA_PACKET_LOG_HEX,
+    scope: process.env.CA_PACKET_LOG_SCOPE,
   };
 
   afterEach(() => {
@@ -36,6 +38,8 @@ describe("PacketLog", () => {
     else process.env.CA_PACKET_LOG = saved.log;
     if (saved.hex === undefined) delete process.env.CA_PACKET_LOG_HEX;
     else process.env.CA_PACKET_LOG_HEX = saved.hex;
+    if (saved.scope === undefined) delete process.env.CA_PACKET_LOG_SCOPE;
+    else process.env.CA_PACKET_LOG_SCOPE = saved.scope;
     PacketLog.out = null;
   });
 
@@ -106,6 +110,30 @@ describe("PacketLog", () => {
     PacketLog.Datagram("send", Uint8Array.of(2));
     expect(lines[0]).toMatch(/\[LS\] udp <- len=5 \| 00 00 00 00 07$/);
     expect(lines[1]).toMatch(/\[LS\] udp -> len=1 \| 02$/);
+  });
+
+  test("default scope traces client links and silences infra links", () => {
+    process.env.CA_PACKET_LOG = "1";
+    delete process.env.CA_PACKET_LOG_SCOPE;
+    const lines: string[] = [];
+    PacketLog.out = (l) => lines.push(l);
+    PacketLog.Configure("LS");
+    const client = makeSocket();
+    client.PutPacket(new CSendPacket(3, CipherDegree.kPacketRaw));
+    expect(lines.length).toBe(1);
+    const infra = makeSocket(null, false);
+    infra.PutPacket(new CSendPacket(3, CipherDegree.kPacketRaw));
+    expect(lines.length).toBe(1); // unchanged: the infra link stays silent
+  });
+
+  test("CA_PACKET_LOG_SCOPE=all traces infra links too", () => {
+    process.env.CA_PACKET_LOG = "1";
+    process.env.CA_PACKET_LOG_SCOPE = "all";
+    const lines: string[] = [];
+    PacketLog.out = (l) => lines.push(l);
+    PacketLog.Configure("LS");
+    makeSocket(null, false).PutPacket(new CSendPacket(3, CipherDegree.kPacketRaw));
+    expect(lines.length).toBe(1);
   });
 
   test("a path value appends lines to the file", () => {
