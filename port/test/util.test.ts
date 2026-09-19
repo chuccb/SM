@@ -17,9 +17,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CxCenter, CUser } from "../src/center/Center.ts";
 import { CServerConfig } from "../src/core/Config.ts";
-import { GetUserHashNo } from "../src/db/DBMan.ts";
+import { CSendPacket } from "../src/core/Packet.ts";
+import { CDBMan, GetUserHashNo } from "../src/db/DBMan.ts";
 import { CLocalSocket } from "../src/lib/CenterLink.ts";
 import { SVRCLASS_GAME, SVRCLASS_UTIL } from "../src/lib/S2S.ts";
+import {
+  CCenterProcess,
+  CClientSocket as LsClientSocket,
+  CLoginPool,
+  LS_ClientSend,
+} from "../src/login/Login.ts";
+import { CMultiServer } from "../src/login/MultiServer.ts";
 import {
   CClientSocket,
   CLocalUserTable,
@@ -272,5 +280,126 @@ describe("center timer machinery (CTimerThread)", () => {
     expect(center.GetSvr(SVRCLASS_GAME, 0)!.nConnNo).toBe(connBefore - 1);
     // and the shard placement really is GetUserHashNo
     expect(GetUserHashNo("timerop")).toBeLessThan(6);
+  });
+});
+
+/**
+ * CxLogin data-plane units — the client-11 extra-info sources and the
+ * timeout sweep (CxLogin.exe.c).
+ *
+ *  - CCenterProcess::UpdateFxMessage (7961) — FxMessage MessageUse = 1,
+ *    wire [E2 n][n×(E1 0, E1 attr, EStr message)]
+ *  - CCenterProcess::UpdatePremiumChannelMapSelReward (5328) — FxUserOptions
+ *    "PRECHMAPREWARD", WORD on the wire
+ *  - CCenterProcess::UpdateAdvertisement (7742) — the hour-window selection
+ *    (wrap past midnight when end < start), Param4 repeats, the aFull gate
+ *    and the dword_49F61C rotation over the SELECTED pool
+ *  - CUserPool::DisconnectTimeoutSocket (23685) — 0x7530 ms since the last
+ *    client-20 stamp
+ */
+describe("login server (CxLogin)", () => {
+  let db: CDBMan;
+  let center: CCenterProcess;
+  let pool: CLoginPool;
+  const dir = mkdtempSync(join(tmpdir(), "ls-test-"));
+
+  beforeAll(() => {
+    const cfg = new CServerConfig();
+    cfg.Init(join(import.meta.dir, "login.cfg"));
+    CServerConfig.ms_pInstance = cfg;
+    db = new CDBMan(dir, 1);
+    const multiServer = new CMultiServer();
+    center = new CCenterProcess(null as unknown as CLoginPool, multiServer, db);
+    center.m_cfg = cfg;
+    pool = new CLoginPool(center, db, multiServer);
+    center.AttachPool(pool);
+  });
+
+  test("client 11 carries the fx messages and the premium reward", () => {
+    db.config.run(
+      "INSERT INTO FxMessage (Message, MessageAttr, MessageUse) VALUES ('welcome', 7, 1), ('hidden', 9, 0)",
+    );
+    db.config.run("INSERT INTO FxUserOptions (NAME, VALUE) VALUES ('PRECHMAPREWARD', 0x1234)");
+    center.UpdateFxMessage();
+    center.UpdatePremiumChannelMapSelReward();
+    const p = new CSendPacket(LS_ClientSend.OnChannelsExtraInfo, 0);
+    center.MakeChannelsExtraInfoPacket(p);
+    const b = p.m_pBlock;
+    let o = 1; // the ctor's type byte
+    const r2 = (): number => (b[o++]! << 8) | b[o++]!; // Encode2 is big-endian
+    const rstr = (): string => {
+      const n = r2();
+      const s = new TextDecoder("latin1").decode(b.subarray(o, o + n));
+      o += n;
+      return s;
+    };
+    expect(rstr()).toBe(""); // no advertisement rows seeded yet
+    expect(r2()).toBe(0); // adv Param1
+    expect(r2()).toBe(0); // adv Param2
+    expect(r2()).toBe(60);
+    expect(o).toBe(9); // type + EStr("") + 3×E2
+    o += 1; // guild list count 0
+    o += 1 + 4; // NDA count 1 + ip (login.cfg NDANumber = 1)
+    o += 1 + 4; // relay count 1 + ip (login.cfg RelayNumber = 1)
+    const fxCount = r2();
+    expect(fxCount).toBe(1); // MessageUse = 0 excluded
+    expect(b[o++]).toBe(0); // the literal 0
+    expect(b[o++]).toBe(7); // MessageAttr
+    expect(rstr()).toBe("welcome");
+    expect(r2()).toBe(0x1234); // PRECHMAPREWARD (WORD)
+    expect(b[o++]).toBe(1); // JUMSvrNumber
+    o += 4; // JUMSvrIP0
+    expect(r2()).toBe(17360);
+    expect(o).toBe(p.m_uOffset);
+  });
+
+  test("UpdateAdvertisement: hour window, midnight wrap, repeats and rotation", () => {
+    db.config.run(
+      `INSERT INTO FxAdvertisement (strImage, Param1, Param2, Param3, Param4, Param5, Param6) VALUES
+       ('a.png', 0x1122, 0x3344, 0, 2, 0, 23),
+       ('b.png', 1, 2, 0, 1, 22, 6),
+       ('c.png', 3, 4, 0, 0, 0, 23)`,
+    );
+    center.UpdateAdvertisement(1, 12); // noon: a (×2) visible, b (22..6) not, c repeats 0
+    expect(center.m_vtSelAdvertisement.map((a) => a.strImage)).toEqual(["a.png", "a.png"]);
+    const adv = center.GetAdvertisement();
+    expect(adv.strImage).toBe("a.png");
+    expect(adv.Param1).toBe(0x1122);
+    expect(adv.Param2).toBe(0x3344);
+    expect(center.GetAdvertisement().strImage).toBe("a.png"); // the repeat
+    center.UpdateAdvertisement(1, 2); // 2 a.m.: the wrapped window opens
+    expect(center.m_vtSelAdvertisement.map((a) => a.strImage)).toEqual(["a.png", "a.png", "b.png"]);
+    // the dword_49F61C cursor survives the rebuild: 2 % 3 lands on b
+    expect(center.GetAdvertisement().strImage).toBe("b.png");
+    expect(center.GetAdvertisement().strImage).toBe("a.png");
+    expect(center.GetAdvertisement().strImage).toBe("a.png");
+    // and wraps back to the pool start
+    expect(center.GetAdvertisement().strImage).toBe("b.png");
+  });
+
+  test("UpdateAdvertisement(aFull = 0) re-selects the existing pool only", () => {
+    db.config.run(
+      `INSERT INTO FxAdvertisement (strImage, Param1, Param2, Param3, Param4, Param5, Param6) VALUES
+       ('d.png', 5, 6, 0, 1, 0, 23)`,
+    );
+    center.UpdateAdvertisement(0, 12); // no reload → d.png not picked up
+    expect(center.m_vtSelAdvertisement.map((a) => a.strImage)).not.toContain("d.png");
+    center.UpdateAdvertisement(1, 12); // full reload
+    expect(center.m_vtSelAdvertisement.map((a) => a.strImage)).toContain("d.png");
+  });
+
+  test("DisconnectTimeoutSocket drops the stale-RTT sockets only", () => {
+    const stale = new LsClientSocket();
+    const fresh = new LsClientSocket();
+    stale.m_bConnected = true;
+    fresh.m_bConnected = true;
+    pool.AddSocket(stale);
+    pool.AddSocket(fresh);
+    stale.m_dwLastRTT = (Date.now() & 0x7fffffff) - 30001; // just past 0x7530
+    pool.DisconnectTimeoutSocket();
+    expect(stale.m_bConnected).toBe(false);
+    expect(fresh.m_bConnected).toBe(true);
+    expect(pool.m_setSocket.has(stale)).toBe(false);
+    expect(pool.m_setSocket.has(fresh)).toBe(true);
   });
 });

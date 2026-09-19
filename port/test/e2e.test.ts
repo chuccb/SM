@@ -302,16 +302,16 @@ describe("login flow", () => {
     }
     const p11 = await client.recv(11);
     expect(rstr(p11)).toBe(""); // no advertisement rows
-    expect(r2(p11)).toBe(0); // adv p2
-    expect(r2(p11)).toBe(0); // adv p3
+    expect(r2(p11)).toBe(0); // adv Param1
+    expect(r2(p11)).toBe(0); // adv Param2
     expect(r2(p11)).toBe(60);
     expect(r1(p11)).toBe(0); // guild list empty
     expect(r1(p11)).toBe(1); // NDA count (min(1,2))
     expect(r4(p11)).toBe(inet_addr("127.0.0.1"));
     expect(r1(p11)).toBe(1); // relay count
     expect(r4(p11)).toBe(inet_addr("127.0.0.1"));
-    expect(r2(p11)).toBe(0); // community servers
-    expect(r2(p11)).toBe(0); // *(WORD*)(this+47600)
+    expect(r2(p11)).toBe(0); // fx messages (FxMessage MessageUse = 1)
+    expect(r2(p11)).toBe(0); // PRECHMAPREWARD (FxUserOptions, empty in this DB)
     expect(r1(p11)).toBe(1); // JUM count
     expect(r4(p11)).toBe(inet_addr("127.0.0.1"));
     expect(r2(p11)).toBe(17360);

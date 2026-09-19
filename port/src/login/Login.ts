@@ -52,6 +52,19 @@ const STR_ALREADY_PLAYING = "\xc7\xf6\xc0\xe7 \xb0\xd4\xc0\xd3\xc0\xbb \xc7\xcf\
 /** aPc (CxLogin.exe.lst: .text:0040F85C push offset aPc ; "PC") */
 const STR_PC = "PC";
 
+/** _Advertisement (FxAdvertisement row, 36-byte vector entry): strImage plus
+ *  six dwords — Param1/2 ride the client-11 wire, Param4 repeats the ad
+ *  inside the rotation pool, Param5/6 bound the visibility hour window. */
+interface _Advertisement {
+  strImage: string;
+  Param1: number;
+  Param2: number;
+  Param3: number;
+  Param4: number;
+  Param5: number;
+  Param6: number;
+}
+
 /** _USERACCOUNT + CUser of CxLogin (0x114 bytes). */
 export class CUser {
   socket: CClientSocket;
@@ -125,7 +138,7 @@ export class CClientSocket extends CPacketSocket {
   m_nFlushCount = 0; // +492
   m_nLoginCount = 0; // +496
   m_dwFlushTime = 0; // +500
-  m_dwLastRTT = 0; // +488
+  m_dwLastRTT = (Date.now() - 5000) & 0x7fffffff; // +488 (ctor: timeGetTime()-5000)
 
   constructor() {
     super(CPacketSocket.dwRcvBufferSize, CPacketSocket.dwSndBufferSize, {
@@ -291,6 +304,48 @@ export class CLoginPool {
   /** CUserPool::DelSocket */
   DelSocket(socket: CClientSocket): void {
     this.m_setSocket.delete(socket);
+  }
+
+  /** CUserPool::DisconnectTimeoutSocket (CxLogin.exe.c:23685) — drops the
+   *  sockets whose last client-20 RTT stamp is older than 0x7530 ms. Both
+   *  stamps live on the 31-bit timeGetTime ring, so the difference is
+   *  reduced modulo 0x7fffffff before comparing. */
+  DisconnectTimeoutSocket(): void {
+    const now = Date.now() & 0x7fffffff;
+    for (const socket of [...this.m_setSocket]) {
+      if (((now - socket.m_dwLastRTT) & 0x7fffffff) > 30000) {
+        console.log(`Disconnect Timeout Socket: ${socket.bunSocket?.remoteAddress ?? ""}`);
+        socket.Close();
+      }
+    }
+  }
+
+  /** CTimerThread (CxLogin.exe.c:22472 OnTimer / 22546 Proc, Sleep 0x190).
+   *  400 ms tick driving: %9000 UpdateLevelLimit, dword_49FCAC's %150 gate
+   *  (the counter only advances inside the gate, so the full advertisement
+   *  reload fires exactly once), %3000 UpdateGuildServerList, %9999
+   *  UpdateFxMessage, %11111 UpdatePremiumChannelMapSelReward and the
+   *  CUserPool::OnTimer %75 timeout sweep. The %3 IssueSend / %6
+   *  FlushClientSocketSndBuffer are transport batching (the port sends
+   *  immediately) and %1500 is the datetime Report — none touch the wire. */
+  StartTimer(center: CCenterProcess): void {
+    let n = 0; // the CTimerThread tick
+    let nAdv = 0; // dword_49FCAC
+    let nUserPool = 0; // dword_49FD10
+    const timer = setInterval(() => {
+      if (n % 9000 === 0) center.UpdateLevelLimit();
+      if (nAdv % 150 === 0) {
+        const v5 = nAdv % 4500;
+        nAdv++;
+        center.UpdateAdvertisement(v5 === 0 ? 1 : 0);
+      }
+      if (n % 3000 === 0) center.UpdateGuildServerList();
+      if (n % 9999 === 0) center.UpdateFxMessage();
+      if (n % 11111 === 0) center.UpdatePremiumChannelMapSelReward();
+      if (++nUserPool % 75 === 0) this.DisconnectTimeoutSocket();
+      n++;
+    }, 400);
+    timer.unref?.();
   }
 
   /** CUserPool::OnPacket — the fallback dispatch (CxLogin.exe.c). */
@@ -491,7 +546,7 @@ export class CLoginPool {
 
   /** CLoginPool::OnConnEstablished — the client must never send this here. */
   OnConnEstablished(socket: CClientSocket): void {
-    console.error("Login server cannot handle 'kmcConnEstablished'");
+    console.error("Login server cannot handle 'kcConnEstablished'. Disconnect");
     socket.Close();
   }
 
@@ -719,10 +774,12 @@ export class CCenterProcess {
   m_mapClientVersion = new Map<number, number>(); // +47716
 
   // ExtraInfo state
-  m_vtAdvertisement: { strImage: string; p2: number; p3: number }[] = [];
+  m_vtAdvertisement: _Advertisement[] = []; // +47456 — the full FxAdvertisement reload
+  m_vtSelAdvertisement: _Advertisement[] = []; // +47468 — the hour-window selection (Param4 repeats)
+  m_vtFxMessage: { strMessage: string; nAttr: number }[] = []; // +47556 — FxMessage (MessageUse = 1)
   m_vtGuildSvrList: { strIp: string; nPort: number }[] = [];
-  m_vtCommunitySvr: { nByte: number }[] = [];
-  m_nAdvCursor = 0; // dword_49F61C
+  m_nPreChMapSelReward = 0; // +47600 (WORD on the wire) — FxUserOptions PRECHMAPREWARD
+  m_nAdvCursor = 0; // dword_49F61C — rotates the SELECTED ads
   m_nGuildSvrCursor = 0; // dword_49F950
   m_nNdaCursor = 0; // dword_49F7B4
   m_nNdaIps: number[] = []; // dword_49F7B8
@@ -927,11 +984,11 @@ export class CCenterProcess {
   /** CCenterProcess::MakeChannelsExtraInfoPacket (CxLogin.exe.c:6414) — client p11. */
   MakeChannelsExtraInfoPacket(a2: CSendPacket): void {
     a2.InitPacket(LS_ClientSend.OnChannelsExtraInfo);
-    // rotating advertisement
+    // rotating advertisement: [EStr strImage][E2 Param1][E2 Param2][E2 60]
     const adv = this.GetAdvertisement();
     a2.EncodeStr(adv.strImage);
-    a2.Encode2(adv.p2 & 0xffff);
-    a2.Encode2(adv.p3 & 0xffff);
+    a2.Encode2(adv.Param1 & 0xffff);
+    a2.Encode2(adv.Param2 & 0xffff);
     a2.Encode2(60);
     // guild server list: at most 2 entries, window start rotates per call
     const v6 = this.m_vtGuildSvrList.length;
@@ -973,13 +1030,15 @@ export class CCenterProcess {
     }
     a2.Encode1(this.m_nRelayIps.length);
     for (const ip of this.m_nRelayIps) a2.Encode4(ip);
-    // community server list
-    a2.Encode2(this.m_vtCommunitySvr.length);
-    for (const cs of this.m_vtCommunitySvr) {
+    // fx messages: [E2 count][count×(E1 0, E1 attr, EStr message)]
+    a2.Encode2(this.m_vtFxMessage.length);
+    for (const m of this.m_vtFxMessage) {
       a2.Encode1(0);
-      a2.Encode1(cs.nByte);
+      a2.Encode1(m.nAttr);
+      a2.EncodeStr(m.strMessage);
     }
-    a2.Encode2(0); // *(WORD*)(this + 47600) — never populated in this suite
+    // premium channel map-select reward (FxUserOptions PRECHMAPREWARD)
+    a2.Encode2(this.m_nPreChMapSelReward & 0xffff);
     // JUM servers
     const cfg = this.m_cfg ?? CServerConfig.ms_pInstance;
     const jumNumber = cfg.GetNumAttribute("JUMSvrNumber");
@@ -990,19 +1049,55 @@ export class CCenterProcess {
     }
   }
 
-  /** CCenterProcess::GetAdvertisement (CxLogin.exe.c:6164) — rotating selection. */
-  GetAdvertisement(): { strImage: string; p2: number; p3: number } {
-    if (this.m_vtAdvertisement.length === 0) return { strImage: "", p2: 0, p3: 0 };
-    const v5 = this.m_nAdvCursor % this.m_vtAdvertisement.length;
+  /** CCenterProcess::GetAdvertisement (CxLogin.exe.c:6164) — rotates the
+   *  SELECTED pool (dword_49F61C cursor, unbounded). Empty pool → the
+   *  zero-ad struct (the empty-vector copy reads an empty string). */
+  GetAdvertisement(): _Advertisement {
+    if (this.m_vtSelAdvertisement.length === 0) {
+      return { strImage: "", Param1: 0, Param2: 0, Param3: 0, Param4: 0, Param5: 0, Param6: 0 };
+    }
+    const v5 = this.m_nAdvCursor % this.m_vtSelAdvertisement.length;
     this.m_nAdvCursor++;
-    return this.m_vtAdvertisement[v5]!;
+    return this.m_vtSelAdvertisement[v5]!;
   }
 
-  /** CCenterProcess::UpdateAdvertisement (CxLogin.exe.c:7742) */
-  UpdateAdvertisement(): void {
-    this.m_vtAdvertisement = this.m_db
-      .GetAdvertisements()
-      .map((r) => ({ strImage: r.strImage, p2: r.p2, p3: r.p3 }));
+  /** CCenterProcess::UpdateAdvertisement (CxLogin.exe.c:7742) — aFull
+   *  reloads FxAdvertisement, then the hour-window selection always runs:
+   *  visible when start <= now <= end, or across midnight (end < start)
+   *  when start <= now || now <= end. Each visible ad enters the rotation
+   *  pool Param4 times. */
+  UpdateAdvertisement(aFull = 1, nowHour = new Date().getHours()): void {
+    if (aFull) {
+      this.m_vtAdvertisement = this.m_db.GetAdvertisements().map((r) => ({
+        strImage: r.strImage,
+        Param1: r.p1,
+        Param2: r.p2,
+        Param3: r.p3,
+        Param4: r.p4,
+        Param5: r.p5,
+        Param6: r.p6,
+      }));
+    }
+    const sel: _Advertisement[] = [];
+    for (const ad of this.m_vtAdvertisement) {
+      const v12 = ad.Param5;
+      const v24 = ad.Param6;
+      const visible = v24 < v12 ? v12 <= nowHour || nowHour <= v24 : v12 <= nowHour && nowHour <= v24;
+      if (visible) for (let i = 0; i < ad.Param4; i++) sel.push(ad);
+    }
+    this.m_vtSelAdvertisement = sel;
+  }
+
+  /** CCenterProcess::UpdateFxMessage (CxLogin.exe.c:7961) — FxMessage rows
+   *  with MessageUse = 1 (select "messageattr , message"). */
+  UpdateFxMessage(): void {
+    this.m_vtFxMessage = this.m_db.GetFxMessages().map((r) => ({ strMessage: r.message, nAttr: r.attr }));
+  }
+
+  /** CCenterProcess::UpdatePremiumChannelMapSelReward (CxLogin.exe.c:5328) —
+   *  FxUserOptions "PRECHMAPREWARD" (CRSOptions), WORD on the wire. */
+  UpdatePremiumChannelMapSelReward(): void {
+    this.m_nPreChMapSelReward = this.m_db.GetPremiumSvrReward();
   }
 
   /** CCenterProcess::UpdateGuildServerList (CxLogin.exe.c:8079) */
@@ -1170,6 +1265,9 @@ export async function main(cfgFile: string, dbDir: string): Promise<void> {
     },
   });
   console.log(`[LS] listening on :${port}`);
+
+  // CTimerThread::Resume (CxLogin.exe.c:16048 — created right after CCenterProcess::Init)
+  loginPool.StartTimer(centerProcess);
 
   await centerProcess.ConnectToCenter(cfg);
 }

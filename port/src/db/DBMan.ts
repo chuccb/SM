@@ -156,7 +156,13 @@ CREATE TABLE IF NOT EXISTS FxAdvertisement (
   Param2   INTEGER NOT NULL DEFAULT 0,
   Param3   INTEGER NOT NULL DEFAULT 0,
   Param4   INTEGER NOT NULL DEFAULT 0,
-  Param5   INTEGER NOT NULL DEFAULT 0
+  Param5   INTEGER NOT NULL DEFAULT 0,
+  Param6   INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS FxMessage (
+  Message     TEXT NOT NULL DEFAULT '',
+  MessageAttr INTEGER NOT NULL DEFAULT 0,
+  MessageUse  INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS FxGuildServerList (
   SN   INTEGER PRIMARY KEY,
@@ -339,11 +345,24 @@ export class CDBMan {
     return row ? row.VALUE & 0xff : 0;
   }
 
-  /** CRSAdvertisement ("FxAdvertisement") — row = _Advertisement { strImage, 5 dwords }. */
-  GetAdvertisements(): { strImage: string; p1: number; p2: number; p3: number; p4: number; p5: number }[] {
+  /** CRSAdvertisement ("FxAdvertisement") — row = _Advertisement:
+   *  strImage + 6 dwords (36-byte vector entry). The wire carries Param1/2,
+   *  Param4 repeats the ad inside the rotation pool, Param5/6 bound the
+   *  visibility hour window (Param6 < Param5 wraps past midnight). */
+  GetAdvertisements(): {
+    strImage: string; p1: number; p2: number; p3: number; p4: number; p5: number; p6: number;
+  }[] {
     return this.config
-      .query("SELECT strImage, Param1 p1, Param2 p2, Param3 p3, Param4 p4, Param5 p5 FROM FxAdvertisement")
-      .all() as { strImage: string; p1: number; p2: number; p3: number; p4: number; p5: number }[];
+      .query("SELECT strImage, Param1 p1, Param2 p2, Param3 p3, Param4 p4, Param5 p5, Param6 p6 FROM FxAdvertisement")
+      .all() as { strImage: string; p1: number; p2: number; p3: number; p4: number; p5: number; p6: number }[];
+  }
+
+  /** CRSFxMessage ("FxMessage") — CCenterProcess::UpdateFxMessage
+   *  (filter "messageuse = 1", select "messageattr , message"). */
+  GetFxMessages(): { message: string; attr: number }[] {
+    return this.config
+      .query("SELECT MessageAttr attr, Message message FROM FxMessage WHERE MessageUse = 1")
+      .all() as { message: string; attr: number }[];
   }
 
   /** CRSGuildServer ("FxGuildServerList") — row = _GuildSvrList { SN, strIp, nPort }. */
@@ -353,12 +372,8 @@ export class CDBMan {
       .all() as { SN: number; IP: string; Port: number }[];
   }
 
-  /** CRSCommuSvr ("CACommuSvr") — row = _COMMUNITYSVR { SN, Name, IP }. */
-  GetCommuSvrs(): { SN: number; Name: string; IP: string }[] {
-    return this.config
-      .query("SELECT SN, Name, IP FROM CACommuSvr ORDER BY SN")
-      .all() as { SN: number; Name: string; IP: string }[];
-  }
+  /** CRSCommuSvr ("CACommuSvr") — row = _COMMUNITYSVR { SN, Name, IP }. The
+   *  table exists in the shipped DB but the LS never reads it on the wire. */
 
   /** CDBMan::GetPremiumSvrReward — FxUserOptions "PRECHMAPREWARD" (CChannelPool ctor). */
   GetPremiumSvrReward(): number {
