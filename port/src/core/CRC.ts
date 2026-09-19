@@ -4,6 +4,8 @@
  * CCRC32: MSB-first CRC-32, polynomial 0x4C11DB7, no reflection, no final XOR
  *         (same family as zlib's crc32() but the raw table form; the incoming
  *         accumulator is the rolling packet sequence key).
+ *         Also feeds CGameMapTmpl +88 (LoadMap :13710 calls
+ *         UpdateCRC(0, file, size)) — the value packet 109 validates.
  * CCRC8 : CRC-8, polynomial 0x07.
  */
 
@@ -12,9 +14,13 @@ const crc8_table = new Uint8Array(256);
 
 (function GenCRCTable() {
   for (let i = 0; i < 256; i++) {
-    let v = i;
+    // FxServer.exe.c CCRC32::GenCRCTable: v1 = (i << 25) ^ (i & 0x80 ? poly : 0)
+    // followed by 7 more MSB rounds — i.e. the byte starts in the TOP bits,
+    // the classic (i << 24) + 8 shift-xor rounds.  Starting from `i` unchecked
+    // produced a completely different table (self-consistent, so every port-
+    // side round-trip stayed green, but the client compares real CRC values).
+    let v = (i << 24) >>> 0;
     for (let bit = 0; bit < 8; bit++) v = v & 0x80000000 ? (((v << 1) >>> 0) ^ 0x4c11db7) >>> 0 : (v << 1) >>> 0;
-    // The original starts from (i << 25) — a byte already in the top position.
     crc32_table[i] = v >>> 0;
   }
   for (let i = 0; i < 256; i++) {

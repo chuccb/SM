@@ -7,7 +7,8 @@ import { CServerConfig } from "../src/core/Config.ts";
 import { CxCenter } from "../src/center/Center.ts";
 import { main as loginMain } from "../src/login/Login.ts";
 import { inet_addr } from "../src/login/MultiServer.ts";
-import { CRC32, main as gameMain } from "../src/gameserver/GameServer.ts";
+import { main as gameMain } from "../src/gameserver/GameServer.ts";
+import { UpdateCRC32 } from "../src/core/CRC.ts";
 import { CLocalSocket } from "../src/lib/CenterLink.ts";
 import { SVRCLASS_UTIL, MC_ReceivedPacket } from "../src/lib/S2S.ts";
 import { CSendPacket, CipherDegree } from "../src/core/Packet.ts";
@@ -88,7 +89,7 @@ function writeGameDataPackage(): void {
     iddParts.push(Buffer.from(e.data));
     offset += e.data.length;
   }
-  testMapCrc = CRC32(0, new Uint8Array(map), map.byteLength) >>> 0;
+  testMapCrc = UpdateCRC32(0, new Uint8Array(map), 0, map.byteLength) >>> 0;
   require("node:fs").writeFileSync(DATA_DIR + "/FxServer.idx", Buffer.concat(idxParts));
   require("node:fs").writeFileSync(DATA_DIR + "/FxServer.idd", Buffer.concat(iddParts));
   // the game server cfg — the package base is dirname(cfg) + "/FxServer"

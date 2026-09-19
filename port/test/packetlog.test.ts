@@ -3,6 +3,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { rmSync } from "node:fs";
 import { CPacketSocket } from "../src/core/CPacketSocket.ts";
 import { PacketLog } from "../src/core/PacketLog.ts";
+import { UpdateCRC32, UpdateCRC8 } from "../src/core/CRC.ts";
 import { CSendPacket, CipherDegree, enSocket } from "../src/core/Packet.ts";
 
 /** minimal concrete socket — deg0, static header code, no rolling seq */
@@ -145,6 +146,20 @@ describe("PacketLog", () => {
     const text = await_file(path);
     expect(text).toContain("[LS] udp -> len=3 | 02 02 24");
     rmSync("test/tmp-packetlog", { recursive: true, force: true });
+  });
+});
+
+/** CCRC32/CCRC8 check vectors — FxServer.exe.c GenCRCTable/UpdateCRC (58017). */
+describe("CCRC32/CCRC8 check vectors", () => {
+  const v = new TextEncoder().encode("123456789");
+  test("CCRC32 is the MSB-first poly 0x04C11DB7 family", () => {
+    // init 0xFFFFFFFF lands on the published CRC-32/MPEG-2 check value
+    expect(UpdateCRC32(0xffffffff, v, 0, v.length)).toBe(0x0376e6e7);
+    // init 0 — the form CGameMapTmpl::LoadMap (+88) feeds packet 109's compare
+    expect(UpdateCRC32(0, v, 0, v.length)).toBe(0x89a1897f);
+  });
+  test("CCRC8 is poly 0x07 (CRC-8 check value)", () => {
+    expect(UpdateCRC8(0, v)).toBe(0xf4);
   });
 });
 

@@ -35,6 +35,7 @@ import { CServerConfig } from "../core/Config.ts";
 import { PacketLog } from "../core/PacketLog.ts";
 import { CPacketSocket } from "../core/CPacketSocket.ts";
 import { CipherDegree, CReceivedPacket, CSendPacket } from "../core/Packet.ts";
+import { UpdateCRC32 } from "../core/CRC.ts";
 import { CDBMan } from "../db/DBMan.ts";
 import { CData, CIDFMan } from "./CData.ts";
 import { HOSTHANDLE, MTUDP_UDP_PORT_OFFSET, SplitDatagram } from "./MTUDP.ts";
@@ -1242,7 +1243,8 @@ export class CBomberAttr {
     while (at + 4 <= data.byteLength) {
       const len = dv.getUint32(at, true);
       at += 4;
-      if (len <= 0 || len >= 54 || at + len + 36 > data.byteLength) break;
+      // 40 = the 10 trailing dwords (+256..+292) — the record needs them all
+      if (len <= 0 || len >= 54 || at + len + 40 > data.byteLength) break;
       const name = decoder.decode(data.subarray(at, at + len)).replace(/\0.*$/, "");
       at += len;
       const attr: BomberAttrEntry = {
@@ -1397,7 +1399,11 @@ export class CGameMapTmplList {
     tmpl.m_fLadderMap = this.IsMapInGroup("LadderMapGroup", tmpl.m_strName, groups) ? 1 : 0;
     tmpl.m_fPracticeMap = this.IsMapInGroup("PraticeMapGroup", tmpl.m_strName, groups) ? 1 : 0;
     tmpl.m_fReBirthMap = this.IsMapInGroup("ReBirthMapGroup", tmpl.m_strName, groups) ? 1 : 0;
-    tmpl.m_dwCRC = CRC32(0, content, content.byteLength) >>> 0;
+    // +88 = CCRC32::UpdateCRC(0, file, size) over the WHOLE map file
+    // (FxServer.exe.c:13710) — packet 109 compares the client's CRC of the
+    // same file against this; MSB-first poly 0x04C11DB7, NOT zlib's reflected
+    // crc32 (that mismatch tripped the "Hacking suspected: crc mismatch").
+    tmpl.m_dwCRC = UpdateCRC32(0, content, 0, content.byteLength) >>> 0;
     const dv = new DataView(content.buffer, content.byteOffset, content.byteLength);
     if (content.byteLength < 8) return;
     const version = dv.getUint32(0, true);
@@ -1510,16 +1516,6 @@ export class CGameMapTmplList {
     if (fits.length === 0) return -1;
     return fits[Math.floor(Math.random() * fits.length) % fits.length]!;
   }
-}
-
-/** CRC32 (the IEEE table-less variant CCRC32::UpdateCRC uses). */
-export function CRC32(crc: number, data: Uint8Array, len: number): number {
-  let c = crc ^ 0xffffffff;
-  for (let i = 0; i < len; i++) {
-    c ^= data[i]!;
-    for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (0xedb88320 & -(c & 1));
-  }
-  return (c ^ 0xffffffff) >>> 0;
 }
 
 // ============================ CGameContext / in-play state ============================
