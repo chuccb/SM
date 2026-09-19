@@ -17,7 +17,8 @@
  * CRS*::OnReceiveRow select lists in the decompiled servers.
  */
 import { Database } from "bun:sqlite";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
+import { LocateCAConfigBak, ParseCAConfigBak, CA_CONFIG_SEED_IP } from "./CAConfigBak.ts";
 import { join } from "node:path";
 
 /** CDBMan::GetUserHashNo — lower(name[0]) % 6. */
@@ -296,6 +297,33 @@ export class CDBMan {
     this.config = this.open(join(dbDir, "CAConfig.db"), SCHEMA_CONFIG);
     this.item = this.open(join(dbDir, "CAItem.db"), SCHEMA_ITEM);
     this.guild = this.open(join(dbDir, "Guild.db"), SCHEMA_GUILD);
+    this.SeedConfigFromBak();
+  }
+
+  /** The original deployment's CAConfig.bak rows, loaded while the config
+   *  tables are still empty (idempotent: operator edits always win). The
+   *  backup's IPs point at the original site, so every seeded row is bound
+   *  to CA_CONFIG_SEED_IP instead. */
+  private SeedConfigFromBak(): void {
+    const bakPath = LocateCAConfigBak();
+    if (!bakPath) return;
+    const rows = ParseCAConfigBak(readFileSync(bakPath));
+    const Count = (table: string) =>
+      (this.config.query(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }).n;
+    if (Count("CAMultiSvr") === 0) {
+      for (const r of rows.CAMultiSvr)
+        this.config
+          .query("INSERT INTO CAMultiSvr (SN, Name, IP, Param, Current) VALUES (?,?,?,?,?)")
+          .run(r.SN, r.Name, CA_CONFIG_SEED_IP, r.Param, r.Current);
+      if (rows.CAMultiSvr.length) console.log(`CAMultiSvr: seeded ${rows.CAMultiSvr.length} row(s) from ${bakPath}`);
+    }
+    if (Count("CALoginSvr") === 0) {
+      for (const r of rows.CALoginSvr)
+        this.config
+          .query("INSERT INTO CALoginSvr (SN, IP, Port, Flag) VALUES (?,?,?,?)")
+          .run(r.SN, CA_CONFIG_SEED_IP, r.Port, r.Flag);
+      if (rows.CALoginSvr.length) console.log(`CALoginSvr: seeded ${rows.CALoginSvr.length} row(s) from ${bakPath}`);
+    }
   }
 
   private open(path: string, schema: string): Database {
@@ -412,11 +440,23 @@ export class CDBMan {
     SID: number;
   } {
     const db = this.userInfo[GetUserHashNo(id)]!;
-    const acc = db
+    let acc = db
       .query("SELECT SID, Email, GuildSn, CommunitySvr FROM FxUserAccount WHERE ID = ? AND Password = ?")
       .get(id, pwd) as
       | { SID: number; Email: string; GuildSn: number; CommunitySvr: number }
       | undefined;
+    if (!acc) {
+      // Auto-registration: a login with an ID that was never registered
+      // creates the account with the entered credentials (name = ID).
+      // Intentional deviation from the original, which answers retval -1
+      // for unknown IDs exactly like for a wrong password.
+      const known = db.query("SELECT 1 AS x FROM FxUserAccount WHERE ID = ?").get(id);
+      if (!known && this.prCreateUser(id, id, pwd, "", 0, 0, "", "", 0, "", "", "", "", "") === 0) {
+        acc = db
+          .query("SELECT SID, Email, GuildSn, CommunitySvr FROM FxUserAccount WHERE ID = ? AND Password = ?")
+          .get(id, pwd) as typeof acc;
+      }
+    }
     if (!acc) return { retval: -1, Fxexp: 0, Txexp: 0, FxMoney: 0, Email: "", CommunitySvr: 0, GuildSn: 0, SID: 0 };
     db.query("UPDATE FxUserAccount SET TotalConn = TotalConn + 1, LastConn = ? WHERE ID = ?").run(
       new Date().toISOString(),

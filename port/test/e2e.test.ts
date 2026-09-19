@@ -10,6 +10,7 @@ import { CRC32, main as gameMain } from "../src/gameserver/GameServer.ts";
 import { CLocalSocket } from "../src/lib/CenterLink.ts";
 import { SVRCLASS_UTIL, MC_ReceivedPacket } from "../src/lib/S2S.ts";
 import { CSendPacket, CipherDegree } from "../src/core/Packet.ts";
+import { CA_CONFIG_SEED_IP } from "../src/db/CAConfigBak.ts";
 import { SimpleStreamEncrypt3, SimpleStreamDecrypt3 } from "../src/core/StreamCipher.ts";
 import { mkdirSync, rmSync } from "node:fs";
 import { inflateSync } from "node:zlib";
@@ -156,12 +157,31 @@ describe("login flow", () => {
     const p = await client.recv(1);
     expect(r1(p)).toBe(1); // full-update flag
     const info = rOS(p); // SmartStream
-    // info stream (little-endian fields): E1 mCount(0), E2 lCount(0), E1 current
+    // info stream (little-endian fields), with the CAConfig.bak seed rows:
+    // E1 mCount, m×(EStr name, EStr ip, E4 param), E2 lCount,
+    // l×(E4 inet_addr, E2 port, E1 flag), E1 current
     let o = 0;
-    expect(info[o++]!).toBe(0); // mCount
-    const l = info[o++]! | (info[o++]! << 8);
-    expect(l).toBe(0);
-    expect(info[o++]!).toBe(0); // current
+    const r1s = () => info[o++]!;
+    const r2s = () => info[o++]! | (info[o++]! << 8);
+    const r4s = () => (info[o++]! | (info[o++]! << 8) | (info[o++]! << 16) | (info[o++]! << 24)) >>> 0;
+    const rstrs = () => {
+      const len = r4s();
+      let t = "";
+      for (let i = 0; i < len; i++) t += String.fromCharCode(info[o++]!);
+      return t;
+    };
+    expect(r1s()).toBe(1); // mCount — the .bak's operator row
+    expect(rstrs()).toBe("world name");
+    expect(rstrs()).toBe(CA_CONFIG_SEED_IP);
+    expect(r4s()).toBe(0); // param
+    expect(r2s()).toBe(2); // lCount
+    for (const port of [3838, 3838]) {
+      expect(r4s()).toBe(((127 << 24) | 1) >>> 0); // inet_addr("127.0.0.1")
+      expect(r2s()).toBe(port);
+      expect(r1s()).toBe(1); // flag
+    }
+    expect(r1s()).toBe(1); // current — Current = 1 in the seeded row
+    expect(o).toBe(info.length);
     const flag = r1(p);
     expect(flag).toBe(1); // notice follows
     const notice = rOS(p);
