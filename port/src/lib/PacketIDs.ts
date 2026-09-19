@@ -121,7 +121,7 @@ export const GS_ReceivedPacket = {
   OnJoinFreeSession: 82, // vtbl+68 (JoinFreeSession)
   OnEnterLobbyStage: 83,
   OnRequestGuildMemberInfo: 85,
-  OnJoinSession: 86, // vtbl+60
+  OnRequestCreatePracticeSession: 86, // vtbl+60 = CGameSessionTable::CreateSessionPractice (the original log line misspells "PraticeSession")
   Chat: 208, // explicit case → ResetOffset + CChatPool::OnPacket
   OnRequestUserInventory: 209,
 } as const;
@@ -228,6 +228,7 @@ export const SESSION_ReceivedPacket = {
   OnRequestChangeTitle: 107, // CBaseSession
   OnPlayEmotion: 108, // CBaseSession
   OnReadyForImmediateStart: 109,
+  OnRequestAILevelChange: 110, // CPracticeSession::OnRequestAILevelChange
   OnTeamChat: 111, // CListSession::OnTeamChat
   OnBombIgnite: 140,
   OnBombKickThrow: 141,

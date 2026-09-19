@@ -1150,6 +1150,60 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
     expect(r1(miss)).toBe(0);
   });
 
+  test("practice room (86): the AI seats, the 100→110 close-with-level and the 110→111 level moves", async () => {
+    const { gs } = await enterGame("tester06");
+    gs.send(83, (e) => {});
+    await gs.recv(15);
+    gs.send(86, (e) => {
+      e.u8(1); // one player
+      e.u8(0); // select
+    });
+    const created = await gs.recv(89);
+    expect(r1(created)).toBe(0); // created
+    expect(r2(created)).toBe(0); // practice idx 0
+    expect(r4(created)).toBeGreaterThan(0); // the practice session serial
+    // the roster burst: 105 (slot 0, the human) + 107 with the AI tail
+    // (slot 1) + six closed 107s
+    await gs.recv(105);
+    const ai = await gs.recv(107);
+    expect(r1(ai)).toBe(1); // slot 1
+    const aiState = rbuf(ai, 3); // EncodeBuffer rides raw at every degree
+    expect((aiState[0]! & 1) !== 0).toBe(false); // open — only seats past 2×users close
+    expect(aiState[1]).toBe(5); // bomber 5
+    expect(aiState[2]).toBe(7); // colour 7
+    expect(r1(ai)).toBe(1); // the AI tail: owned
+    expect(r2(ai)).toBe(1); // the band level of a level-1 tester
+    for (let i = 2; i < 8; i++) {
+      const closed = await gs.recv(107);
+      expect(r1(closed)).toBe(i);
+      const state = rbuf(closed, 3);
+      expect((state[0]! & 1) !== 0).toBe(true); // the closed bit
+      expect(r1(closed)).toBe(0); // no AI owner
+    }
+    // close slot 2 → the AI owner binds and the 110 carries the level
+    gs.send(100, (e) => {
+      e.u8(0x20); // slot 2, low nibble 0 = close
+    });
+    const closed = await gs.recv(110);
+    expect(r1(closed)).toBe(0x20);
+    expect(r2(closed)).toBe(1); // the seat's AI level
+    // raise slot 2's AI level: 1 + 15 = 16
+    gs.send(110, (e) => {
+      e.u8(2);
+      e.u8(1);
+    });
+    const lvl = await gs.recv(111);
+    expect(r1(lvl)).toBe(2);
+    expect(r2(lvl)).toBe(16);
+    // asking again while seated → 89 [E1 3] and the disconnect
+    gs.send(86, (e) => {
+      e.u8(1);
+      e.u8(0);
+    });
+    const dup = await gs.recv(89);
+    expect(r1(dup)).toBe(3);
+  });
+
   test("the member leaving drops a 106 and hands the chief crown over", async () => {
     const chief = roomChief!;
     const member = roomMember!;
