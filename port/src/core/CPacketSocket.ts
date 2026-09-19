@@ -271,11 +271,11 @@ export abstract class CPacketSocket {
       this.GetRcvHeaderCode(),
       this.GetSndHeaderCode(),
     );
-    if (process.env.LS_DEBUG) {
-      console.error(
-        `    +- rcv buffer (${this.m_nRcvCnt}B): ${Array.from(this.m_mbRcvBuffer.subarray(0, Math.min(this.m_nRcvCnt, 48))).map((x) => x.toString(16).padStart(2, "0")).join(" ")}`,
-      );
-    }
+    // the frame bytes on any error path — the one datum that pins down a
+    // foreign peer's cipher convention.
+    console.error(
+      `    +- rcv buffer (${this.m_nRcvCnt}B): ${Array.from(this.m_mbRcvBuffer.subarray(0, Math.min(this.m_nRcvCnt, 64))).map((x) => x.toString(16).padStart(2, "0")).join(" ")}`,
+    );
   }
 
   /** CServerSocket::OnReceiveCompletionPacket — drain every complete packet. */
