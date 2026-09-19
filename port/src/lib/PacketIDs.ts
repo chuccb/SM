@@ -210,3 +210,26 @@ export const BILLING_ReceivedPacket = {
   OnDigiQAuthen: 342,
   OnEstimateRTT: 352,
 } as const;
+
+// The util server (CxUtil) — the admin-tool relay.  Tools connect on the
+// listen socket (the binary binds the literal 0x1FC0, ignoring cfg
+// ServerPort), log their identities with packet 7 and everything else is
+// relayed to the center (CMainPool::OnPacket, CxUtil.exe.c:21528).
+export const UTIL_ClientPacket = {
+  OnEstimateRTT: 20, // CUserPool::OnEstimateRTT — [E4 t] echoed back
+  OnConnEstablished: 7, // CMainPool::OnConnEstablished [E1 n][n×(EStr name, E4 serial)]
+  OnAdminNotifyMsg: 25, // → center MC 4 [EStr]
+  OnAdminNotifyGameServerMsg: 26, // → center MC 5 [E1 type][EStr]
+  OnSystemMsg: 31, // → center MC 10 [EStr]
+  OnKickoffUser: 32, // → center MC 1 [EStr name]
+  OnReqUserInfo: 64, // → center MC 7 [E4 serial][EStr account]
+  OnUpdateItem: 66, // → center MC 11 [EStr "UpdateFxItem" iff the leading byte is 11]
+} as const;
+
+/** What the util sends its admin tools (all degree 0 — SetCipherDegree(0)). */
+export const UTIL_ClientSend = {
+  OnConnect: 0, // CMainSystem::OnConnEstablished [E2 3][E2 5][E4 headerType][EStr url]
+  OnEstimateRTTRes: 20, // CUserPool::OnEstimateRTT
+  OnAdminNotifyMsg: 26, // CCenterProcess::OnAdminNotifyMsg rebroadcast
+  OnUserDetailInfo: 64, // CMainPool::SendUserDetailInfo [E1 n][E4 n2]
+} as const;

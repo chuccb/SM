@@ -365,9 +365,9 @@ export class CxCenter {
     }
     sock.owner = expected;
     expected.socket = sock;
+    // vtbl+20 (SendInitialAttr) runs for every class after AttachSocket
+    this.SendInitialAttr(sock, nServerClass);
     if (nServerClass === SVRCLASS_GAME) {
-      // CGameServer::SendInitialAttr — [E1 GameDomain][E1 FXAttrShop?1:0]
-      this.SendInitialAttr(sock);
       // Version bookkeeping is keyed by the server class (map@+52/+64/+76).
       const connNo = (this.m_mapConnNo.get(nServerClass) ?? 0) + 1;
       this.m_mapConnNo.set(nServerClass, connNo);
@@ -484,11 +484,17 @@ export class CxCenter {
 
   // ============================ packet dispatch ============================
 
-  /** CGameServer::SendInitialAttr — packet 12 right after a GS attach. */
-  SendInitialAttr(sock: CenterClientSocket): void {
+  /**
+   * CGameServer/CShopServer/CUtilServer::SendInitialAttr — CM 12, sent for
+   * every class right after AttachSocket (the register flow's vtbl+20 call).
+   * The second byte is the GS's own attr (CGameServer+97); shop/util send 0.
+   */
+  SendInitialAttr(sock: CenterClientSocket, nServerClass: number): void {
     const packet = new CSendPacket(CM_ReceivedPacket.OnInitialSvrAttr);
     packet.Encode1(this.cfg.GetNumAttribute("GameDomain"));
-    packet.Encode1(this.cfg.GetNumAttribute("FXAttrShop") === 1 ? 1 : 0);
+    packet.Encode1(
+      nServerClass === SVRCLASS_GAME ? (this.cfg.GetNumAttribute("FXAttrShop") === 1 ? 1 : 0) : 0,
+    );
     sock.SendPacket(packet);
   }
 
@@ -516,6 +522,63 @@ export class CxCenter {
     owner.socket?.SendPacket(packet);
   }
 
+  /**
+   * CUtilServer::OnRequestUserChannel (CxCenter.exe.c:21654) — MC 7 from the
+   * util: [E4 serial][EStr account] → CM 10 [E4 serial][EStr account]
+   * [E1 the user's server class][E4 sessionIdx] (zeros on a miss).
+   */
+  OnRequestUserChannelUtil(owner: CLocalServer, n: CReceivedPacket): void {
+    const serial = n.Decode4();
+    const account = n.DecodeStr();
+    const user = this.userTable.get(account);
+    const packet = new CSendPacket(CM_ReceivedPacket.OnUserChannelResult);
+    packet.Encode4(serial);
+    packet.EncodeStr(account);
+    if (user) {
+      packet.Encode1(user.nChannel);
+      packet.Encode4(user.nSessionIdx);
+    } else {
+      packet.Encode1(0);
+      packet.Encode4(0);
+    }
+    owner.socket?.SendPacket(packet);
+  }
+
+  /**
+   * CUtilServer::OnDeleteUser (CxCenter.exe.c:21690) — [EStr name]; the CM 11
+   * [E4 SN] goes to the server the user sits on, then the user is freed.
+   */
+  OnDeleteUserUtil(owner: CLocalServer, n: CReceivedPacket): void {
+    const name = n.DecodeStr();
+    const u = this.userTable.get(name);
+    if (!u) {
+      console.error(`[Center] Try to delete nonresident user[${owner.nServerClass}:${owner.nSvrIdx}:${name}]`);
+      return;
+    }
+    const target = this.GetSvr(u.nChannel, u.nSvrIdx);
+    const packet = new CSendPacket(CM_ReceivedPacket.OnDeleteUser);
+    packet.Encode4(u.nSID);
+    target?.socket?.SendPacket(packet);
+    // no residency check here (unlike the serial-keyed base handler) — the
+    // util's delete means "kick the user from the world"
+    u.SetFree(this);
+    this.serialTable.delete(u.nSID);
+    this.userTable.delete(u.strName);
+  }
+
+  /**
+   * CUtilServer::OnAdminNotifyGameServerMsg (CxCenter.exe.c:21737) —
+   * [E1 type][EStr] → CLocalServerMan::OnAdminNotifyGameServerMsg: CM 8
+   * [EStr] to every server of that class (SendPacketServerType).
+   */
+  OnAdminNotifyGameServerMsgUtil(n: CReceivedPacket): void {
+    const type = n.Decode1();
+    const str = n.DecodeStr();
+    const packet = new CSendPacket(CM_ReceivedPacket.OnAdminNotifyMsg);
+    packet.EncodeStr(str);
+    this.SendPacketServerType(type, packet);
+  }
+
   /** CLocalServer::OnPacket and friends (CxCenter.exe.c:10155+). */
   OnLocalPacket(sock: CenterClientSocket, n: CReceivedPacket): void {
     const owner = sock.owner;
@@ -526,7 +589,10 @@ export class CxCenter {
         if (owner.nServerClass === SVRCLASS_LOGIN) this.OnAddNewUser(owner, n);
         return;
       case MC_ReceivedPacket.OnDeleteUser:
-        this.OnDeleteUser(owner, n);
+        // CUtilServer::OnDeleteUser is name-keyed and forwards CM 11 on; the
+        // other classes use the serial-keyed base handler.
+        if (owner.nServerClass === SVRCLASS_UTIL) this.OnDeleteUserUtil(owner, n);
+        else this.OnDeleteUser(owner, n);
         return;
       case MC_ReceivedPacket.OnReqConnectToSvr:
         this.OnReqConnectToSvr(owner, n);
@@ -535,25 +601,36 @@ export class CxCenter {
         this.OnConnEstablished(owner, n);
         return;
       case MC_ReceivedPacket.OnAdminNotifyMsg:
-        this.Forward(n, CM_ReceivedPacket.OnAdminNotifyMsg, false);
+        // CGameServer/CUtilServer::OnAdminNotifyMsg →
+        // CLocalServerMan::OnAdminNotifyMsg (CxCenter.exe.c:11182): CM 8
+        // [EStr] to the login + game + shop lists.
+        this.OnAdminNotifyMsgLocal(n);
         return;
       case MC_ReceivedPacket.OnAdminNotifyGameServerMsg:
-        this.Forward(n, MC_ReceivedPacket.OnAdminNotifyGameServerMsg, true); // forwarded with its own id (5)
+        // only CUtilServer::OnPacket routes 5 upstream (CUtilServer.exe.c
+        // 21737); the other classes' dispatches ignore it.
+        if (owner.nServerClass === SVRCLASS_UTIL) this.OnAdminNotifyGameServerMsgUtil(n);
         return;
       case MC_ReceivedPacket.OnRequestUserChannel:
-        // CGameServer::OnPacket routes 7 to OnRequestUserChannel, and so does
-        // CShopServer::OnPacket (00414DD0); the other classes treat it as the
-        // operator-only slot.
+        // CGameServer::OnPacket routes 7 to OnRequestUserChannel, as do
+        // CShopServer::OnPacket (00414DD0) and CUtilServer::OnPacket; the
+        // util's variant has its own payload layout.
         if (owner.nServerClass === SVRCLASS_GAME || owner.nServerClass === SVRCLASS_SHOP)
           this.OnRequestUserChannel(owner, n);
+        else if (owner.nServerClass === SVRCLASS_UTIL) this.OnRequestUserChannelUtil(owner, n);
         return;
       case MC_ReceivedPacket.OnSetAuthenCode:
         return; // billing-side; no CAuthenThread in this suite
       case MC_ReceivedPacket.OnSystemMsg:
-        this.Forward(n, CM_ReceivedPacket.OnSystemMsg, false);
+        // → CLocalServerMan::OnSystemMsg (CxCenter.exe.c:11281): CM 13 [EStr]
+        // to the login + game + shop lists.
+        this.OnSystemMsgLocal(n);
         return;
       case MC_ReceivedPacket.OnSystemCmd:
-        this.Forward(n, MC_ReceivedPacket.OnSystemCmd, false); // forwarded with its own id (11)
+        // → CLocalServerMan::OnSystemCmd (CxCenter.exe.c:11925): a leading
+        // "UpdateFxItem" becomes an empty CM 14 to the game + shop lists;
+        // anything else is dropped.
+        this.OnSystemCmdLocal(n);
         return;
       default:
         return;
@@ -753,12 +830,53 @@ export class CxCenter {
     }
   }
 
-  /** CLocalServerMan broadcast of admin/system messages (raw passthrough). */
-  Forward(n: CReceivedPacket, forwardType: number, gameOnly: boolean): void {
-    const packet = new CSendPacket(forwardType);
-    packet.EncodeBuffer(n.m_pBlock.subarray(n.m_uOffset), n.m_uLength - n.m_uOffset);
-    if (gameOnly) this.SendPacketServerType(SVRCLASS_GAME, packet);
-    else this.SendPacketToAllLoginAndGameSvr(packet);
+  /**
+   * CLocalServerMan::OnAdminNotifyMsg (CxCenter.exe.c:11182) — CM 8 [EStr]
+   * to every connected login, game and shop server.
+   */
+  OnAdminNotifyMsgLocal(n: CReceivedPacket): void {
+    const str = n.DecodeStr();
+    const packet = new CSendPacket(CM_ReceivedPacket.OnAdminNotifyMsg);
+    packet.EncodeStr(str);
+    this.SendPacketToLoginGameShop(packet);
+  }
+
+  /**
+   * CLocalServerMan::OnSystemMsg (CxCenter.exe.c:11281) — CM 13 [EStr] to
+   * every connected login, game and shop server.
+   */
+  OnSystemMsgLocal(n: CReceivedPacket): void {
+    const str = n.DecodeStr();
+    const packet = new CSendPacket(CM_ReceivedPacket.OnSystemMsg);
+    packet.EncodeStr(str);
+    this.SendPacketToLoginGameShop(packet);
+  }
+
+  /**
+   * CLocalServerMan::OnSystemCmd (CxCenter.exe.c:11925) — the first 12 bytes
+   * compared case-insensitively against "UpdateFxItem"; on a match an EMPTY
+   * CM 14 goes to the game + shop lists, otherwise nothing is sent.
+   */
+  OnSystemCmdLocal(n: CReceivedPacket): void {
+    const str = n.DecodeStr();
+    if (!str.toLowerCase().startsWith("updatefxitem")) return;
+    const packet = new CSendPacket(CM_ReceivedPacket.OnItemDBInit);
+    this.SendPacketGameShop(packet);
+  }
+
+  /** The LS + GS + SHOP connected sockets (the CM 8/13 audience). */
+  SendPacketToLoginGameShop(packet: CSendPacket): void {
+    for (const s of this.servers) {
+      if (s.nServerClass !== SVRCLASS_UTIL && s.socket) s.socket.SendPacket(packet);
+    }
+  }
+
+  /** The GS + SHOP connected sockets (the CM 14 audience). */
+  SendPacketGameShop(packet: CSendPacket): void {
+    for (const s of this.servers) {
+      if ((s.nServerClass === SVRCLASS_GAME || s.nServerClass === SVRCLASS_SHOP) && s.socket)
+        s.socket.SendPacket(packet);
+    }
   }
 
   /** CLocalServerMan::OnDisconnect (CxCenter.exe.c:14489). */

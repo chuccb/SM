@@ -13,6 +13,7 @@ import { main as loginMain } from "./login/Login.ts";
 import { main as gameMain } from "./gameserver/GameServer.ts";
 import { main as relayMain } from "./relay/Relay.ts";
 import { main as shopMain } from "./shop/Shop.ts";
+import { main as utilMain } from "./utilserver/UtilServer.ts";
 
 const only = process.argv.includes("--only") ? process.argv[process.argv.indexOf("--only") + 1] : null;
 const dbDir = join(import.meta.dir, "..", "db");
@@ -57,6 +58,15 @@ if (!only || only === "shop") {
     cfgFile.startsWith("/") ? cfgFile : join(import.meta.dir, "..", cfgFile),
     dbDir,
   );
+}
+
+if (!only || only === "util") {
+  // FXUS_000.cfg: the util attaches to the center as server class 99; the
+  // tool listener binds the literal 8128 (CListenThread::Proc's 0x1FC0).
+  const cfgFile = process.argv.includes("--cfg")
+    ? process.argv[process.argv.indexOf("--cfg") + 1]!
+    : join(import.meta.dir, "..", "..", "FXUS", "FXUS_000.cfg");
+  await utilMain(cfgFile.startsWith("/") ? cfgFile : join(import.meta.dir, "..", cfgFile));
 }
 
 if (!only || only === "login") {
