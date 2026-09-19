@@ -1006,7 +1006,7 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
     expect(r1(p115)).toBe(0); // CanStartGame = go
     const p116 = await chief.recv(116);
     r4(p116); // tick
-    expect(r4(p116)).toBe(0); // m_nGameMapIdx = 0 (the test map)
+    expect(r2(p116)).toBe(0); // m_nGameMapIdx (Encode2 — FxServer.exe.c:37289)
     expect(r1(p116)).toBe(2); // GetPlayerNo() (+832) — the current player count
     // slot 0 — the chief
     expect(r1(p116)).toBe(0); // slot

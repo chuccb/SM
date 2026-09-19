@@ -4291,7 +4291,10 @@ export class CGameSession {
     const packet = new CSendPacket(GS_ClientSend.OnStartGame, CipherDegree.kPacketEncryptedCRC8);
     // DoLaunchGameStageEx is an empty `retn` in the original
     packet.Encode4(Date.now() & 0xffffffff);
-    packet.Encode4(this.m_nGameMapIdx);
+    // the map idx rides through vtbl+24 = Encode2 (FxServer.exe.c:37289:
+    // +28 E4 tick / +24 E2 mapIdx / +20 E1 cur) — an E4 here makes the
+    // client read a garbage map index and crash on load
+    packet.Encode2(this.m_nGameMapIdx & 0xffff);
     packet.Encode1(this.m_nCurPlayerNum); // +832 — GetPlayerNo(), not the max
     const tmpl = CGameMapTmplList.ms_pInstance!.m_apGameMapTmpl[this.m_nGameMapIdx];
     const spawns = Math.min(tmpl ? tmpl.m_nMaxPlayer : 8, 8);
