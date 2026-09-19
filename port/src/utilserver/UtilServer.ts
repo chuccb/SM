@@ -31,7 +31,7 @@ import {
   SVRCLASS_UTIL,
 } from "../lib/S2S.ts";
 import { CLocalSocket } from "../lib/CenterLink.ts";
-import { US_ReceivedPacket, UTIL_ClientPacket, UTIL_ClientSend } from "../lib/PacketIDs.ts";
+import { PACKET_NAME_TABLES, US_ReceivedPacket, UTIL_ClientPacket, UTIL_ClientSend } from "../lib/PacketIDs.ts";
 
 /** CMainSystem::OnConnEstablished — the tool hello's patch URL. */
 const SERVER_URL = "ftp://patch.nexon.co.kr/ca";
@@ -442,8 +442,8 @@ export async function main(cfgFile: string): Promise<void> {
   CServerConfig.ms_pInstance = cfg;
 
   PacketLog.Configure("FXUS");
-  PacketLog.Register("FXUS", "recv", US_ReceivedPacket);
-  PacketLog.Register("FXUS", "send", UTIL_ClientSend);
+  PacketLog.Register("FXUS", "recv", ...PACKET_NAME_TABLES.FXUS.recv);
+  PacketLog.Register("FXUS", "send", ...PACKET_NAME_TABLES.FXUS.send);
 
   CMainSystem.ms_pInstance = new CMainSystem();
   CLocalUserTable.ms_pInstance = new CLocalUserTable();

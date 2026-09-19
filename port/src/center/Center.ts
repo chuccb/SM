@@ -28,7 +28,7 @@ import {
   SVRCLASS_UTIL,
   CENTER_VERSION,
 } from "../lib/S2S.ts";
-import { MONITOR_ReceivedPacket } from "../lib/PacketIDs.ts";
+import { MONITOR_ClientSend, MONITOR_ReceivedPacket, PACKET_NAME_TABLES } from "../lib/PacketIDs.ts";
 
 export function IpToU32(ip: string): number {
   // the Windows inet_addr convention (the value whose little-endian memory
@@ -284,9 +284,10 @@ export class CxCenter {
   constructor(cfg: CServerConfig) {
     this.cfg = cfg;
     PacketLog.Configure("Center");
-    PacketLog.Register("Center", "recv", MC_ReceivedPacket);
+    PacketLog.Register("Center", "recv", MC_ReceivedPacket); // S2S family — lib/S2S.ts
     PacketLog.Register("Center", "send", CM_ReceivedPacket);
-    PacketLog.Register("MON", "recv", MONITOR_ReceivedPacket);
+    PacketLog.Register("MON", "recv", ...PACKET_NAME_TABLES.Center.recv);
+    PacketLog.Register("MON", "send", ...PACKET_NAME_TABLES.Center.send);
   }
 
   GetSvrNo(nServerClass: number): number {
@@ -1015,14 +1016,14 @@ export class MonitorSocket extends CPacketSocket {
   }
 
   OnRequestCurrentUserStat(): void {
-    const packet = new CSendPacket(1);
+    const packet = new CSendPacket(MONITOR_ClientSend.OnRequestCurrentUserStat);
     packet.Encode4(this.center.userTable.size);
     packet.Encode4(this.center.nMaxUser);
     this.SendPacket(packet);
   }
 
   OnRequestSvrState(): void {
-    const packet = new CSendPacket(2);
+    const packet = new CSendPacket(MONITOR_ClientSend.OnRequestSvrState);
     const all = this.center.servers;
     packet.Encode1(all.length);
     for (const s of all) {

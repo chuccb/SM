@@ -35,6 +35,7 @@ import {
   CLIENTSOCKET_SEQ,
   CLIENTSOCKET_SEQ_DELTA,
   LS_ClientSend,
+  PACKET_NAME_TABLES,
   LS_ReceivedPacket,
   LS_SendPacket,
 } from "../lib/PacketIDs.ts";
@@ -547,7 +548,7 @@ export class CLoginPool {
     const v10 = this.m_center.CheckEnterGame(nServerType, nSvrIdx, nVersion);
     if (v10 === 1) {
       const userCount = socket.GetUserCount();
-      const packet = new CSendPacket(2); // MC OnReqConnectToSvr
+      const packet = new CSendPacket(MC_ReceivedPacket.OnReqConnectToSvr); // MC
       packet.Encode1(userCount);
       for (let i = 0; i < userCount; i++) packet.Encode4(socket.GetUser(i)!.GetGlobalSerialNo());
       packet.Encode1(nServerType);
@@ -877,7 +878,7 @@ export class CCenterProcess {
 
   /** CCenterProcess::RegisterConnection (CxLogin.exe.c:4942) — center packet 0. */
   RegisterConnection(socket: CClientSocket): void {
-    const packet = new CSendPacket(0); // MC OnAddNewUser
+    const packet = new CSendPacket(MC_ReceivedPacket.OnAddNewUser); // MC
     packet.Encode4(PeerAddressDword(socket)); // the client's in_addr (the D4 the center stores as CUser::GetIP)
     packet.EncodeBuffer(socket.GetMachineId(), 16);
     packet.Encode4(socket.GetGameRoomCode());
@@ -897,7 +898,7 @@ export class CCenterProcess {
   /** CCenterProcess::UnregisterConnection (CxLogin.exe.c:1380) — center packet 1. */
   UnregisterConnection(sn: number): void {
     if (sn === 0) return;
-    const packet = new CSendPacket(1); // MC OnDeleteUser
+    const packet = new CSendPacket(MC_ReceivedPacket.OnDeleteUser); // MC
     packet.Encode4(sn);
     this.SendPacketToCenter(packet);
   }
@@ -1240,8 +1241,8 @@ export async function main(cfgFile: string, dbDir: string): Promise<void> {
   CServerConfig.ms_pInstance = cfg;
 
   PacketLog.Configure("LS");
-  PacketLog.Register("LS", "recv", LS_ReceivedPacket);
-  PacketLog.Register("LS", "send", LS_SendPacket, LS_ClientSend);
+  PacketLog.Register("LS", "recv", ...PACKET_NAME_TABLES.LS.recv);
+  PacketLog.Register("LS", "send", ...PACKET_NAME_TABLES.LS.send);
 
   const db = new CDBMan(dbDir);
   const multiServer = new CMultiServer();

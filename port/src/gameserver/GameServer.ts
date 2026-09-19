@@ -49,6 +49,7 @@ import {
   GS_ClientSend,
   GS_ReceivedPacket,
   SESSION_ReceivedPacket,
+  PACKET_NAME_TABLES,
 } from "../lib/PacketIDs.ts";
 import {
   CDynInfoCalculator_GetLevel,
@@ -6805,7 +6806,8 @@ export async function main(cfgFile: string, dbDir: string): Promise<void> {
   CServerConfig.ms_pInstance = cfg;
 
   PacketLog.Configure("GS");
-  PacketLog.Register("GS", "recv", GS_ReceivedPacket, SESSION_ReceivedPacket);
+  PacketLog.Register("GS", "recv", ...PACKET_NAME_TABLES.GS.recv);
+  PacketLog.Register("GS", "send", ...PACKET_NAME_TABLES.GS.send);
 
   // CBomberAttr / CItemAttr / CGameMapTmplList load from the IDF package
   // (FxServer.idd/.idx, CIDFMan::CIDFMan hardcodes the "FxServer" base —

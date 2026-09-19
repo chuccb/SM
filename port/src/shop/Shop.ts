@@ -25,6 +25,7 @@ import {
   CLIENTSOCKET_SEQ_DELTA,
   SC_SendPacket,
   SS_ReceivedPacket,
+  PACKET_NAME_TABLES,
 } from "../lib/PacketIDs.ts";
 import { CM_ReceivedPacket, MC_ReceivedPacket, SVRCLASS_SHOP } from "../lib/S2S.ts";
 import { CDynInfoCalculator_GetLevel } from "../login/LevelTable.ts";
@@ -1608,7 +1609,7 @@ export class CMainSystem {
   }
 
   OnConnEstablished(socket: CClientSocket): void {
-    const packet = new CSendPacket(0);
+    const packet = new CSendPacket(SC_SendPacket.OnConnect);
     packet.Encode2(3);
     packet.Encode2(7);
     packet.Encode4(socket.m_nHeaderType);
@@ -1748,10 +1749,10 @@ export async function main(cfgPath: string, dbDir: string): Promise<void> {
   CServerConfig.ms_pInstance = cfg;
 
   PacketLog.Configure("Shop");
-  PacketLog.Register("Shop", "recv", SS_ReceivedPacket);
-  PacketLog.Register("Shop", "send", SC_SendPacket);
-  PacketLog.Register("BILL", "recv", BILLING_ReceivedPacket);
-  PacketLog.Register("BILL", "send", BILLING_SendPacket);
+  PacketLog.Register("Shop", "recv", ...PACKET_NAME_TABLES.Shop.recv);
+  PacketLog.Register("Shop", "send", ...PACKET_NAME_TABLES.Shop.send);
+  PacketLog.Register("BILL", "recv", ...PACKET_NAME_TABLES.BILL.recv);
+  PacketLog.Register("BILL", "send", ...PACKET_NAME_TABLES.BILL.send);
 
   const shop = new CxShop(cfg, dbDir);
   await shop.Init();

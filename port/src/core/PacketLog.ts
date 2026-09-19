@@ -28,6 +28,7 @@
  * Packet names resolve through the PacketIDs.ts tables registered per server
  * in its main(); unregistered flows print the bare id as p<N>.
  */
+import { PacketIdName } from "../lib/PacketIDs.ts";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
@@ -92,7 +93,8 @@ export class PacketLog {
   ): void {
     if (!PacketLog.Enabled()) return;
     const map = PacketLog.names.get(`${tableKey ?? tag}:${dir}`);
-    const name = map?.get(nPacketType) ?? `p${nPacketType}`;
+    let name = map?.get(nPacketType) ?? PacketIdName(tableKey ?? tag, dir, nPacketType);
+    if (name === null) name = `p${nPacketType}`;
     PacketLog.Emit(
       `[${PacketLog.Timestamp()}] [${tag}] ${peer} ${dir === "recv" ? "<-" : "->"} ` +
         `${name}(${nPacketType}) deg${nCipherDegree} len=${payload.length} | ${PacketLog.Hex(payload)}`,
