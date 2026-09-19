@@ -365,8 +365,10 @@ export class CxCenter {
     }
     sock.owner = expected;
     expected.socket = sock;
-    // vtbl+20 (SendInitialAttr) runs for every class after AttachSocket
-    this.SendInitialAttr(sock, nServerClass);
+    // vtbl+20 (SendInitialAttr) runs for every class after AttachSocket;
+    // the login server has no override, and the base thunk is a bare `retn`
+    // (CxCenter.exe.lst:409AF0), so only game/shop/util get CM 12.
+    if (nServerClass !== SVRCLASS_LOGIN) this.SendInitialAttr(sock, nServerClass);
     if (nServerClass === SVRCLASS_GAME) {
       // Version bookkeeping is keyed by the server class (map@+52/+64/+76).
       const connNo = (this.m_mapConnNo.get(nServerClass) ?? 0) + 1;
