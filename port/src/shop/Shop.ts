@@ -132,8 +132,8 @@ export class CUser {
   m_pSocket: CClientSocket | null = null; // +3092
   m_fConnEstablished = 0; // +20 — set once CM 2 confirms the user
   m_nAuthenCode = 0; // +3116 (byte) — the CM 2 authencode (1 → [E1 1][E1 101])
-  m_nSID = -1; // +3108 — CUser::GetSID/SetSID (the account SID); the shop never
-  // writes it (CUser::SetSID has no callers in FxShop), so MC 3 always carries -1
+  m_nSID = -1; // +3108 — CUser::GetSID/SetSID (the account SID); set from the
+  // client's p7 third dword (FxShop.exe.c:19013) and echoed in MC 3
   m_nBID = -1; // +3112 — CUser::GetBID/SetBID (the SID pair's second dword)
   m_strCoupon = ""; // +3008 — the client 219 coupon (CMainPool::OnRequestUseCoupon)
   m_strCouponId = ""; // +3032 — the client 219 registered id
@@ -458,18 +458,17 @@ export class CMainPool extends CUserPool {
     }
   }
 
-  /** CMainPool::OnConnEstablished — client 7:
-   *  [E1 count][count×(EStr name, E4 serial)][E1 selectedIdx].  Registers the
-   *  users (CLocalUserTable), stores the selection on the socket (+464), and
-   *  answers with center MC 3 — the CShopServer 3-columns-per-user variant
-   *  [E1 n][n×(EStr, E4 serial(+3096), E4 flag(+3108))]. */
+  /** CMainPool::OnConnEstablished (FxShop.exe.c:19013) — client 7.  Unlike
+   *  the GS (:10250) there is NO 1|2 count gate here: any count byte is
+   *  accepted (0 still consumes the trailing selection byte and reports an
+   *  empty list to the center).  Each user carries THREE dwords — the global
+   *  serial (+3096, what Insert indexes and CM 3 echoes), a dword the
+   *  original stores at +3104 and never reads back, and the billing SID
+   *  (+3108, CUser::GetSID) — then [E1 selectedIdx] lands on socket+464.
+   *  The answer is center MC 3, the shop's 2-columns-per-user variant
+   *  [E1 n][n×(EStr, E4 serial, E4 SID)]. */
   OnConnEstablished(n: CReceivedPacket, socket: CClientSocket): void {
     const count = n.Decode1();
-    if (count !== 1 && count !== 2) {
-      console.error("[Shop] Connect Established UserNo Invalid");
-      socket.Close();
-      return;
-    }
     socket.AddNewUsers(count);
     this.AddNewSocket(socket);
     let i = 0;
@@ -477,8 +476,11 @@ export class CMainPool extends CUserPool {
       const user = socket.GetUser(i)!;
       const name = n.DecodeStr();
       const sn = n.Decode4();
+      n.Decode4(); // +3104 — write-only in the original
+      const sid = n.Decode4(); // +3108 — the SID the center matches (==1 skips)
       user.SetName(name);
       user.SetGlobalSerialNo(sn);
+      user.m_nSID = sid;
       if (CLocalUserTable.ms_pInstance!.Insert(user) === 0) break;
     }
     if (i < count) {
@@ -495,7 +497,7 @@ export class CMainPool extends CUserPool {
       const u = socket.GetUser(j)!;
       p.EncodeStr(u.GetName());
       p.Encode4(u.GetGlobalSerialNo());
-      p.Encode4(u.m_nSID); // CUser::GetSID — always -1 in the shop
+      p.Encode4(u.m_nSID); // CUser::GetSID — the client-supplied billing SID
     }
     CCenterProcess.ms_pInstance?.SendPacket(p);
   }

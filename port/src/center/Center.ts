@@ -837,7 +837,14 @@ export class CxCenter {
       if (fShop) sids.push(n.Decode4());
     }
     let result = 0;
-    const users: (CUser | undefined)[] = names.map((nm) => this.userTable.get(nm));
+    // CLocalServer::OnConnEstablished (CxCenter.exe.c:10365) looks the user up
+    // BY SERIAL in CGlobalUserTable and matches the name with _mbsicmp —
+    // case-insensitively; a serial miss or an already-connected user skips
+    // the match and the reply carries result 0.
+    const users: (CUser | undefined)[] = serials.map((sn, i) => {
+      const u = this.serialTable.get(sn >>> 0);
+      return u !== undefined && u.strName.toLowerCase() === names[i]!.toLowerCase() ? u : undefined;
+    });
     // the per-user match flags (CShopServer::OnConnEstablished's entry[2])
     const flags: number[] = users.map(() => 0);
     if (fShop) {
@@ -846,7 +853,9 @@ export class CxCenter {
         if (u !== undefined && sids[i] !== 1 && sids[i] === u.nSID) flags[i] = 1;
       }
     }
-    if (users.every((u, i) => u !== undefined && u.strName === names[i] && u.nSvrIdx === owner.nSvrIdx)) {
+    // the name/serial match above stands in for the original's per-user
+    // _mbsicmp gate; CheckConnectionEstablished is the real class/idx gate
+    if (users.every((u) => u !== undefined)) {
       result = 1;
       for (const u of users) {
         if (u!.CheckConnectionEstablished(owner.nServerClass, owner.nSvrIdx) === 0) {

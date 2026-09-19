@@ -98,7 +98,9 @@ async function connectShopUser(name: string, serial: number, consume18 = true): 
   c.send(7, (e) => {
     e.u8(1); // count
     e.str(name);
-    e.u32be(serial);
+    e.u32be(serial); // +3096 — the global serial
+    e.u32be(0xffffffff); // +3104 — write-only in the original
+    e.u32be(0xffffffff); // +3108 — the billing SID (none registered → flag 0)
     e.u8(0); // selected user idx
   });
   // the game client waits for the initial info before anything else
