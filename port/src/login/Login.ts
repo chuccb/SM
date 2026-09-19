@@ -704,7 +704,7 @@ export class CCenterProcess {
   // OnLocalServerInfo state
   m_nChannelNo = 0;
   m_anSvrType: number[] = []; // +42264 (GetLevelLimit key)
-  m_anChannelId: number[] = []; // +38168 (svr idx)
+  m_anChannelMaxUser: number[] = []; // +38168 (CM 3's E4 = cfg FXGSMaxUser)
   m_anFieldB: number[] = []; // +43288
   m_anCommunity: number[] = []; // +44312
   m_anFieldC: number[] = []; // +55576
@@ -863,7 +863,7 @@ export class CCenterProcess {
     this.m_nChannelNo = v5;
     this.m_pChannelCache.SetChannelNo(v5);
     this.m_anSvrType = [];
-    this.m_anChannelId = [];
+    this.m_anChannelMaxUser = [];
     this.m_anFieldB = [];
     this.m_anCommunity = [];
     this.m_anFieldC = [];
@@ -876,7 +876,7 @@ export class CCenterProcess {
         const community = n.Decode2();
         const c = n.Decode1();
         this.m_anSvrType.push(a);
-        this.m_anChannelId.push(chNo);
+        this.m_anChannelMaxUser.push(chNo);
         this.m_anFieldB.push(b);
         this.m_anCommunity.push(community);
         this.m_anFieldC.push(c);

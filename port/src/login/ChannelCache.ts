@@ -19,7 +19,7 @@ export class CChannelCache {
   m_nChannelNo = 0;
   m_strChannelName: string[] = []; // char[33] each
   m_nUserCount: number[] = [];
-  m_nChannelId: number[] = []; // the center-side svr idx
+  m_nMaxUser: number[] = []; // CM 3's E4 = cfg FXGSMaxUser (the +37896 bank)
   m_nLevelLimit: number[] = [];
   m_nType: number[] = [];
   m_nBattleType: number[] = []; // p3 field b (svr class)
@@ -70,7 +70,7 @@ export class CChannelCache {
     this.m_nUserCount[a2] = a4;
     // the decompile guards every non-name field on a5 != -1
     if (a5 !== -1) {
-      this.m_nChannelId[a2] = a5;
+      this.m_nMaxUser[a2] = a5;
       this.m_nLevelLimit[a2] = LevelLimit;
       this.m_nType[a2] = a7;
       this.m_nBattleType[a2] = a8;
@@ -88,7 +88,7 @@ export class CChannelCache {
     os.Encode2(this.m_nChannelNo & 0xffff);
     for (let i = 0; i < this.m_nChannelNo; i++) {
       os.EncodeStr(this.m_strChannelName[i] ?? "");
-      os.Encode2(this.m_nChannelId[i] ?? 0);
+      os.Encode2(this.m_nMaxUser[i] ?? 0);
       os.Encode2(this.m_nLevelLimit[i] ?? 0);
       os.Encode1(this.m_nType[i] ?? 0);
       os.Encode1(this.m_nBattleType[i] ?? 0);

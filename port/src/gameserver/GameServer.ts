@@ -6527,7 +6527,7 @@ export class CCenterProcess {
   m_mapGameVersion = new Map<number, number>(); // +47444
   m_mapClientVersion = new Map<number, number>(); // +47456
   m_aszChannelName: string[] = []; // +1304 (33-byte names)
-  m_anChannelIdx: number[] = []; // +39192
+  m_anChannelMaxUser: number[] = []; // +39192 (CM 3's E4 = cfg FXGSMaxUser, CxCenter 13249)
   m_anChannelType: number[] = []; // +280
   m_anChannelSvrClass: number[] = []; // +43288
   m_anChannelPort: number[] = []; // +44312 (u16)
@@ -6625,14 +6625,14 @@ export class CCenterProcess {
   OnLocalServerInfo(n: CReceivedPacket): void {
     this.m_nChannels = n.Decode4();
     this.m_aszChannelName = [];
-    this.m_anChannelIdx = [];
+    this.m_anChannelMaxUser = [];
     this.m_anChannelType = [];
     this.m_anChannelSvrClass = [];
     this.m_anChannelPort = [];
     this.m_anChannelEnterable = [];
     for (let i = 0; i < this.m_nChannels; i++) {
       this.m_aszChannelName.push(n.DecodeStr());
-      this.m_anChannelIdx.push(n.Decode4());
+      this.m_anChannelMaxUser.push(n.Decode4());
       this.m_anChannelType.push(n.Decode1());
       this.m_anChannelSvrClass.push(n.Decode1());
       this.m_anChannelPort.push(n.Decode2());

@@ -149,12 +149,14 @@ export class CUser {
 /** One attached local server (CLocalServer, 100 bytes, on the center side). */
 export class CLocalServer {
   strName: string;
-  nServerClass: number; // +20
-  nSvrIdx: number; // +28
+  nServerClass: number; // +20 (the class byte, Init's a3)
+  nSvrIdx: number; // +16 (the table slot, Init's a2)
   strIP: string;
   nPort: number;
+  m_nMaxUser = 0; // +28 : cfg FXGSMaxUser (CM 3's E4 field)
   nType = 0; // +32 : cfg FXGSType
-  nCommunity = 0; // +96 (u16) : cfg FXGSCommunity
+  nCommunity = 0; // +96 low byte : cfg FXGSCommunity
+  nFXAttrShopFlag = 0; // +97 bit0 : set when cfg FXAttrShop != 0 (CGameServer::Init 4061BA)
   nEnterableType = 0; // +98 : cfg FXGSEnterableType
   nConnNo = 0; // +48 : connected user count (IncConn / DecConn)
   socket: CenterClientSocket | null = null; // +52
@@ -285,8 +287,10 @@ export class CxCenter {
         this.cfg.GetAttribute(`FXGSIP${i}`),
         this.cfg.GetNumAttribute(`FXGSPort${i}`),
       );
+      gs.m_nMaxUser = this.cfg.GetNumAttribute(`FXGSMaxUser${i}`);
       gs.nType = this.cfg.GetNumAttribute(`FXGSType${i}`);
-      gs.nCommunity = this.cfg.GetNumAttribute(`FXGSCommunity${i}`) & 0xffff;
+      gs.nCommunity = this.cfg.GetNumAttribute(`FXGSCommunity${i}`) & 0xff;
+      gs.nFXAttrShopFlag = this.cfg.GetNumAttribute("FXAttrShop") !== 0 ? 1 : 0;
       gs.nEnterableType = this.cfg.GetNumAttribute(`FXGSEnterableType${i}`);
       this.servers.push(gs);
     }
@@ -432,10 +436,12 @@ export class CxCenter {
     packet.Encode4(gsServers.length);
     for (const gs of gsServers) {
       packet.EncodeStr(gs.strName);
-      packet.Encode4(gs.nSvrIdx);
+      packet.Encode4(gs.m_nMaxUser);
       packet.Encode1(gs.nType);
       packet.Encode1(gs.nServerClass);
-      packet.Encode2(gs.nCommunity);
+      // the word at +96: community in the low byte, the FXAttrShop flag in
+      // the high one (CGameServer::Init ors bit0 of +97 when cfg FXAttrShop)
+      packet.Encode2((gs.nCommunity & 0xff) | ((gs.nFXAttrShopFlag & 1) << 8));
       packet.Encode1(gs.nEnterableType);
     }
     const svr = this.GetSvr(nServerClass, nSvrIdx);
@@ -495,7 +501,7 @@ export class CxCenter {
     const packet = new CSendPacket(CM_ReceivedPacket.OnInitialSvrAttr);
     packet.Encode1(this.cfg.GetNumAttribute("GameDomain"));
     packet.Encode1(
-      nServerClass === SVRCLASS_GAME ? (this.cfg.GetNumAttribute("FXAttrShop") === 1 ? 1 : 0) : 0,
+      nServerClass === SVRCLASS_GAME ? (this.cfg.GetNumAttribute("FXAttrShop") !== 0 ? 1 : 0) : 0,
     );
     sock.SendPacket(packet);
   }
