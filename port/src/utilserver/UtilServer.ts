@@ -384,8 +384,8 @@ export class CCenterProcess {
       cfg.GetNumAttribute("CenterPort"),
       SVRCLASS_UTIL,
       cfg.GetNumAttribute("ServerIndex"),
-      5, // gameVersion
-      3, // clientVersion
+      // gameVersion/clientVersion default from S2S GAME_VERSION/CLIENT_VERSION
+      // (CxUtil.exe.c:15626 — [E2 5][E2 3])
     );
     console.log("[FXUS] Connection to Center Server established");
   }

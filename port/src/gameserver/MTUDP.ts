@@ -28,6 +28,13 @@
  */
 export const MTUDP_UDP_PORT_OFFSET = 1;
 
+/** CUDPPacketDispatcher::OnUDPPacket (FxServer.exe.c:26301) — the first body
+ *  byte is the frame type: type 1 wraps the OnReadyForImmediateStart check
+ *  (35 bytes), type 11 the OnUDPPeerInfo peer info (23 bytes); the rest
+ *  report and drop. */
+export const MTUDP_TYPE_READY_FOR_IMMEDIATE_START = 1;
+export const MTUDP_TYPE_PEER_INFO = 11;
+
 /** CCRC8::GenCRCTable (434140) — the standard CRC-8, polynomial 0x07. */
 const crc8_table = new Uint8Array(256);
 (function GenCRCTable(): void {

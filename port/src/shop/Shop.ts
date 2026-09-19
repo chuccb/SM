@@ -1503,8 +1503,8 @@ export class CCenterProcess {
       cfg.GetNumAttribute("CenterPort"),
       SVRCLASS_SHOP,
       cfg.GetNumAttribute("ServerIndex"),
-      7,
-      3,
+      // gameVersion/clientVersion default from S2S GAME_VERSION/CLIENT_VERSION
+      // (FxShop.exe.c:4276 — [E2 7][E2 3])
     );
     console.log("[Shop] Connection to Center Server established");
   }

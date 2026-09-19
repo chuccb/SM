@@ -12,6 +12,11 @@ export const SVRCLASS_GAME = 10;
 export const SVRCLASS_SHOP = 11;
 export const SVRCLASS_UTIL = 99;
 
+/** the identify-frame svrIdx obfuscation — every exe writes
+ *  [E4 svrIdx ^ 0x77] (FxServer.exe.c:3700, FxShop.exe.c:4279,
+ *  CxUtil.exe.c:15632, CxLogin.exe.c:4928) and CxCenter decodes it back. */
+export const SVRIDX_IDENTIFY_XOR = 0x77;
+
 /**
  * CLocalSocket::CLocalSocket — SetHeaderCode(rcv=96, snd=189, mod=231)
  * (CxLogin.exe.lst:40C1F3). The original local link runs SetSequence(40, 40,
@@ -73,3 +78,25 @@ export const CM_ReceivedPacket = {
 
 /** CxCenter greet: Encode2(3 /* version *\/); Encode2(sd). */
 export const CENTER_VERSION = 3;
+
+/**
+ * CCenterProcess::Init — the [E2 gameVersion][E2 clientVersion] tail of the
+ * identify frame ([E1 class][E4 svrIdx^0x77][E2 gv][E2 cv]), keyed by server
+ * class.  Anchors: FxServer.exe.c:3703 (class 10 → 7/3), FxShop.exe.c:4276
+ * (class 11 → 7/3), CxUtil.exe.c:15626 (class 99 → 5/3), CxLogin.exe.c:4927
+ * (class 1 → 0/0).  The center keeps the versions per class
+ * (CLocalServerMan +52/+64/+76) and the LS p6 gate (CheckEnterGame) compares
+ * the client's gv against the GAME entry.
+ */
+export const GAME_VERSION: Readonly<Record<number, number>> = {
+  [SVRCLASS_LOGIN]: 0,
+  [SVRCLASS_GAME]: 7,
+  [SVRCLASS_SHOP]: 7,
+  [SVRCLASS_UTIL]: 5,
+};
+export const CLIENT_VERSION: Readonly<Record<number, number>> = {
+  [SVRCLASS_LOGIN]: 0,
+  [SVRCLASS_GAME]: 3,
+  [SVRCLASS_SHOP]: 3,
+  [SVRCLASS_UTIL]: 3,
+};

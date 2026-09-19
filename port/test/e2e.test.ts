@@ -963,7 +963,8 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
   const util = new CLocalSocket({ onPacket: () => {} });
 
   test("the fake util attaches as server class 99", async () => {
-    await util.ConnectToCenter("127.0.0.1", 12828, SVRCLASS_UTIL, 0, 5, 3);
+    // versions come from the S2S per-class defaults (CxUtil handshake = 5/3)
+    await util.ConnectToCenter("127.0.0.1", 12828, SVRCLASS_UTIL, 0);
     for (let i = 0; i < 200 && !center.GetSvr(SVRCLASS_UTIL, 0)?.socket; i++) await Bun.sleep(5);
     expect(center.GetSvr(SVRCLASS_UTIL, 0)?.socket).toBeTruthy();
   });

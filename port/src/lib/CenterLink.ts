@@ -10,16 +10,23 @@ import { CipherDegree,
   type enSocket as EnSocket,
 } from "../core/Packet.ts";
 import {
+  CLIENT_VERSION,
   CM_ReceivedPacket,
   CENTER_VERSION,
+  GAME_VERSION,
   LOCALSOCKET_HEADER_CODE_MODIFIER,
   LOCALSOCKET_HEADER_CODE_RCV,
   LOCALSOCKET_HEADER_CODE_SND,
   LOCALSOCKET_SEQ,
   LOCALSOCKET_SEQ_DELTA,
   MC_ReceivedPacket,
+  SVRIDX_IDENTIFY_XOR,
 } from "./S2S.ts";
 import { PacketLog } from "../core/PacketLog.ts";
+
+/** CCenterProcess::ConnectToCenter retry loop — Sleep(0xBB8) between
+ *  attempts (CxLogin.exe.c:4885). */
+export const CENTER_CONNECT_RETRY_MS = 0xbb8;
 
 // the S2S link namespaces: a local server receives CM_* (center → local) and
 // sends MC_* (local → center) — the mirror image of CxCenter's own tables.
@@ -41,7 +48,16 @@ export class CLocalSocket extends CPacketSocket {
   /** CCenterProcess::ConnectToCenter — connect, exchange the identification bytes.
    *  The original loops forever on a refused connect: Sleep(0xBB8) +
    *  Report("Connection failed. Try again.") between attempts (CxLogin.exe.c:4885). */
-  async ConnectToCenter(host: string, port: number, nServerClass: number, nSvrIdx: number, gameVersion = 0, clientVersion = 0): Promise<void> {
+  async ConnectToCenter(
+    host: string,
+    port: number,
+    nServerClass: number,
+    nSvrIdx: number,
+    // the identify versions default from the per-class tables (S2S.ts) —
+    // callers only pass them to override (tests, fake servers)
+    gameVersion = GAME_VERSION[nServerClass] ?? 0,
+    clientVersion = CLIENT_VERSION[nServerClass] ?? 0,
+  ): Promise<void> {
     console.log("Try to connect center server.");
     for (;;) {
       try {
@@ -65,7 +81,7 @@ export class CLocalSocket extends CPacketSocket {
         });
         break;
       } catch {
-        await Bun.sleep(0xbb8);
+        await Bun.sleep(CENTER_CONNECT_RETRY_MS);
         console.log("Connection failed. Try again.");
       }
     }
@@ -79,7 +95,7 @@ export class CLocalSocket extends CPacketSocket {
     // Identify: [class:1][idx^0x77:u32 LE][gameVersion:u16][clientVersion:u16]
     const id = new Uint8Array(9);
     id[0] = nServerClass;
-    const x = (nSvrIdx ^ 0x77) >>> 0;
+    const x = (nSvrIdx ^ SVRIDX_IDENTIFY_XOR) >>> 0;
     id[1] = x & 0xff;
     id[2] = (x >>> 8) & 0xff;
     id[3] = (x >>> 16) & 0xff;

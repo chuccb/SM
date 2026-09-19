@@ -27,6 +27,7 @@ import {
   SVRCLASS_SHOP,
   SVRCLASS_UTIL,
   CENTER_VERSION,
+  SVRIDX_IDENTIFY_XOR,
 } from "../lib/S2S.ts";
 import { MONITOR_ClientSend, MONITOR_ReceivedPacket, PACKET_NAME_TABLES } from "../lib/PacketIDs.ts";
 
@@ -261,7 +262,7 @@ export class CenterClientSocket extends CPacketSocket {
     this.fIdentified = true;
     const nServerClass = all[0]!;
     const idxX = (all[1]! | (all[2]! << 8) | (all[3]! << 16) | (all[4]! << 24)) >>> 0;
-    const nSvrIdx = (idxX ^ 0x77) >>> 0;
+    const nSvrIdx = (idxX ^ SVRIDX_IDENTIFY_XOR) >>> 0;
     const nGameVersion = all[5]! | (all[6]! << 8);
     const nClientVersion = all[7]! | (all[8]! << 8);
     this.center.RegisterLocalServer(this, nServerClass, nSvrIdx, nGameVersion, nClientVersion);
