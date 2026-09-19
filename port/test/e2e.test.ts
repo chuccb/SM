@@ -1103,8 +1103,8 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
       expect(r4(p150)).toBe(0); // the +12736 seed dword (never written)
       const seq = r4(p150);
       expect(seq).toBeGreaterThan(0); // serial ^ version
-      expect(r4(p150)).toBe(0); // ghostStart (tmpl+60) × 1000
-      expect(r4(p150)).toBe(0); // ghostFreq (tmpl+64) × 1000
+      expect(r4(p150)).toBe(0); // ghostStart (tmpl+60, RAW seconds on the wire)
+      expect(r4(p150)).toBe(0); // ghostFreq (tmpl+64, RAW seconds on the wire)
     }
     (udp as unknown as { close?: () => void }).close?.();
   });

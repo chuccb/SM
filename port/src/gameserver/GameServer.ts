@@ -2608,7 +2608,7 @@ export class CGameSession {
     this.m_fModified |= 4;
     // CGameSession::AddUser tail (41AF4B)
     this.m_aBomberIdx[slot] = -1; // or [esi+edi*4+2D34h], -1
-    this.m_rgUdpAlive[slot] = 0; // byte [edi+esi+328Ch] = 0
+    this.m_rgUdpAlive[slot] = 0; // +12940 = 0 (CGameSession::AddUser, FxServer.exe.c:31876) — the flag OnUDPPeerInfo (type 11) sets and IsAllPlayerReadyForStart/the 30 s udp-loss sweep read
     this.m_rgJoinTime[slot] = CGameClock.Now(); // [esi+edi*4+3294h] = timeGetTime()
   }
 
@@ -5257,8 +5257,11 @@ export class CGameSession {
     packet.Encode4(this.m_dwStartSeed);
     packet.Encode4((this.m_nGameSerial ^ this.m_nGameVersion) >>> 0);
     this.m_nGameSerial = (this.m_nGameSerial + 1) >>> 0;
-    packet.Encode4(this.m_nGhostStart * 1000);
-    packet.Encode4(this.m_nGhostFreq * 1000);
+    // the wire carries the RAW tmpl+60/+64 seconds (FxServer.exe.c:32906 and
+    // :32908 encode this+3140/this+3141 before the *= 1000 at :32911-32912
+    // rescales the server-side state) — the client rescales on its own
+    packet.Encode4(this.m_nGhostStart);
+    packet.Encode4(this.m_nGhostFreq);
     this.m_nGameType100 = tmpl ? tmpl.m_fReBirthMap : 0; // +12728 ← tmpl+100
     this.m_nGhostStart *= 1000;
     this.m_nGhostFreq *= 1000;
