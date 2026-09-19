@@ -157,8 +157,7 @@ CREATE TABLE IF NOT EXISTS FxAdvertisement (
   Param2   INTEGER NOT NULL DEFAULT 0,
   Param3   INTEGER NOT NULL DEFAULT 0,
   Param4   INTEGER NOT NULL DEFAULT 0,
-  Param5   INTEGER NOT NULL DEFAULT 0,
-  Param6   INTEGER NOT NULL DEFAULT 0
+  Param5   INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS FxMessage (
   Message     TEXT NOT NULL DEFAULT '',
@@ -380,16 +379,20 @@ export class CDBMan {
     return row ? row.VALUE & 0xff : 0;
   }
 
-  /** CRSAdvertisement ("FxAdvertisement") — row = _Advertisement:
-   *  strImage + 6 dwords (36-byte vector entry). The wire carries Param1/2,
-   *  Param4 repeats the ad inside the rotation pool, Param5/6 bound the
-   *  visibility hour window (Param6 < Param5 wraps past midnight). */
+  /** CRSAdvertisement ("FxAdvertisement") — row = _Advertisement.
+   *  CRSAdvertisement::OnReceiveRow (CxLogin.exe.lst:412350) reads exactly six
+   *  columns by index: field 0 = the ad text (strImage), fields 1..5 = five
+   *  longs. UpdateAdvertisement (lst:407570) maps them: +12←Param1 (wire E2),
+   *  +16←Param2 (wire E2), +24←Param3 (rotation-pool repeats), +28←Param4 and
+   *  +32←Param5 (visibility hour window, Param5 < Param4 wraps past midnight).
+   *  A sixth int slot exists in the 36-byte struct but is never stored — the
+   *  original schema has no seventh column. */
   GetAdvertisements(): {
-    strImage: string; p1: number; p2: number; p3: number; p4: number; p5: number; p6: number;
+    strImage: string; p1: number; p2: number; p3: number; p4: number; p5: number;
   }[] {
     return this.config
-      .query("SELECT strImage, Param1 p1, Param2 p2, Param3 p3, Param4 p4, Param5 p5, Param6 p6 FROM FxAdvertisement")
-      .all() as { strImage: string; p1: number; p2: number; p3: number; p4: number; p5: number; p6: number }[];
+      .query("SELECT strImage, Param1 p1, Param2 p2, Param3 p3, Param4 p4, Param5 p5 FROM FxAdvertisement")
+      .all() as { strImage: string; p1: number; p2: number; p3: number; p4: number; p5: number }[];
   }
 
   /** CRSFxMessage ("FxMessage") — CCenterProcess::UpdateFxMessage

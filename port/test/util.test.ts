@@ -355,10 +355,10 @@ describe("login server (CxLogin)", () => {
 
   test("UpdateAdvertisement: hour window, midnight wrap, repeats and rotation", () => {
     db.config.run(
-      `INSERT INTO FxAdvertisement (strImage, Param1, Param2, Param3, Param4, Param5, Param6) VALUES
-       ('a.png', 0x1122, 0x3344, 0, 2, 0, 23),
-       ('b.png', 1, 2, 0, 1, 22, 6),
-       ('c.png', 3, 4, 0, 0, 0, 23)`,
+      `INSERT INTO FxAdvertisement (strImage, Param1, Param2, Param3, Param4, Param5) VALUES
+       ('a.png', 0x1122, 0x3344, 2, 0, 23),
+       ('b.png', 1, 2, 1, 22, 6),
+       ('c.png', 3, 4, 0, 0, 23)`,
     );
     center.UpdateAdvertisement(1, 12); // noon: a (×2) visible, b (22..6) not, c repeats 0
     expect(center.m_vtSelAdvertisement.map((a) => a.strImage)).toEqual(["a.png", "a.png"]);
@@ -379,8 +379,8 @@ describe("login server (CxLogin)", () => {
 
   test("UpdateAdvertisement(aFull = 0) re-selects the existing pool only", () => {
     db.config.run(
-      `INSERT INTO FxAdvertisement (strImage, Param1, Param2, Param3, Param4, Param5, Param6) VALUES
-       ('d.png', 5, 6, 0, 1, 0, 23)`,
+      `INSERT INTO FxAdvertisement (strImage, Param1, Param2, Param3, Param4, Param5) VALUES
+       ('d.png', 5, 6, 1, 0, 23)`,
     );
     center.UpdateAdvertisement(0, 12); // no reload → d.png not picked up
     expect(center.m_vtSelAdvertisement.map((a) => a.strImage)).not.toContain("d.png");

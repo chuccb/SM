@@ -64,9 +64,13 @@ function PeerAddressDword(socket: CClientSocket): number {
   return ((Number(m[1]) | (Number(m[2]) << 8) | (Number(m[3]) << 16) | (Number(m[4]) << 24)) >>> 0);
 }
 
-/** _Advertisement (FxAdvertisement row, 36-byte vector entry): strImage plus
- *  six dwords — Param1/2 ride the client-11 wire, Param4 repeats the ad
- *  inside the rotation pool, Param5/6 bound the visibility hour window. */
+/** _Advertisement (FxAdvertisement row, 36-byte vector entry): std::string
+ *  (12 bytes, no SSO) plus six int slots at +12..+32. UpdateAdvertisement
+ *  (CxLogin.exe.lst:407570) stores only five of them: +12←Param1 and
+ *  +16←Param2 ride the client-11 wire, +24←Param3 repeats the ad inside the
+ *  rotation pool, +28←Param4/+32←Param5 bound the visibility hour window
+ *  (Param5 < Param4 wraps past midnight). The +20 slot is never written by
+ *  the original — no sixth parameter exists. */
 interface _Advertisement {
   strImage: string;
   Param1: number;
@@ -74,7 +78,6 @@ interface _Advertisement {
   Param3: number;
   Param4: number;
   Param5: number;
-  Param6: number;
 }
 
 /** _USERACCOUNT + CUser of CxLogin (0x114 bytes). */
@@ -795,7 +798,7 @@ export class CCenterProcess {
 
   // ExtraInfo state
   m_vtAdvertisement: _Advertisement[] = []; // +47456 — the full FxAdvertisement reload
-  m_vtSelAdvertisement: _Advertisement[] = []; // +47468 — the hour-window selection (Param4 repeats)
+  m_vtSelAdvertisement: _Advertisement[] = []; // +47468 — the hour-window selection (Param3 repeats)
   m_vtFxMessage: { strMessage: string; nAttr: number }[] = []; // +47556 — FxMessage (MessageUse = 1)
   m_vtGuildSvrList: { strIp: string; nPort: number }[] = [];
   m_nPreChMapSelReward = 0; // +47600 (WORD on the wire) — FxUserOptions PRECHMAPREWARD
@@ -1074,7 +1077,7 @@ export class CCenterProcess {
    *  zero-ad struct (the empty-vector copy reads an empty string). */
   GetAdvertisement(): _Advertisement {
     if (this.m_vtSelAdvertisement.length === 0) {
-      return { strImage: "", Param1: 0, Param2: 0, Param3: 0, Param4: 0, Param5: 0, Param6: 0 };
+      return { strImage: "", Param1: 0, Param2: 0, Param3: 0, Param4: 0, Param5: 0 };
     }
     const v5 = this.m_nAdvCursor % this.m_vtSelAdvertisement.length;
     this.m_nAdvCursor++;
@@ -1083,9 +1086,9 @@ export class CCenterProcess {
 
   /** CCenterProcess::UpdateAdvertisement (CxLogin.exe.c:7742) — aFull
    *  reloads FxAdvertisement, then the hour-window selection always runs:
-   *  visible when start <= now <= end, or across midnight (end < start)
-   *  when start <= now || now <= end. Each visible ad enters the rotation
-   *  pool Param4 times. */
+   *  visible when Param4 <= now <= Param5, or across midnight (Param5 <
+   *  Param4) when Param4 <= now || now <= Param5. Each visible ad enters the
+   *  rotation pool Param3 times. */
   UpdateAdvertisement(aFull = 1, nowHour = new Date().getHours()): void {
     if (aFull) {
       this.m_vtAdvertisement = this.m_db.GetAdvertisements().map((r) => ({
@@ -1095,15 +1098,14 @@ export class CCenterProcess {
         Param3: r.p3,
         Param4: r.p4,
         Param5: r.p5,
-        Param6: r.p6,
       }));
     }
     const sel: _Advertisement[] = [];
     for (const ad of this.m_vtAdvertisement) {
-      const v12 = ad.Param5;
-      const v24 = ad.Param6;
+      const v12 = ad.Param4;
+      const v24 = ad.Param5;
       const visible = v24 < v12 ? v12 <= nowHour || nowHour <= v24 : v12 <= nowHour && nowHour <= v24;
-      if (visible) for (let i = 0; i < ad.Param4; i++) sel.push(ad);
+      if (visible) for (let i = 0; i < ad.Param3; i++) sel.push(ad);
     }
     this.m_vtSelAdvertisement = sel;
   }
