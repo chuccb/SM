@@ -15,6 +15,11 @@ import { CipherDegree,
   type enSocket as EnSocket,
 } from "./Packet.ts";
 
+/** CA_CIPHER_LIBERAL=1 — deliver checksum-failing packets with a loud log.
+ *  Diagnostic compatibility probe for foreign client builds; the original
+ *  always rejects. */
+export const CipherCompat = { liberal: process.env.CA_CIPHER_LIBERAL === "1" };
+
 export interface IPacketSocketHooks {
   onPacket(sock: CPacketSocket, packet: CReceivedPacket): void;
   onClose(sock: CPacketSocket): void;
@@ -169,7 +174,15 @@ export abstract class CPacketSocket {
     }
     if (incoming > this.m_nRcvCnt) return enSocket.kioNotReady;
     if (
-      !packet.DecodePacket(buf, 0, incoming, this.m_nPacketRcvSeq !== 0, this.m_nHeaderType, this.m_nPacketRcvSeq)
+      !packet.DecodePacket(
+        buf,
+        0,
+        incoming,
+        this.m_nPacketRcvSeq !== 0,
+        this.m_nHeaderType,
+        this.m_nPacketRcvSeq,
+        CipherCompat.liberal,
+      )
     ) {
       return enSocket.kioDecodingError;
     }

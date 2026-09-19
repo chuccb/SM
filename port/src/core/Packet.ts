@@ -322,6 +322,9 @@ export class CReceivedPacket extends CMemBlock {
     fMakeConvert: boolean,
     nHeaderType: number,
     dwCrcKey: number,
+    /** compatibility probe (CA_CIPHER_LIBERAL=1): deliver the packet even when
+     *  the checksum fails, reporting both sides — NEVER part of the original. */
+    fLiberal = false,
   ): boolean {
     if (this.m_nCipherDegree === CipherDegree.kPacketRaw) {
       const len3 = len - 3;
@@ -350,7 +353,14 @@ export class CReceivedPacket extends CMemBlock {
         this.m_nPacketType = B.Decrypt1(this.m_pBlock, 0) & 0xff;
         this.m_uLength = len4;
         this.m_uOffset = 0;
-        return UpdateCRC8(dwCrcKey & 0xff, this.m_pBlock, 0, len4) === v10;
+        const crc = UpdateCRC8(dwCrcKey & 0xff, this.m_pBlock, 0, len4);
+        if (crc !== v10) {
+          if (!fLiberal) return false;
+          console.error(
+            `[CIPHER-COMPAT] checksum mismatch — computed 0x${crc.toString(16)} vs wire 0x${v10.toString(16)} (key=${dwCrcKey}); delivering anyway`,
+          );
+        }
+        return true;
       }
       return false;
     }
