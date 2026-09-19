@@ -33,9 +33,9 @@ export class CServerConfig {
   Init(cfgFileName: string): void {
     const text = require("node:fs").readFileSync(cfgFileName, "latin1") as string;
     this.ParseConfigString(text);
-    // Deployment hook: the shipped cfgs carry the original operator's public
-    // IPs (211.20.189.187). `--ip` (main.ts) re-points the topology at a
-    // local address without touching the shipped files: each server's
+    // Deployment hook: the shipped cfgs carry 127.0.0.1 (originally the
+    // operator's public IP). `--ip` (main.ts) re-points the
+    // topology at another address without touching the files: each server's
     // ServerIP/CenterIP and the center's expected-host table LSIP*/FXSSIP*/
     // FXGSIP*/FXUSIP* (RegisterConnection compares the peer address against
     // them).

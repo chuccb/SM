@@ -365,7 +365,10 @@ describe("login flow", () => {
     expect(r1(p)).toBe(1); // CheckEnterGame ok
     expect(r1(p)).toBe(10); // svr type
     expect(r4(p)).toBe(0); // svr idx
-    expect(r4(p)).toBe(inet_addr("127.0.0.1")); // ip
+    // the center sends its stored host-order dword (ntohl(inet_addr(cfgIP)),
+    // CxCenter.exe.c:10791 + :10283) — NOT the raw inet_addr value used by
+    // the p11 NDA/Relay/JUMS fields above
+    expect(r4(p)).toBe(0x7f000001); // ntohl(inet_addr("127.0.0.1"))
     expect(r2(p)).toBe(14848); // port (FXGSPort0)
     // version mismatch path
     client.send(6, (e) => {

@@ -3,9 +3,9 @@
  *
  *   bun run start            → all six (center, relay, game, shop, util, login)
  *   bun run start -- --only game --idx 1    → one piece / one instance
- *   bun run start -- --ip 127.0.0.1         → re-point ServerIP/CenterIP of the
- *        shipped cfgs at a local address (the files ship the original
- *        operator's public IP 211.20.189.187; listeners always bind 0.0.0.0)
+ *   bun run start -- --ip <addr>            → re-point ServerIP/CenterIP of the
+ *        shipped cfgs at <addr> (they ship 127.0.0.1; listeners always bind
+ *        0.0.0.0, so this covers multi-host deployments)
  *   --cfg <file> overrides the per-piece cfg (game/shop default to the
  *        shipped FXGS_00{idx}.cfg / FXSS_00{idx}.cfg, --idx picks the file)
  */
