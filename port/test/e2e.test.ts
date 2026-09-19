@@ -109,6 +109,7 @@ import {
   type Encoder,
 } from "./TestClient.ts";
 import { BuildFrame } from "../src/gameserver/MTUDP.ts";
+import { UpdateCRC8 } from "../src/gameserver/MTUDP.ts";
 
 let center: CxCenter;
 
@@ -401,6 +402,37 @@ describe("login flow", () => {
     const p = await client.recv(20);
     expect(r4(p)).toBe(0x1234);
     expect(r4(p)).toBeGreaterThan(0);
+  });
+
+  test("check udp comm: [E1 0][E4 gsn] on ServerPort+1 answers [E1 2]", async () => {
+    // MTUDPServer::StartupBase binds ServerPort+MTUDP_UDP_PORT_OFFSET
+    // (CxLogin.exe.c:28168) — the UDP peer of the TCP 13838 listener. The
+    // client learns its serial from OnLoginRes (loginSN above) and probes
+    // once; every handled datagram destroys the host afterwards.
+    let last: Uint8Array | null = null;
+    // (the handler rides creation — Bun's UDP reload does not deliver data)
+    const udp = await Bun.udpSocket({
+      socket: {
+        data: (_s, d) => {
+          last = new Uint8Array(d as Buffer);
+        },
+      },
+    });
+    const probe = (gsn: number): Uint8Array =>
+      BuildFrame(Uint8Array.of(0, (gsn >>> 24) & 0xff, (gsn >>> 16) & 0xff, (gsn >>> 8) & 0xff, gsn & 0xff));
+
+    // an unregistered serial: the host is created then destroyed, no reply
+    udp.send(probe(0xdeadbeef), 13839, "127.0.0.1");
+    await Bun.sleep(350);
+    expect(last).toBeNull();
+
+    // the logged-in user's serial: one frame [len][E1 2][crc8] comes back
+    udp.send(probe(loginSN), 13839, "127.0.0.1");
+    for (let waited = 0; last === null && waited < 2000; waited += 50) await Bun.sleep(50);
+    expect(last).not.toBeNull();
+    expect(last![0]).toBe(2); // total len
+    expect(last![1]).toBe(2); // [E1 2]
+    expect(UpdateCRC8(0, last!, last!.length)).toBe(0); // the residual-zero CRC
   });
 });
 

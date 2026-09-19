@@ -22,6 +22,7 @@ import { CPacketSocket } from "../core/CPacketSocket.ts";
 import { CipherDegree, CReceivedPacket, CSendPacket } from "../core/Packet.ts";
 import { CDBMan, EncodePassword } from "../db/DBMan.ts";
 import { CMultiServer, inet_addr } from "./MultiServer.ts";
+import { MTUDPServer, SetLocalUserTableFinder } from "./MTUDPServer.ts";
 import { CChannelCache } from "./ChannelCache.ts";
 import { CDynInfoCalculator_GetLevel } from "./LevelTable.ts";
 import { CLocalSocket } from "../lib/CenterLink.ts";
@@ -1254,6 +1255,14 @@ export async function main(cfgFile: string, dbDir: string): Promise<void> {
   centerProcess.UpdateLevelLimit();
   centerProcess.UpdateAdvertisement();
   centerProcess.UpdateGuildServerList();
+
+  // MTUDPServer + CUDPPacketDispatcher (CxLogin.exe.c:16086-16098) — the
+  // unreliable UDP peer on ServerPort+1 for the 'check udp comm' handshake,
+  // started BEFORE CListenThread, exactly like the original's boot order.
+  SetLocalUserTableFinder(
+    (sn) => CLoginPool.ms_pInstance?.m_localUserTable.FindUserFromGlobalSerialNo(sn) ?? null,
+  );
+  await new MTUDPServer().StartupBase(0);
 
   // the client listener (CMainSystem init — ServerPort). The original boots it
   // last: CCenterProcess::Init (with the endless 3 s retry loop) runs before

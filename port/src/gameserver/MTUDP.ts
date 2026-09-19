@@ -21,6 +21,13 @@
  * GetNumAttribute("ServerPort") + 1.
  */
 
+/**
+ * MTUDPBase::StartupBase's UDP port offset from "ServerPort" — every exe's
+ * MTUDP binds ServerPort+1 (CxLogin.exe.c:28168 `htons(NumAttribute + 1)`,
+ * FxServer.exe 42E828), so the login server's UDP peer of TCP 3838 is 3839.
+ */
+export const MTUDP_UDP_PORT_OFFSET = 1;
+
 /** CCRC8::GenCRCTable (434140) — the standard CRC-8, polynomial 0x07. */
 const crc8_table = new Uint8Array(256);
 (function GenCRCTable(): void {
@@ -56,27 +63,27 @@ export interface UdpFrame {
  * pair).  Returns the frames received before the first CRC failure; a bad
  * frame reports and discards the remainder, exactly like the original.
  */
-export function SplitDatagram(datagram: Uint8Array, host: HOSTHANDLE): UdpFrame[] {
+export function SplitDatagram(datagram: Uint8Array, host: HOSTHANDLE, szReportPrefix = "[GS]"): UdpFrame[] {
   const frames: UdpFrame[] = [];
   let at = 0;
   while (at < datagram.length) {
     if (datagram.length - at < 2) {
       console.error(
-        "[GS] MTUDPBase::ProcessIncomingData - datagram length is less than len(sizeof(BYTE)) + FCS(sizeof(DWORD))",
+        `${szReportPrefix} MTUDPBase::ProcessIncomingData - datagram length is less than len(sizeof(BYTE)) + FCS(sizeof(DWORD))`,
       );
       break;
     }
     const totalLen = datagram[at]!;
     if (totalLen + 1 > datagram.length - at) {
-      console.error("[GS] MTUDPBase::ProcessIncomingData - datagram length is less than (total len) + (FCS size)");
+      console.error(`${szReportPrefix} MTUDPBase::ProcessIncomingData - datagram length is less than (total len) + (FCS size)`);
       break;
     }
     if (totalLen === 0) {
-      console.error("[GS] MTUDPBase::ProcessIncomingData - datagram total len 0");
+      console.error(`${szReportPrefix} MTUDPBase::ProcessIncomingData - datagram total len 0`);
       break;
     }
     if (UpdateCRC8(0, datagram.subarray(at, at + totalLen + 1), totalLen + 1) !== 0) {
-      console.error("[GS] MTUDPBase::ProcessIncomingData - crc check failed!, discard remaining.");
+      console.error(`${szReportPrefix} MTUDPBase::ProcessIncomingData - crc check failed!, discard remaining.`);
       break;
     }
     frames.push({ payload: datagram.subarray(at + 1, at + totalLen), host });

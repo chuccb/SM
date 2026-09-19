@@ -36,7 +36,7 @@ import { CPacketSocket } from "../core/CPacketSocket.ts";
 import { CipherDegree, CReceivedPacket, CSendPacket } from "../core/Packet.ts";
 import { CDBMan } from "../db/DBMan.ts";
 import { CData, CIDFMan } from "./CData.ts";
-import { HOSTHANDLE, SplitDatagram } from "./MTUDP.ts";
+import { HOSTHANDLE, MTUDP_UDP_PORT_OFFSET, SplitDatagram } from "./MTUDP.ts";
 import { CLocalSocket } from "../lib/CenterLink.ts";
 import { CM_ReceivedPacket, MC_ReceivedPacket, SVRCLASS_GAME } from "../lib/S2S.ts";
 import {
@@ -6915,12 +6915,12 @@ export async function main(cfgFile: string, dbDir: string): Promise<void> {
   });
   console.log(`[GS] listening on :${port}`);
 
-  // MTUDPBase::StartupBase (42E828) — the UDP peer socket on ServerPort + 1,
-  // and CUDPPacketDispatcher::Proc (41678B) — frame-split each datagram and
-  // route the launch-handshake check packets.
+  // MTUDPBase::StartupBase (42E828) — the UDP peer socket on ServerPort +
+  // MTUDP_UDP_PORT_OFFSET, and CUDPPacketDispatcher::Proc (41678B) —
+  // frame-split each datagram and route the launch-handshake check packets.
   const udpServer = Bun.udpSocket({
     hostname: "0.0.0.0",
-    port: port + 1,
+    port: port + MTUDP_UDP_PORT_OFFSET,
     socket: {
       data: (_socket, data, port, address) => {
         // network order: BE Encode4 puts a.b.c.d back on the wire
@@ -6936,7 +6936,7 @@ export async function main(cfgFile: string, dbDir: string): Promise<void> {
       },
     },
   });
-  console.log(`[GS] MTUDP initialized succefully (udp :${port + 1})`);
+  console.log(`[GS] MTUDP initialized succefully (udp :${port + MTUDP_UDP_PORT_OFFSET})`);
   void udpServer;
 
   // the periodic CUserPool::OnTimer sweeps (once a second, like the timer thread)
