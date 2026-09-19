@@ -1008,15 +1008,16 @@ export class CMainPool extends CUserPool {
   }
 
   /** CMainPool::OnRequestShopSvrInfo — client 226 → client 212
-   *  (CCenterProcess::MakeShopInfoPacket): [E4 count][count×(E4 ip, E2 port)]
-   *  — the same local-server list the center pushed as CM 6. */
+   *  (CCenterProcess::MakeShopInfoPacket, FxShop.exe.c:3923): 
+   *  [E4 count][count×(E4 ip, E4 port)] — the port is READ as the stored u16
+   *  but ENCODED as an E4.  The list is what the center pushed as CM 6. */
   OnRequestShopSvrInfo(_n: CReceivedPacket, socket: CClientSocket): void {
     const center = CCenterProcess.ms_pInstance!;
     const p = new CSendPacket(SC_SendPacket.OnShopSvrInfo, 2);
     p.Encode4(center.m_nSvrCount);
     for (let i = 0; i < center.m_nSvrCount; i++) {
       p.Encode4(center.m_anSvrIP[i]!);
-      p.Encode2(center.m_anSvrPort[i]!);
+      p.Encode4(center.m_anSvrPort[i]!);
     }
     socket.SendPacket(p);
   }

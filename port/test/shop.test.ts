@@ -285,11 +285,12 @@ describe("shop flow", () => {
     c.send(226, () => {});
     const p212 = await c.recv(212);
     const count = r4(p212);
-    expect(count).toBe(center.servers.length);
+    // the FXSS table only (CM 6's own scope)
+    expect(count).toBe(1);
     let sawShop = false;
     for (let i = 0; i < count; i++) {
       const ip = r4(p212);
-      const port = r2(p212);
+      const port = r4(p212); // MakeShopInfoPacket encodes the port as an E4
       if (port === SHOP_PORT) sawShop = true;
       void ip;
     }

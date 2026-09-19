@@ -453,14 +453,18 @@ export class CxCenter {
    *  The list covers every configured local server (entry stride 96: +56 ip,
    *  +60 port), not just the live ones. */
   SendShopSvrInfoPacket(_nServerClass: number, _nSvrIdx: number): void {
+    // CLocalServerMan::SendShopSvrInfoPacket (CxCenter.exe.c:11832): the FXSS
+    // table only (count = FXSSNumber; entries stride 96: +56 ip E4, +60 port
+    // E2) - the login/game/util servers are NOT in this list.
+    const shopServers = this.servers.filter((s) => s.nServerClass === SVRCLASS_SHOP);
     const packet = new CSendPacket(CM_ReceivedPacket.OnShopServerInfo);
-    packet.Encode4(this.servers.length);
-    for (const svr of this.servers) {
+    packet.Encode4(shopServers.length);
+    for (const svr of shopServers) {
       packet.Encode4(IpToU32(svr.strIP));
       packet.Encode2(svr.nPort);
     }
-    const shop = this.servers.filter((s) => s.nServerClass === SVRCLASS_SHOP);
-    for (const s of shop) s.socket?.SendPacket(packet);
+    const shop = this.GetSvr(SVRCLASS_SHOP, _nSvrIdx);
+    shop?.socket?.SendPacket(packet);
   }
 
   /** CLocalServerMan::SendLocalSvrStatePacket — packet 4 (CxCenter.exe.c:12304). */
