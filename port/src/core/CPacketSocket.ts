@@ -276,7 +276,7 @@ export abstract class CPacketSocket {
     } else if (err === enSocket.kioSequencingError) {
       console.error(`Error in client packet sequencing, close connection: [${addr}]`);
     } else if (err === enSocket.kioDecodingError) {
-      console.error(`Error decoding packet, close connection: [${addr}]`);
+      console.error(`Error in client packet decoding(Maybe CRC Mismatch), close connection: [${addr}]`);
     } else {
       console.error(`Error ${err} in packet pump, close connection: [${addr}]`);
     }

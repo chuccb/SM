@@ -14,7 +14,12 @@
  */
 
 export const STREAM_CIPHER_SEED_XOR = 0x53351d9c;
-export const STREAM_CIPHER_STEP = 0x63d50cc3; // 1674226915
+/** 0x63CAACE3 — read from the actual machine code of every server exe
+ *  (`sub edx, 0x63CAACE3` at both SES3 loop sites). The decompile .c files
+ *  carry 0x63D50CC3, which belongs to a different build: the exes ship
+ *  `81 EA E3 AC CA 63` and none of them contains C3 0C D5 63. Verified
+ *  against a live client frame: only this step makes CCRC8(key=40) match. */
+export const STREAM_CIPHER_STEP = 0x63caace3; // 0x63CAACE3
 
 function rdWord(buf: Uint8Array, off: number): number {
   return (buf[off]! | (buf[off + 1]! << 8) | (buf[off + 2]! << 16) | (buf[off + 3]! << 24)) >>> 0;
