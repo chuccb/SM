@@ -1,9 +1,13 @@
 /**
  * Suite entry — boots the servers against the shipped configuration files.
  *
- *   bun run start            → center + login (the pieces ported so far)
- *   bun run center           → center only
- *   bun run login            → login only (expects a center on Center_000.cfg's port)
+ *   bun run start            → all six (center, relay, game, shop, util, login)
+ *   bun run start -- --only game --idx 1    → one piece / one instance
+ *   bun run start -- --ip 127.0.0.1         → re-point ServerIP/CenterIP of the
+ *        shipped cfgs at a local address (the files ship the original
+ *        operator's public IP 211.20.189.187; listeners always bind 0.0.0.0)
+ *   --cfg <file> overrides the per-piece cfg (game/shop default to the
+ *        shipped FXGS_00{idx}.cfg / FXSS_00{idx}.cfg, --idx picks the file)
  */
 import { CServerConfig } from "./core/Config.ts";
 import { mkdirSync } from "node:fs";
@@ -16,6 +20,9 @@ import { main as shopMain } from "./shop/Shop.ts";
 import { main as utilMain } from "./utilserver/UtilServer.ts";
 
 const only = process.argv.includes("--only") ? process.argv[process.argv.indexOf("--only") + 1] : null;
+if (process.argv.includes("--ip")) {
+  CServerConfig.ms_strIpOverride = process.argv[process.argv.indexOf("--ip") + 1]!;
+}
 const dbDir = join(import.meta.dir, "..", "db");
 mkdirSync(dbDir, { recursive: true });
 
@@ -45,19 +52,20 @@ if (!only || only === "relay") {
 }
 
 if (!only || only === "game") {
-  // FXGS_000.cfg: ServerIndex 0 → port 4848 in the shipped topology; the test
-  // topology runs five game servers (test/game0.cfg … game4.cfg).
+  // FXGS_00{idx}.cfg: ServerIndex {idx} → port 4848 for idx 0 in the shipped
+  // topology; the test topology runs five game servers (test/game0.cfg …).
   const idx = process.argv.includes("--idx") ? Number(process.argv[process.argv.indexOf("--idx") + 1]) : 0;
   const cfgFile =
-    process.argv.includes("--cfg") ? process.argv[process.argv.indexOf("--cfg") + 1] : `test/game${idx}.cfg`;
+    process.argv.includes("--cfg") ? process.argv[process.argv.indexOf("--cfg") + 1] : `../FXGS/FXGS_00${idx}.cfg`;
   await gameMain(resolveCfg(cfgFile), dbDir);
 }
 
 if (!only || only === "shop") {
-  // FXSS_000.cfg: ServerIndex 0 → port 19801 in the shipped topology.
+  // FXSS_00{idx}.cfg: ServerIndex {idx} → port 9801 for idx 0 in the shipped
+  // topology.
   const idx = process.argv.includes("--idx") ? Number(process.argv[process.argv.indexOf("--idx") + 1]) : 0;
   const cfgFile =
-    process.argv.includes("--cfg") ? process.argv[process.argv.indexOf("--cfg") + 1] : `test/shop${idx}.cfg`;
+    process.argv.includes("--cfg") ? process.argv[process.argv.indexOf("--cfg") + 1] : `../FXSS/FXSS_00${idx}.cfg`;
   await shopMain(resolveCfg(cfgFile), dbDir);
 }
 

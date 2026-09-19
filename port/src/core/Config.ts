@@ -33,7 +33,24 @@ export class CServerConfig {
   Init(cfgFileName: string): void {
     const text = require("node:fs").readFileSync(cfgFileName, "latin1") as string;
     this.ParseConfigString(text);
+    // Deployment hook: the shipped cfgs carry the original operator's public
+    // IPs (211.20.189.187). `--ip` (main.ts) re-points the topology at a
+    // local address without touching the shipped files: each server's
+    // ServerIP/CenterIP and the center's expected-host table LSIP*/FXSSIP*/
+    // FXGSIP*/FXUSIP* (RegisterConnection compares the peer address against
+    // them).
+    // Client-facing data (NDAIP*/RelayIP*/UrlPatch*) stays as shipped.
+    if (CServerConfig.ms_strIpOverride !== null) {
+      for (const key of this.attributes.keys()) {
+        if (/^(?:ServerIP|CenterIP|LSIP\d*|FXSSIP\d*|FXGSIP\d*|FXUSIP\d*)$/.test(key)) {
+          this.attributes.set(key, CServerConfig.ms_strIpOverride);
+        }
+      }
+    }
   }
+
+  /** the `--ip <addr>` deployment override (see Init). */
+  static ms_strIpOverride: string | null = null;
 
   /** CServerConfig::GetAttribute */
   GetAttribute(name: string): string {
