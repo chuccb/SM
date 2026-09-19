@@ -920,6 +920,7 @@ export class CCenterProcess {
       a2.Encode1(type);
       a2.Encode1(this.m_mapGameState.get(type) ?? 0);
       a2.Encode2(this.m_mapGameVersion.get(type) ?? 0);
+      a2.Encode2(this.m_mapClientVersion.get(type) ?? 0);
     }
   }
 

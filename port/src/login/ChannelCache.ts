@@ -68,12 +68,15 @@ export class CChannelCache {
     ];
     this.m_strChannelName[a2] = _M_start;
     this.m_nUserCount[a2] = a4;
-    if (a5 !== -1) this.m_nChannelId[a2] = a5;
-    this.m_nLevelLimit[a2] = LevelLimit;
-    this.m_nType[a2] = a7;
-    this.m_nBattleType[a2] = a8;
-    this.m_nCommunity[a2] = a9;
-    this.m_nEnterableType[a2] = a10;
+    // the decompile guards every non-name field on a5 != -1
+    if (a5 !== -1) {
+      this.m_nChannelId[a2] = a5;
+      this.m_nLevelLimit[a2] = LevelLimit;
+      this.m_nType[a2] = a7;
+      this.m_nBattleType[a2] = a8;
+      this.m_nCommunity[a2] = a9;
+      this.m_nEnterableType[a2] = a10;
+    }
   }
 
   /** CChannelCache::MakeInfoPacket */

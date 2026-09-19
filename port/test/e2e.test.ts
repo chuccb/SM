@@ -298,6 +298,7 @@ describe("login flow", () => {
       expect(r1(p14)).toBe(10); // svr class
       expect(r1(p14)).toBe(1); // alive
       expect(r2(p14)).toBe(7); // game version (v7 from the fake GS handshake)
+      expect(r2(p14)).toBe(3); // client version (the fake GS handshake [7][3])
     }
     const p11 = await client.recv(11);
     expect(rstr(p11)).toBe(""); // no advertisement rows
