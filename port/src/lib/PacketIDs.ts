@@ -120,7 +120,6 @@ export const GS_ReceivedPacket = {
   OnEnterSession: 81, // vtbl+64 (JoinSession)
   OnJoinFreeSession: 82, // vtbl+68 (JoinFreeSession)
   OnEnterLobbyStage: 83,
-  OnRequestSessionList: 84, // vtbl+56
   OnRequestGuildMemberInfo: 85,
   OnJoinSession: 86, // vtbl+60
   Chat: 208, // explicit case → ResetOffset + CChatPool::OnPacket
@@ -158,6 +157,7 @@ export const GS_ClientSend = {
   OnJoinSessionRes: 81, // [E1 result]
   OnJoinFreeSessionRes: 82, // JoinFreeSession [E1 2] — the +1316 candidate list is never filled in FXGS
   OnSessionSimpleInfo: 83, // CListSession::MakeSimpleInfoPacket (room list)
+  OnSessionInfoDetailRes: 84, // OnRequestSessionInfoDetail (68): [E1 0/1] + per-slot blocks [+E4 time]
   OnSessionCreated: 85, // CListSession::MakeCreatedPacket
   OnSessionModified: 86, // CListSession::MakeModifiedPacket
   OnSessionDestroyed: 87, // CListSession::MakeDestroyedPacket

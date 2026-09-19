@@ -1112,6 +1112,44 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
     (udp as unknown as { close?: () => void }).close?.();
   });
 
+  test("session detail (68): the room answers 84 with the per-slot blocks", async () => {
+    const chief = roomChief!;
+    chief.send(68, (e) => {
+      e.u16(0); // the room idx
+      e.u32be(roomSerial);
+    });
+    const res = await chief.recv(84);
+    expect(r1(res)).toBe(1); // the room exists
+    for (let i = 0; i < 8; i++) {
+      expect(r1(res)).toBe(i <= 1 ? 1 : 0); // the chief + the member are seated
+      if (i === 0) {
+        expect(r1(res)).toBe(0); // user+104 — never written in FXGS
+        expect(rstr(res)).toBe("tester01"); // the chief client (roomChief labels it "chief" locally only)
+        expect(r2(res)).toBe(1); // look level
+        expect(r1(res)).toBe(1); // parked in the room (not playing) → 1
+        expect(r1(res)).toBe(1); // the chief bit
+      } else if (i === 1) {
+        expect(r1(res)).toBe(0); // user+104
+        expect(rstr(res)).toBe("tester03");
+        expect(r2(res)).toBe(1); // look level
+        expect(r1(res)).toBe(1); // parked in the room
+        expect(r1(res)).toBe(0); // not the chief
+      }
+    }
+    // mid-game (the launch test ran): the tail is 3 minutes minus the play
+    // time, so a just-started game reads a hair under 180000
+    const tail = r4(res);
+    expect(tail).toBeGreaterThan(170000);
+    expect(tail).toBeLessThanOrEqual(180000);
+    // a wrong serial hits the failure branch: a bare [E1 0]
+    chief.send(68, (e) => {
+      e.u16(0);
+      e.u32be(0xdeadbeef);
+    });
+    const miss = await chief.recv(84);
+    expect(r1(miss)).toBe(0);
+  });
+
   test("the member leaving drops a 106 and hands the chief crown over", async () => {
     const chief = roomChief!;
     const member = roomMember!;

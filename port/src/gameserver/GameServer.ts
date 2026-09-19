@@ -26,10 +26,16 @@
  *
  * The socket stage tag (+468) mirrors the original exactly: 0 = the connect
  * pool, 3 = channel-select stage (after 16), 1 = lobby stage (after 83),
- * 2 = seated in a room, 4 = playing, 6 = practice.  The room stage itself
- * (CListSession::OnPacket 96.., the strategies and the in-play game) is the
- * next unit; CGameSession here carries exactly the fields the room-list
- * (83/85/86/87) and join (80/81) packets expose.
+ * 2 = seated in a room, 4 = playing, 6 = practice.
+ *
+ * Layout, top to bottom: the item/account row types, CUser, CClientSocket,
+ * the local user/guild tables, CUserPool and CConnectPool (entry), then
+ * CGameSession — one room, carrying the session-stage dispatch (96..112),
+ * the in-play dispatch (140..162, 185..187), the ghost/lap/airplane units,
+ * the results unit (163) and the UDP-loss regulator — the game data tables
+ * and CGameContext (the per-game board state), CGameSessionTable (the 255
+ * rooms: create/join/auto-join/detail), CChatPool and CChannelPool (the
+ * lobby), CMainSystem and CCenterProcess (the center link) and main().
  */
 import { CServerConfig } from "../core/Config.ts";
 import { PacketLog } from "../core/PacketLog.ts";
@@ -1201,10 +1207,6 @@ export class CConnectPool extends CUserPool {
   }
 }
 
-// ============================ CGameSession ============================
-
-/** CGameSession — one room (lobby-stage fidelity; the in-play stage is the
- *  next unit).  Fields are named after the original's accessors. */
 // ============================ game data tables ============================
 
 /**
@@ -4606,7 +4608,6 @@ export class CGameSession {
     target.m_pSocket!.SendPacketAndDestroy(p);
   }
 
-  /** CGameSession::OnPacket — the room dispatch (FxServer.exe.c:37668). */
   // ==================== the in-play stage (CGameSession::OnPacket 140..162 / 185) ====================
 
   /** CGameSession::IsMySocket (vtbl+188) — m_rgPlayer[slot] lives on this socket. */
@@ -5098,14 +5099,21 @@ export class CGameSession {
     for (let i = 0; i < MAX_SESSION_SLOTS; i++) {
       if (this.m_rgPlayer[i] && !(this.m_rgLapTime[2 * i] === -1 && this.m_rgLapRank[2 * i] === -1)) count++;
     }
-    // the original compares the packed u64 {time,rank} — rank is the primary key
+    // the original packs {time, rank} into one u64 (time in the low dword,
+    // rank in the high dword) and compares those — i.e. rank first, then time
+    const lapKeyLessOrEqual = (a: number, b: number): boolean => {
+      const rankA = this.m_rgLapRank[2 * a]! >>> 0;
+      const rankB = this.m_rgLapRank[2 * b]! >>> 0;
+      if (rankA !== rankB) return rankA < rankB;
+      const timeA = this.m_rgLapTime[2 * a]! >>> 0;
+      const timeB = this.m_rgLapTime[2 * b]! >>> 0;
+      return timeA <= timeB;
+    };
     for (let i = 0; i < 7; i++) {
       if (!this.m_rgPlayer[i]) continue;
-      const a = BigInt(this.m_rgLapRank[2 * i]! >>> 0) * 0x100000000n + BigInt(this.m_rgLapTime[2 * i]! >>> 0);
       for (let k = i + 1; k < MAX_SESSION_SLOTS; k++) {
         if (!this.m_rgPlayer[k]) continue;
-        const b = BigInt(this.m_rgLapRank[2 * k]! >>> 0) * 0x100000000n + BigInt(this.m_rgLapTime[2 * k]! >>> 0);
-        if (a <= b) place[k]!++;
+        if (lapKeyLessOrEqual(i, k)) place[k]!++;
         else place[i]!++;
       }
     }
@@ -5356,6 +5364,41 @@ export class CGameSession {
     this.SendPacket(packet);
   }
 
+  /**
+   * CGameSession::OnRequestSessionInfoDetail (FxServer.exe.c:36389) — the
+   * room-detail 84: [E1 1] then per slot [E1 0] or [E1 1][E1 user+104]
+   * [EStr name][E2 look][E1 in-play state][E1 chief], tail [E4 time].  The
+   * user+104 byte has no writer in FXGS, so the original always sends 0.
+   */
+  OnRequestSessionInfoDetail(socket: CClientSocket): void {
+    const packet = new CSendPacket(GS_ClientSend.OnSessionInfoDetailRes, CipherDegree.kPacketEncryptedCRC8);
+    packet.Encode1(1); // the room exists (this branch only runs for a live one)
+    for (let slot = 0; slot < MAX_SESSION_SLOTS; slot++) {
+      const user = this.m_rgPlayer[slot];
+      if (user === null) {
+        packet.Encode1(0);
+        continue;
+      }
+      packet.Encode1(1);
+      packet.Encode1(0); // user+104 — no writer in FXGS (see the comment above)
+      packet.EncodeStr(user.GetName());
+      packet.Encode2(user.GetLookLevel());
+      packet.Encode1(
+        this.m_fPlaying !== 0 ? ((this.m_abDeleted[slot] === 1 || this.m_abDeleted[slot] === 4) ? 2 : 1) : 0,
+      );
+      packet.Encode1((this.m_rgSlotState[slot * 3]! & SLOTSTATE_CHIEF) !== 0 ? 1 : 0);
+    }
+    // the mid-game tail: 3 minutes minus the play time (suspend gaps
+    // excluded), clamped into 0..180000
+    let time = 0;
+    if (this.m_fPlaying !== 0 && this.m_nGamePhase === 1) {
+      const played = (this.m_GameClock.ElapsedTime() - this.m_GameClock.m_dwSuspended) | 0;
+      time = Math.min(Math.max(180000 - played, 0), 180000);
+    }
+    packet.Encode4(time >>> 0);
+    socket.SendPacket(packet);
+  }
+
   /** CGameSession::OnPacket — the room dispatch (FxServer.exe.c:37668). */
   OnPacket(n: CReceivedPacket, socket: CClientSocket): void {
     if (!this.CheckValidSocket(socket)) {
@@ -5529,6 +5572,29 @@ export class CGameSessionTable {
     for (const user of session.m_rgPlayer) {
       if (user && user.GetSessionSerialNo() === serial) user.m_pSocket?.SendPacket(packet);
     }
+  }
+
+  /**
+   * CGameSessionTable::OnRequestSessionInfoDetail (vtbl+88, FxServer.exe.c
+   * :421DA2) — the room-detail gate: the 84 [E1 0] failure unless idx and
+   * serial hit a live room, whose OnRequestSessionInfoDetail answers.
+   */
+  OnRequestSessionInfoDetail(idx: number, serial: number, socket: CClientSocket): void {
+    if (idx >= 255) {
+      console.error("[GS] Invalid game session slot index (OnRequestSessionInfoDetail)");
+      socket.PostClosePacket();
+      return;
+    }
+    CGameSessionTable.LockBaseSessions(idx);
+    const session = this.m_apGameSession[idx];
+    if (session && session.fValid !== 0 && session.m_nSerialNo === serial) {
+      session.OnRequestSessionInfoDetail(socket);
+    } else {
+      const packet = new CSendPacket(GS_ClientSend.OnSessionInfoDetailRes, CipherDegree.kPacketEncryptedCRC8);
+      packet.Encode1(0);
+      socket.SendPacket(packet);
+    }
+    CGameSessionTable.UnlockBaseSessions(idx);
   }
 
   /** CGameSessionTable::OnPacket — lock, validate, then the room dispatch. */
@@ -6127,9 +6193,7 @@ export class CChannelPool extends CChatPool {
         this.OnRequestUserInfoDetail(n, socket);
         return;
       case GS_ReceivedPacket.OnRequestSessionInfoDetail:
-        n.Decode2();
-        n.Decode4();
-        CGameSessionTable.ms_pInstance!.OnPacket(n, socket);
+        this.OnRequestSessionInfoDetail(n, socket);
         return;
       case GS_ReceivedPacket.OnRequestUserLocation:
         this.OnRequestUserLocation(n, socket);
@@ -6278,6 +6342,17 @@ export class CChannelPool extends CChatPool {
     socket.SendPacket(packet);
     CCenterProcess.ms_pInstance!.MakeChannelsGameStatePacket(packet);
     socket.SendPacket(packet);
+  }
+
+  /**
+   * CChannelPool::OnRequestSessionInfoDetail (FxServer.exe.c:4854) — lobby
+   * packet 68: decode [E2 idx][E4 serial] and hand them to the session
+   * table's vtbl+88 (the per-room detail request; reachable from the lobby).
+   */
+  OnRequestSessionInfoDetail(n: CReceivedPacket, socket: CClientSocket): void {
+    const idx = n.Decode2();
+    const serial = n.Decode4();
+    CGameSessionTable.ms_pInstance!.OnRequestSessionInfoDetail(idx, serial, socket);
   }
 
   /** CChannelPool::OnEnterLobbyStage — packet 83; back to the lobby. */
