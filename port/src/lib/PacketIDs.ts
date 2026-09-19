@@ -135,3 +135,71 @@ export const CLIENTSOCKET_HEADER_CODE_SND = 102; // 0x66
 export const CLIENTSOCKET_HEADER_CODE_MODIFIER = 231; // 0xE7
 export const CLIENTSOCKET_SEQ_DELTA = 40;
 export const CLIENTSOCKET_SEQ = 3;
+
+// CMainPool::OnPacket (FxShop.exe.c:20547) — the FxShop client dispatch on the
+// 9801 listener.  The type byte is the shared client namespace; the shop
+// handles its own subset and forwards everything else to CUserPool::OnPacket
+// (the 20 RTT fallback).
+export const SS_ReceivedPacket = {
+  OnReqConnectToSvr: 6,
+  OnConnEstablished: 7, // CMainPool::OnConnEstablished
+  OnEstimateRTT: 20, // CUserPool::OnPacket default branch
+  RequestRemainCashTw: 205, // CBillingProcess::RequestRemainCashTw
+  OnReqPurchase: 206, // CMainPool::OnReqPurchase → OnReqPurchaseStockItem
+  OnRequestDeleteItem: 207,
+  OnUserSlotInfo: 210,
+  OnRequestModifyItemVerbose: 212,
+  OnRequestShopItemList: 213,
+  OnRequestCharge: 214,
+  OnRequestStringTable: 215,
+  OnRequestUserItemList: 217,
+  OnRequestPresent: 218,
+  OnRequestUseCoupon: 219,
+  OnRequestPackageMap: 220,
+  OnRequestCartList: 221,
+  OnRequestAddCartList: 222,
+  OnReqPurchaseCartList: 223,
+  OnReqDigiQAuthorization: 224,
+  OnRequestTranxData: 225,
+  OnRequestShopSvrInfo: 226,
+} as const;
+
+// Shop → client packet types (every CSendPacket::CSendPacket / InitPacket on
+// FxShop.exe.c).  The ids are the same shared namespace, read from the other
+// direction: 205/200/213 are the cached CItemMan table packets.
+export const SC_SendPacket = {
+  OnResConnectToSvr: 6, // CMainPool::OnCenterResConnectToSvr
+  OnAdminNotifyMsg: 26, // CCenterProcess::OnAdminNotifyMsg broadcast
+  OnEstimateRTTRes: 20,
+  OnInitialInfo: 18, // CMainPool::OnCenterResConnEstablished — account + bonus map
+  OnShopItemList: 200, // CItemMan cached packet (UpdateShopItemPacket)
+  OnUserInventory: 201, // CUser::MakeUserInventoryPacket
+  OnUserItemList: 202, // CItemMan::PutUserItemList (the FxItem table)
+  OnRemainCash: 203, // CBillingProcess::OnRemainCashTw
+  OnPurchaseRes: 204, // OnReqPurchaseStockItem / OnRequestPresent — [E1 code][EStr msg]
+  OnStringTable: 205, // CItemMan cached packet (UpdateStringPacket)
+  OnReqPurchaseRes: 206, // CMainPool::OnRequestCharge — [E1 attr][E4 sn][E4 cash]
+  OnPreInventory: 207, // [E1 n][n×(nothing)] — CUser::MakePreInventoryPacket is empty
+  OnUseCouponRes: 208, // CMainPool::OnRequestUseCoupon — [E1 code]
+  OnTranxData: 211, // CMainPool::OnRequestTranxData
+  OnPackageMap: 213, // CItemMan cached packet (UpdatePackageMapPacket)
+  OnCartList: 214, // CMainPool::OnRequestCartList
+  OnShopSvrInfo: 212, // CCenterProcess::MakeShopInfoPacket — [E4 n][n×(E4 ip, E2 port)]
+} as const;
+
+// The shop ↔ digicell billing link (CBillingSocketTw).  Request ids encode the
+// Tw flow (…01 = request, …2 = response); the dispatch decodes an E4 type.
+export const BILLING_SendPacket = {
+  RequestRemainCashTw: 301,
+  RequestGift: 7, // CBillingProcess::RequestGift
+  RequestCheckCoupon: 331, // CBillingProcess::RequestCheckCoupon
+  RequestDigiQAuthorization: 341, // CBillingProcess::RequestDigiQAuthorization
+} as const;
+
+export const BILLING_ReceivedPacket = {
+  OnRemainCashTw: 302,
+  OnPurchaseOKTw: 312,
+  OnPurchaseConfirmTw: 322,
+  OnDigiQAuthen: 342,
+  OnEstimateRTT: 352,
+} as const;

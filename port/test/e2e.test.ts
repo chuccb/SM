@@ -89,158 +89,21 @@ function writeGameDataPackage(): void {
   // the game server cfg — the package base is dirname(cfg) + "/FxServer"
   require("node:fs").copyFileSync(DIR + "/game0.cfg", DATA_DIR + "/game.cfg");
 }
-
-/** A minimal game client implementing the CClientSocket wire protocol. */
-class TestClient {
-  name = "?";
-  private sock: Awaited<ReturnType<typeof Bun.connect>> | null = null;
-  private rcvBuf = new Uint8Array(0);
-  private k = 5; // header type (the client-side counter % 16)
-  private fTypeSet = false;
-  private sndSeq = 3;
-  private rcvSeq = 3; // the client-link sequence starts at 3 and rolls by 40
-  private waiters: { wantId: number; resolve: (n: CReceived) => void; timer: ReturnType<typeof setTimeout> }[] = [];
-
-  async connect(port: number): Promise<void> {
-    this.sock = await Bun.connect({
-      hostname: "127.0.0.1",
-      port,
-      socket: {
-        data: (_t, data) => this.onData(new Uint8Array(data as Buffer)),
-      },
-    });
-  }
-
-  /** A plain client-side disconnect (the server sees OnClose). */
-  close(): void {
-    this.sock?.end();
-    this.sock = null;
-  }
-
-  private onData(data: Uint8Array): void {
-    const all = concat(this.rcvBuf, data);
-    let off = 0;
-    for (;;) {
-      if (all.length - off < 3) break;
-      const code = all[off]!;
-      // server → client frames roll on the server's SND base (102); the
-      // client's own frames use its SND base (192) — CClientSocket ctor.
-      if (!this.fTypeSet) {
-        this.k = (code ^ ((102 + this.rcvSeq) & 0xff)) - 231;
-        if (this.k < 0) this.k += 256;
-        this.fTypeSet = true;
-      } else {
-        const expected = ((this.k + 231) ^ ((102 + this.rcvSeq) & 0xff)) & 0xff;
-        if (code !== expected) throw new Error(`checkcode mismatch: ${code} != ${expected}`);
-      }
-      const lenField = (all[off + 1]! << 8) | all[off + 2]!;
-      const len = lenField + 3; // the field is the payload count; +3 = the frame total
-      if (all.length - off < len) break;
-      const payload = all.slice(off + 3, off + len);
-      // gsConvertTableDecode on the packet-type byte (d=0, seq ≠ 0)
-      const t = payload[0]!;
-      const id = gsDecode(this.k, t);
-      // payload of d=0 carries no cipher
-      this.rcvSeq = (this.rcvSeq + 40) & 0xffffffff;
-      off += len;
-      const item = { id, n: { buf: payload, off: 1 } as CReceived };
-      const wi = this.waiters.findIndex((w) => w.wantId === id);
-      if (wi >= 0) {
-        const w = this.waiters.splice(wi, 1)[0]!;
-        clearTimeout(w.timer);
-        w.resolve(item.n);
-      } else {
-        this.pending.push(item);
-      }
-    }
-    this.rcvBuf = all.slice(off);
-  }
-
-  private pending: { id: number; n: CReceived }[] = [];
-
-  send(id: number, body: (e: Encoder) => void): void {
-    const e: Encoder = { b: [], u16: (v) => e.b.push((v >> 8) & 0xff, v & 0xff), u32be: (v) => e.b.push((v >>> 24) & 0xff, (v >>> 16) & 0xff, (v >>> 8) & 0xff, v & 0xff), str: (s) => { e.u16(s.length); for (const ch of Buffer.from(s, "latin1")) e.b.push(ch); } };
-    body(e);
-    const typeByte = gsEncode(this.k, id);
-    const payload = [typeByte, ...e.b];
-    const total = payload.length + 3;
-    const code = ((this.k + 231) ^ ((192 + this.sndSeq) & 0xff)) & 0xff;
-    this.sndSeq = (this.sndSeq + 40) & 0xffffffff;
-    const out = new Uint8Array(total);
-    out[0] = code;
-    out[1] = (payload.length >> 8) & 0xff; // length field = the payload count
-    out[2] = payload.length & 0xff;
-    out.set(payload, 3);
-    this.sock!.write(out);
-  }
-
-  async recv(wantId: number, timeoutMs = 4000): Promise<CReceived> {
-    const idx = this.pending.findIndex((p) => p.id === wantId);
-    if (idx >= 0) return this.pending.splice(idx, 1)[0]!.n;
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        const wi = this.waiters.findIndex((w) => w.wantId === wantId);
-        if (wi >= 0) this.waiters.splice(wi, 1);
-        reject(new Error(`timeout waiting for packet ${wantId}`));
-      }, timeoutMs);
-      this.waiters.push({ wantId, resolve: (n) => resolve(n), timer });
-    });
-  }
-}
-
-interface CReceived {
-  buf: Uint8Array;
-  off: number;
-}
-function r1(n: CReceived) {
-  return n.buf[n.off++]!;
-}
-function r2(n: CReceived) {
-  const v = (n.buf[n.off]! << 8) | n.buf[n.off + 1]!;
-  n.off += 2;
-  return v;
-}
-function r4(n: CReceived) {
-  const v = ((n.buf[n.off]! << 24) | (n.buf[n.off + 1]! << 16) | (n.buf[n.off + 2]! << 8) | n.buf[n.off + 3]!) >>> 0;
-  n.off += 4;
-  return v;
-}
-function rstr(n: CReceived) {
-  const len = r2(n);
-  let s = "";
-  for (let i = 0; i < len; i++) s += String.fromCharCode(n.buf[n.off++]!);
-  return s;
-}
-function rencstr(n: CReceived, key: number) {
-  const len = r2(n);
-  const raw = n.buf.slice(n.off, n.off + len);
-  n.off += len;
-  const dec = new Uint8Array(len);
-  SimpleStreamDecrypt3(raw, 0, dec, 0, len, key);
-  let s = "";
-  for (const ch of dec) s += String.fromCharCode(ch);
-  return s;
-}
-
-interface Encoder {
-  b: number[];
-  u16: (v: number) => void;
-  u32be: (v: number) => void;
-  str: (s: string) => void;
-}
-
-function concat(a: Uint8Array, b: Uint8Array): Uint8Array {
-  const out = new Uint8Array(a.length + b.length);
-  out.set(a);
-  out.set(b, a.length);
-  return out;
-}
-
-// gsConvertTable mirror (encode/decode per the first received checkcode-derived type)
-import { gsConvertTableEncode, gsConvertTableDecode } from "../src/core/PacketHeaderConverter.ts";
+import {
+  TestClient,
+  r1,
+  r2,
+  r4,
+  rstr,
+  rbuf,
+  rencstr,
+  concat,
+  gsEncode,
+  gsDecode,
+  type CReceived,
+  type Encoder,
+} from "./TestClient.ts";
 import { BuildFrame } from "../src/gameserver/MTUDP.ts";
-const gsEncode = (k: number, id: number) => gsConvertTableEncode[k & 0xf]![id & 0xff]!;
-const gsDecode = (k: number, t: number) => gsConvertTableDecode[k & 0xf]![t & 0xff]!;
 
 let center: CxCenter;
 
@@ -282,7 +145,7 @@ describe("login flow", () => {
   const client = new TestClient();
 
   test("AskMultiServer returns the full variant first", async () => {
-    await client.connect(13838);
+    await client.connect(13838, { sndDeg: 2, rcvDeg: 2 });
     client.send(1, (e) => {
       e.u32be(0);
       e.u32be(0);
@@ -330,12 +193,12 @@ describe("login flow", () => {
       e.str("tester01"); // s7 Name
       e.str("tester01@mail.nexonclub.com"); // s8 Email
       e.u16be ? null : null;
-      e.b.push(1); // EmailRcv
-      e.b.push(1); // Gender
+      e.u8(1); // EmailRcv
+      e.u8(1); // Gender
       e.str("Taipei"); // Address
       e.str("02-12345678"); // Tel
       e.str("profile"); // Profile (13th)
-      e.b.push(0); // Reveal
+      e.u8(0); // Reveal
     });
     const p = await client.recv(5);
     expect(r1(p)).toBe(0); // 0 = created
@@ -343,7 +206,7 @@ describe("login flow", () => {
 
   test("Login with the created account", async () => {
     client.send(3, (e) => {
-      e.b.push(1); // user count
+      e.u8(1); // user count
       // EncodeEncryptedStr(id, 0x11223344)
       encStrInto(e, "tester01", 0x11223344);
       encStrInto(e, "tester01", 0x44332211); // password = s2 per RegisterNewUser
@@ -387,9 +250,9 @@ describe("login flow", () => {
 
   test("double login is rejected with packet 3 code 2", async () => {
     const client2 = new TestClient();
-    await client2.connect(13838);
+    await client2.connect(13838, { sndDeg: 2, rcvDeg: 2 });
     client2.send(3, (e) => {
-      e.b.push(1);
+      e.u8(1);
       encStrInto(e, "tester01", 0x11223344);
       encStrInto(e, "tester01", 0x44332211);
       e.u32be(0);
@@ -453,9 +316,9 @@ describe("login flow", () => {
   test("ReqConnectToSvr validates and returns the game server address", async () => {
     // p6: [E1 svrType][E4 svrIdx][E2 version] — version 7 matches the fake GS
     client.send(6, (e) => {
-      e.b.push(10);
+      e.u8(10);
       e.u32be(0);
-      e.b.push(0, 7);
+      e.u16(7);
     });
     const p = await client.recv(6);
     expect(r1(p)).toBe(1); // CheckEnterGame ok
@@ -465,17 +328,17 @@ describe("login flow", () => {
     expect(r2(p)).toBe(14848); // port (FXGSPort0)
     // version mismatch path
     client.send(6, (e) => {
-      e.b.push(10);
+      e.u8(10);
       e.u32be(0);
-      e.b.push(0, 8);
+      e.u16(8);
     });
     const p2 = await client.recv(6);
     expect(r1(p2)).toBe(4); // version mismatch
     // wrong type path
     client.send(6, (e) => {
-      e.b.push(99);
+      e.u8(99);
       e.u32be(0);
-      e.b.push(0, 7);
+      e.u16(7);
     });
     const p3 = await client.recv(6);
     expect(r1(p3)).toBe(5); // not enterable
@@ -483,7 +346,7 @@ describe("login flow", () => {
 
   test("RequestDestoryService echoes the header type and disconnects nothing", async () => {
     client.send(60, (e) => {
-      e.u32be(5); // the client's own header type
+      e.u32be(client.k); // the header type adopted from the accept packet 0
     });
     const p = await client.recv(60);
     expect(r4(p)).toBeGreaterThan(0); // local serial
@@ -508,7 +371,7 @@ describe("game server entry flow (FXGS)", () => {
   const gs = entryGsClient;
 
   test("connect pushes packet 0 [E2 3][E2 7][E4 headerType]", async () => {
-    await gs.connect(14848);
+    await gs.connect(14848, { rcvDeg: 2 });
     const p0 = await gs.recv(0);
     expect(r2(p0)).toBe(3); // the center protocol version
     expect(r2(p0)).toBe(7);
@@ -518,13 +381,13 @@ describe("game server entry flow (FXGS)", () => {
 
   test("ConnEstablished (7) performs the DB entry and answers 210/202/201", async () => {
     gs.send(7, (e) => {
-      e.b.push(1); // one user
+      e.u8(1); // one user
       e.str("tester01");
       e.u32be(loginSN); // the global serial from the login response
       e.u32be(0); // guild SN
       e.u32be(0x11221122); // x
       e.u32be(0); // y — x^y = the known client hash
-      e.b.push(1); // z
+      e.u8(1); // z
     });
     // 210 [E1 attr] — attr = the center's FXAttrShop flag (0 here)
     const p210 = await gs.recv(210);
@@ -614,9 +477,9 @@ describe("game server entry flow (FXGS)", () => {
     gs.send(80, (e) => {
       e.str("my room"); // title
       e.str(""); // password
-      e.b.push(0); // game type
-      e.b.push(1); // one player
-      e.b.push(0); // select
+      e.u8(0); // game type
+      e.u8(1); // one player
+      e.u8(0); // select
     });
     const p = await gs.recv(80);
     expect(r1(p)).toBe(0); // created
@@ -643,12 +506,25 @@ describe("game server entry flow (FXGS)", () => {
 
 /** SmartStream on the wire: [0x18][innerLen LE32][inner: 0x00 raw | 0x01 zlib] */
 function rOS(n: CReceived): Uint8Array {
-  const magic = r1(n);
-  if (magic !== 0x18) throw new Error(`bad smartstream magic ${magic}`);
-  const innerLen = n.buf[n.off]! | (n.buf[n.off + 1]! << 8) | (n.buf[n.off + 2]! << 16) | (n.buf[n.off + 3]! << 24);
-  n.off += 4;
-  const inner = n.buf.slice(n.off, n.off + innerLen);
-  n.off += innerLen;
+  // The COSmartStream wire image is [0x18 magic][u32 LE innerLen][inner…].
+  // EncodeOSStreamAt writes it raw at degree 0 and as E4(masked size)+raw
+  // stream at degree ≥ 1 — either way the stream header follows.
+  let stream: Uint8Array;
+  if (n.deg >= 1) {
+    // EncodeOSStreamAt's ciphered branch: E4 (masked) size + the raw stream.
+    const size = r4(n);
+    stream = n.buf.slice(n.off, n.off + size);
+    n.off += size;
+    if (stream[0] !== 0x18) throw new Error(`bad smartstream magic ${stream[0]}`);
+  } else {
+    const magic = r1(n);
+    if (magic !== 0x18) throw new Error(`bad smartstream magic ${magic}`);
+    const innerLen = n.buf[n.off]! | (n.buf[n.off + 1]! << 8) | (n.buf[n.off + 2]! << 16) | (n.buf[n.off + 3]! << 24);
+    stream = n.buf.slice(n.off - 5, n.off + innerLen);
+    n.off += innerLen;
+  }
+  const innerLen = stream[1]! | (stream[2]! << 8) | (stream[3]! << 16) | (stream[4]! << 24);
+  const inner = stream.slice(5, 5 + innerLen);
   if (inner[0] === 1) return inflateSync(inner.slice(5)); // [1][rawSize LE32][deflate]
   if (inner[0] !== 0) throw new Error(`bad smart stream form ${inner[0]}`);
   return inner.slice(1);
@@ -674,7 +550,7 @@ function encStrInto(e: Encoder, s: string, key: number): void {
 /** Register + log in through the LS, then walk the full GS entry path. */
 async function enterGame(name: string): Promise<{ ls: TestClient; gs: TestClient; sn: number }> {
   const ls = new TestClient();
-  await ls.connect(13838);
+  await ls.connect(13838, { sndDeg: 2, rcvDeg: 2 });
   ls.pending.length = 0;
   ls.send(5, (e) => {
     e.str(name); // s1 = ID
@@ -685,17 +561,17 @@ async function enterGame(name: string): Promise<{ ls: TestClient; gs: TestClient
     e.str("900101");
     e.str(name);
     e.str(name + "@mail.nexonclub.com");
-    e.b.push(1); // EmailRcv
-    e.b.push(1); // Gender
+    e.u8(1); // EmailRcv
+    e.u8(1); // Gender
     e.str("Taipei");
     e.str("02-12345678");
     e.str("profile");
-    e.b.push(0); // Reveal
+    e.u8(0); // Reveal
   });
   const created = await ls.recv(5);
   expect(r1(created)).toBe(0);
   ls.send(3, (e) => {
-    e.b.push(1);
+    e.u8(1);
     encStrInto(e, name, 0x11223344);
     encStrInto(e, name, 0x44332211);
     e.u32be(0);
@@ -707,9 +583,9 @@ async function enterGame(name: string): Promise<{ ls: TestClient; gs: TestClient
   expect(r1(p3)).toBe(1);
   const sn = r4(p3);
   ls.send(6, (e) => {
-    e.b.push(10);
+    e.u8(10);
     e.u32be(0);
-    e.b.push(0, 7);
+    e.u16(7);
   });
   const p6 = await ls.recv(6);
   expect(r1(p6)).toBe(1); // result
@@ -718,16 +594,16 @@ async function enterGame(name: string): Promise<{ ls: TestClient; gs: TestClient
   r4(p6); // ip
   expect(r2(p6)).toBe(14848);
   const gs = new TestClient();
-  await gs.connect(14848);
+  await gs.connect(14848, { rcvDeg: 2 });
   await gs.recv(0);
   gs.send(7, (e) => {
-    e.b.push(1);
+    e.u8(1);
     e.str(name);
     e.u32be(sn);
     e.u32be(0); // guild
     e.u32be(0x11221122);
     e.u32be(0);
-    e.b.push(1);
+    e.u8(1);
   });
   await gs.recv(210);
   await gs.recv(202);
@@ -768,9 +644,9 @@ describe("game server room flow (FXGS)", () => {
     chief.send(80, (e) => {
       e.str("e2e room"); // title
       e.str(""); // password
-      e.b.push(0); // game type
-      e.b.push(1); // one player
-      e.b.push(0); // bomber select (valid with the test BomberAttr)
+      e.u8(0); // game type
+      e.u8(1); // one player
+      e.u8(0); // bomber select (valid with the test BomberAttr)
     });
     const res = await chief.recv(80);
     expect(r1(res)).toBe(0);
@@ -785,7 +661,7 @@ describe("game server room flow (FXGS)", () => {
     expect(r1(p105)).toBe(1); // self
     expect(r1(p105)).toBe(0); // community
     expect(r1(p105)).toBe(255); // no category-4 deco → 255
-    const state = [r1(p105), r1(p105), r1(p105)];
+    const state = rbuf(p105, 3);
     expect(state[0]).toBe(0x02); // chief bit, nothing closed/ready
     expect(state[1]).toBe(0); // bomber 0 (the select came through)
     expect(state[2]).toBe(0); // color 0 (first player, slot%8)
@@ -834,8 +710,8 @@ describe("game server room flow (FXGS)", () => {
       e.u16(0); // idx  (u16 big endian? the packet body uses Encode2 = BE)
       e.u32be(serial);
       e.str("");
-      e.b.push(1);
-      e.b.push(1); // select: the random bomber idx (== total count)
+      e.u8(1);
+      e.u8(1); // select: the random bomber idx (== total count)
     });
     const res = await gs.recv(81);
     expect(r1(res)).toBe(0); // joined
@@ -854,7 +730,7 @@ describe("game server room flow (FXGS)", () => {
     expect(r1(p105b)).toBe(1); // self
     r1(p105b); // community
     r1(p105b); // the category-4 deco (255)
-    const state = [r1(p105b), r1(p105b), r1(p105b)];
+    const state = rbuf(p105b, 3);
     expect(state[0]).toBe(0); // member: no chief bit, not ready
     expect(state[2]).toBe(1); // color 1 (second slot%8)
     // the empty slots ride along as 107s
@@ -879,16 +755,16 @@ describe("game server room flow (FXGS)", () => {
     const chief = roomChief!;
     const member = roomMember!;
     member.send(96, (e) => {
-      e.b.push(1);
+      e.u8(1);
     });
     const p107 = await member.recv(107);
     expect(r1(p107)).toBe(1); // the member's slot
-    const state = [r1(p107), r1(p107), r1(p107)];
+    const state = rbuf(p107, 3);
     expect(state[0]).toBe(0x04); // the ready bit only (members hold no crown)
     // …the chief's socket sees the same broadcast
     const p107b = await chief.recv(107);
     expect(r1(p107b)).toBe(1);
-    expect(r1(p107b)).toBe(0x04);
+    expect(rbuf(p107b, 3)[0]).toBe(0x04);
   });
 
   test("select map (97) broadcasts 112 and re-issues the slot states", async () => {
@@ -913,12 +789,12 @@ describe("game server room flow (FXGS)", () => {
     const member = roomMember!;
     // the high nibble is the socket-local user index (0: one-user socket)
     member.send(98, (e) => {
-      e.b.push(3); // user 0 of the socket, color 3
+      e.u8(3); // user 0 of the socket, color 3
     });
     const p108 = await chief.recv(108);
     expect(r1(p108)).toBe((1 << 4) | 3); // the reply names the slot
     member.send(99, (e) => {
-      e.b.push(0); // bomber 0 (a normal index)
+      e.u8(0); // bomber 0 (a normal index)
     });
     const p109 = await chief.recv(109);
     expect(r1(p109)).toBe((1 << 4) | 0);
@@ -928,12 +804,12 @@ describe("game server room flow (FXGS)", () => {
     const chief = roomChief!;
     const member = roomMember!;
     chief.send(100, (e) => {
-      e.b.push((7 << 4) | 1); // close slot 7
+      e.u8((7 << 4) | 1); // close slot 7
     });
     const p110 = await chief.recv(110);
     expect(r1(p110)).toBe((7 << 4) | 1);
     chief.send(100, (e) => {
-      e.b.push((7 << 4) | 0); // reopen
+      e.u8((7 << 4) | 0); // reopen
     });
     const p110b = await chief.recv(110);
     expect(r1(p110b)).toBe((7 << 4) | 0);
@@ -964,9 +840,9 @@ describe("game server room flow (FXGS)", () => {
     const chief = roomChief!;
     const member = roomMember!;
     chief.send(108, (e) => {
-      e.b.push(0); // own slot
-      e.b.push(1);
-      e.b.push(2);
+      e.u8(0); // own slot
+      e.u8(1);
+      e.u8(2);
       e.u16(3);
     });
     const p118 = await member.recv(118);
@@ -981,7 +857,7 @@ describe("game server room flow (FXGS)", () => {
     const member = roomMember!;
     // pull the member back to color 0 so both share a team
     member.send(98, (e) => {
-      e.b.push(0); // user 0 of the socket, color 0
+      e.u8(0); // user 0 of the socket, color 0
     });
     await chief.recv(108);
     member.send(111, (e) => {
@@ -996,7 +872,7 @@ describe("game server room flow (FXGS)", () => {
     const member = roomMember!;
     // split the colors again — CanStartGame wants at least two teams
     member.send(98, (e) => {
-      e.b.push(1); // color 1
+      e.u8(1); // color 1
     });
     await chief.recv(108);
     chief.send(106, (e) => {});

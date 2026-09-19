@@ -12,6 +12,7 @@ import { CxCenter } from "./center/Center.ts";
 import { main as loginMain } from "./login/Login.ts";
 import { main as gameMain } from "./gameserver/GameServer.ts";
 import { main as relayMain } from "./relay/Relay.ts";
+import { main as shopMain } from "./shop/Shop.ts";
 
 const only = process.argv.includes("--only") ? process.argv[process.argv.indexOf("--only") + 1] : null;
 const dbDir = join(import.meta.dir, "..", "db");
@@ -42,6 +43,17 @@ if (!only || only === "game") {
   const cfgFile =
     process.argv.includes("--cfg") ? process.argv[process.argv.indexOf("--cfg") + 1] : `test/game${idx}.cfg`;
   await gameMain(
+    cfgFile.startsWith("/") ? cfgFile : join(import.meta.dir, "..", cfgFile),
+    dbDir,
+  );
+}
+
+if (!only || only === "shop") {
+  // FXSS_000.cfg: ServerIndex 0 → port 19801 in the shipped topology.
+  const idx = process.argv.includes("--idx") ? Number(process.argv[process.argv.indexOf("--idx") + 1]) : 0;
+  const cfgFile =
+    process.argv.includes("--cfg") ? process.argv[process.argv.indexOf("--cfg") + 1] : `test/shop${idx}.cfg`;
+  await shopMain(
     cfgFile.startsWith("/") ? cfgFile : join(import.meta.dir, "..", cfgFile),
     dbDir,
   );

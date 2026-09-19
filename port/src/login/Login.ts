@@ -300,7 +300,7 @@ export class CLoginPool {
 
   /** CUserPool::OnEstimateRTT (CxLogin.exe.c:23317) */
   OnEstimateRTT(n: CReceivedPacket, socket: CClientSocket): void {
-    const packet = new CSendPacket(LS_SendPacket.OnEstimateRTTRes);
+    const packet = new CSendPacket(LS_SendPacket.OnEstimateRTTRes, 2);
     const v3 = n.Decode4();
     const time = Date.now() & 0x7fffffff;
     packet.Encode4(v3);
@@ -365,7 +365,7 @@ export class CLoginPool {
 
   /** CLoginPool::OnAskFirstInfo (CxLogin.exe.c:15095) */
   OnAskFirstInfo(n: CReceivedPacket, socket: CClientSocket): void {
-    const packet = new CSendPacket(LS_SendPacket.OnAskFirstInfoRes);
+    const packet = new CSendPacket(LS_SendPacket.OnAskFirstInfoRes, 2);
     if (n.Decode4() === 0) {
       packet.EncodeStr("http://mail.nexonclub.com/clubadmin/confirmuser");
       packet.EncodeStr("http://id.nexonclub.com/nxidquery.idsocno");
@@ -398,7 +398,7 @@ export class CLoginPool {
     }
     socket.m_nDeleteUserSN = n.Decode4();
     if (inited !== 0) {
-      const packet = new CSendPacket(LS_SendPacket.OnLoginRes);
+      const packet = new CSendPacket(LS_SendPacket.OnLoginRes, 2);
       packet.Encode1(inited >= 2 && inited <= 3 ? 1 : 3);
       packet.Encode1(v3);
       socket.SendPacket(packet);
@@ -411,7 +411,7 @@ export class CLoginPool {
   OnNewUserConfirmId(n: CReceivedPacket, socket: CClientSocket): void {
     const id = n.DecodeStr();
     const v3 = this.m_db.prConfirmUnregisteredId(id);
-    const packet = new CSendPacket(LS_SendPacket.OnNewUserConfirmIdRes);
+    const packet = new CSendPacket(LS_SendPacket.OnNewUserConfirmIdRes, 2);
     packet.Encode1(v3);
     socket.SendPacket(packet);
   }
@@ -457,7 +457,7 @@ export class CLoginPool {
       identityNo,
       birthday,
     );
-    const packet = new CSendPacket(LS_SendPacket.OnNewUserRes);
+    const packet = new CSendPacket(LS_SendPacket.OnNewUserRes, 2);
     packet.Encode1(v6);
     socket.SendPacket(packet);
   }
@@ -483,7 +483,7 @@ export class CLoginPool {
       packet.Encode4(nSvrIdx);
       this.m_center.SendPacketToCenter(packet);
     } else {
-      const packet = new CSendPacket(LS_SendPacket.OnReqConnectToSvrRes);
+      const packet = new CSendPacket(LS_SendPacket.OnReqConnectToSvrRes, 2);
       packet.Encode1(v10);
       socket.SendPacket(packet);
     }
@@ -515,10 +515,10 @@ export class CLoginPool {
     const infoPacket = this.m_channelCache.GetInfoPacket(v6 ? 0 : 1);
     socket.SendPacket(infoPacket);
     socket.SendPacket(this.m_channelCache.GetStatePacket());
-    const p14 = new CSendPacket(LS_ClientSend.OnChannelsGameState);
+    const p14 = new CSendPacket(LS_ClientSend.OnChannelsGameState, 2);
     this.m_center.MakeChannelsGameStatePacket(p14);
     socket.SendPacket(p14);
-    const p11 = new CSendPacket(LS_ClientSend.OnChannelsExtraInfo);
+    const p11 = new CSendPacket(LS_ClientSend.OnChannelsExtraInfo, 2);
     this.m_center.MakeChannelsExtraInfoPacket(p11);
     socket.SendPacket(p11);
   }
@@ -526,7 +526,7 @@ export class CLoginPool {
   /** CLoginPool::OnRequestDestoryService (CxLogin.exe.c:14743) */
   OnRequestDestoryService(n: CReceivedPacket, socket: CClientSocket): void {
     if (socket.m_nHeaderType === n.Decode4()) {
-      const packet = new CSendPacket(LS_SendPacket.OnRequestDestoryServiceRes);
+      const packet = new CSendPacket(LS_SendPacket.OnRequestDestoryServiceRes, 2);
       const v3 = Math.floor(Math.random() * 0x8000) & 3;
       packet.Encode4(socket.GetLocalSerialNo());
       packet.Encode4(v3);
@@ -576,7 +576,7 @@ export class CLoginPool {
       }
     }
     if (fAllAdded === 0) {
-      const packet = new CSendPacket(LS_SendPacket.OnLoginRes);
+      const packet = new CSendPacket(LS_SendPacket.OnLoginRes, 2);
       packet.Encode1(2);
       socket.SendPacket(packet);
       return;
@@ -588,7 +588,7 @@ export class CLoginPool {
     }
     // strDes: the double-login message (EUC-KR when 1 user, "PC" when several).
     let strDes = count <= 1 ? STR_ALREADY_PLAYING : STR_PC;
-    const packet = new CSendPacket(LS_SendPacket.OnLoginRes);
+    const packet = new CSendPacket(LS_SendPacket.OnLoginRes, 2);
     packet.Encode1(0);
     packet.Encode2(v33 !== 0 ? 1 : 0);
     packet.EncodeStr(strDes);
@@ -1014,7 +1014,7 @@ export class CCenterProcess {
     const name = n.DecodeStr();
     const user = this.m_pLoginPool.m_localUserTable.FindUserFromId(name);
     if (user !== null) {
-      const packet = new CSendPacket(LS_ClientSend.OnSvrReservedMsg);
+      const packet = new CSendPacket(LS_ClientSend.OnSvrReservedMsg, 2);
       const count = n.Decode1();
       packet.Encode1(count);
       if (count === 1) {
@@ -1028,7 +1028,7 @@ export class CCenterProcess {
   /** CCenterProcess::OnAdminNotifyMsg (CxLogin.exe.c:5153) — client p26 broadcast. */
   OnAdminNotifyMsg(n: CReceivedPacket): void {
     const str = n.DecodeStr();
-    const packet = new CSendPacket(LS_ClientSend.OnAdminNotifyMsg);
+    const packet = new CSendPacket(LS_ClientSend.OnAdminNotifyMsg, 2);
     packet.EncodeStr(str);
     this.SendToAll(packet);
   }
@@ -1036,7 +1036,7 @@ export class CCenterProcess {
   /** CCenterProcess::OnSystemMsg (CxLogin.exe.c:5189) — client p30 broadcast. */
   OnSystemMsg(n: CReceivedPacket): void {
     const str = n.DecodeStr();
-    const packet = new CSendPacket(LS_ClientSend.OnSystemMsg);
+    const packet = new CSendPacket(LS_ClientSend.OnSystemMsg, 2);
     packet.EncodeStr(str);
     this.SendToAll(packet);
   }
@@ -1070,7 +1070,7 @@ export class CCenterProcess {
       }
     }
     const v8 = n.Decode1();
-    const packet = new CSendPacket(LS_SendPacket.OnReqConnectToSvrRes);
+    const packet = new CSendPacket(LS_SendPacket.OnReqConnectToSvrRes, 2);
     packet.Encode1(v8);
     if (v8 === 1) {
       const svrType = n.Decode1();
@@ -1083,6 +1083,42 @@ export class CCenterProcess {
       packet.Encode2(v12);
     }
     user?.GetSocket().SendPacket(packet);
+  }
+}
+
+/**
+ * CMainSystem (CxLogin.exe.c:16669 ctor, 16362 OnConnEstablished) — the LS's
+ * accept-greeter.  The ctor reads the UrlPatchNumber/UrlPatch[i] config family
+ * into a string table; OnConnEstablished sends the accept packet 0
+ * ([E2 3][E2 7][E4 headerType][EStr table entry]) round-robin per connection
+ * and the accept path then arms the socket's cipher degree (CListenThread::Proc
+ * CxLogin.exe.c:12021-12025: hello → SetCipherDegree(2) → IssueReceive).
+ */
+class CMainSystem {
+  static ms_pInstance: CMainSystem | null = null;
+
+  m_astrUrlPatch: string[] = []; // this+1..+3 (vector<string>)
+  m_nUrlPatchIdx = 0; // this+4
+
+  constructor(cfg: CServerConfig) {
+    CMainSystem.ms_pInstance = this;
+    const n = cfg.GetNumAttribute("UrlPatchNumber");
+    for (let i = 0; i < n; i++) this.m_astrUrlPatch.push(cfg.GetAttribute(`UrlPatch${i}`));
+  }
+
+  OnConnEstablished(socket: CClientSocket): void {
+    const packet = new CSendPacket(0, 0);
+    packet.Encode2(3);
+    packet.Encode2(7);
+    packet.Encode4(socket.m_nHeaderType);
+    // round-robin: idx = (idx + 1) % count, then send table[idx]
+    if (this.m_astrUrlPatch.length > 0) {
+      this.m_nUrlPatchIdx = (this.m_nUrlPatchIdx + 1) % this.m_astrUrlPatch.length;
+      packet.EncodeStr(this.m_astrUrlPatch[this.m_nUrlPatchIdx]!);
+    } else {
+      packet.EncodeStr("");
+    }
+    socket.SendPacket(packet);
   }
 }
 
@@ -1106,6 +1142,7 @@ export async function main(cfgFile: string, dbDir: string): Promise<void> {
 
   // the client listener (CMainSystem init — ServerPort)
   const port = cfg.GetNumAttribute("ServerPort") || 3838;
+  const mainSystem = new CMainSystem(cfg);
   const clientSockets = new WeakMap<object, CClientSocket>();
   Bun.listen({
     hostname: "0.0.0.0",
@@ -1116,6 +1153,10 @@ export async function main(cfgFile: string, dbDir: string): Promise<void> {
         clientSockets.set(t, socket);
         socket.bunSocket = t as Bun.Socket<any>;
         socket.m_bConnected = true;
+        // CListenThread::Proc (CxLogin.exe.c:12021-12025) — the accept packet,
+        // then SetCipherDegree(2), then the receive loop starts.
+        mainSystem.OnConnEstablished(socket);
+        socket.SetCipherDegree(2);
         loginPool.AddSocket(socket);
       },
       data: (t, data) => {

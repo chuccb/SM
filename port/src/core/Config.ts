@@ -49,6 +49,11 @@ export class CServerConfig {
     return this.attributes.has(name);
   }
 
+  /** the parsed cfg keys (for the CServerConfig::Init registered-key check) */
+  GetKeys(): string[] {
+    return [...this.attributes.keys()];
+  }
+
   /** Read `<prefix><i>` for i in [0, n) — the indexed cfg entries. */
   GetIndexed(prefix: string, n: number): string[] {
     const out: string[] = [];

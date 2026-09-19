@@ -37,7 +37,8 @@ export const MC_ReceivedPacket = {
   OnConnEstablished: 3, // CLocalServer vtbl+28 → OnConnEstablished
   OnAdminNotifyMsg: 4,
   OnAdminNotifyGameServerMsg: 5,
-  OnSvrReservedMsg: 7,
+  OnRequestUserChannel: 7, // CShopServer::OnRequestUserChannel (the shop link)
+  OnSvrReservedMsg: 7, // the generic CLocalServer::OnPacket name for the same id
   OnSetAuthenCode: 9, // CShopServer::OnSetAuthenCode
   OnSystemMsg: 10,
   OnSystemCmd: 11,
@@ -58,7 +59,8 @@ export const CM_ReceivedPacket = {
   OnDeleteUser: 11,
   OnInitialSvrAttr: 12,
   OnSystemMsg: 13,
-  OnItemDBInit: 14, // CUserItemMan::Init
+  OnItemDBInit: 14, // CUserItemMan::Init (GS) / CItemMan::Update*Table (shop)
+  OnShopServerInfo: 6, // CCenterProcess::OnShopServerInfo — [E4 n][n×(E4 ip, E2 port)]
 } as const;
 
 /** CxCenter greet: Encode2(3 /* version *\/); Encode2(sd). */

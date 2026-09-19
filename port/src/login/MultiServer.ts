@@ -123,14 +123,14 @@ export class CMultiServer {
 
     // P(0,0) / P(0,1): both sections current.
     for (const vm of [0, 1]) {
-      const p = new CSendPacket(1);
+      const p = new CSendPacket(1, 2) // InitPacket(1) — the degree-2 (type) overload;
       p.Encode1(0);
       p.Encode1(0);
       this.m_packet[0][vm] = p;
     }
     // P(1,0): info changed.
     {
-      const p = new CSendPacket(1);
+      const p = new CSendPacket(1, 2) // InitPacket(1) — the degree-2 (type) overload;
       p.Encode1(1);
       p.EncodeOSStream(info);
       p.Encode1(0);
@@ -138,7 +138,7 @@ export class CMultiServer {
     }
     // P(1,1): both changed.
     {
-      const p = new CSendPacket(1);
+      const p = new CSendPacket(1, 2) // InitPacket(1) — the degree-2 (type) overload;
       p.Encode1(1);
       p.EncodeOSStream(info);
       p.Encode1(1);

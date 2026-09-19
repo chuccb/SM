@@ -168,6 +168,11 @@ CREATE TABLE IF NOT EXISTS CACommuSvr (
   Name TEXT NOT NULL DEFAULT '',
   IP   TEXT NOT NULL DEFAULT ''
 );
+CREATE TABLE IF NOT EXISTS BillingSvr (
+  SN   INTEGER PRIMARY KEY,
+  ip   TEXT NOT NULL DEFAULT '',
+  port INTEGER NOT NULL DEFAULT 0
+);
 `;
 
 /** FxItem / FxStock — the real column sets (CAItem.bak views + the
@@ -185,20 +190,47 @@ CREATE TABLE IF NOT EXISTS FxItem (
 );
 CREATE TABLE IF NOT EXISTS FxStock (
   SN             INTEGER PRIMARY KEY,
-  Unit           INTEGER NOT NULL DEFAULT 0,
-  ExItemSN       INTEGER NOT NULL DEFAULT 0,
-  LimitLevel     INTEGER NOT NULL DEFAULT 0,
-  LimitEx        INTEGER NOT NULL DEFAULT 0,
-  ValidityLevel  INTEGER NOT NULL DEFAULT 0,
-  CardNo         INTEGER NOT NULL DEFAULT 0,
-  ItemSN         INTEGER NOT NULL DEFAULT 0,
   Category       INTEGER NOT NULL DEFAULT 0,
   Name           TEXT NOT NULL DEFAULT '',
-  Description    TEXT NOT NULL DEFAULT '',
-  Usage          INTEGER NOT NULL DEFAULT 0,
+  ItemSN         INTEGER NOT NULL DEFAULT 0,
+  Unit           INTEGER NOT NULL DEFAULT 1,
   DataFile       TEXT NOT NULL DEFAULT '',
   Price          INTEGER NOT NULL DEFAULT 0,
-  ValidityPeriod INTEGER NOT NULL DEFAULT 0
+  FixedPrice     INTEGER NOT NULL DEFAULT 0,
+  LimitLevel     INTEGER NOT NULL DEFAULT 0,
+  LimitEx        INTEGER NOT NULL DEFAULT 0,
+  ValidityPeriod INTEGER NOT NULL DEFAULT 0,
+  ValidityLevel  INTEGER NOT NULL DEFAULT 0,
+  StringDesc     INTEGER NOT NULL DEFAULT 0,
+  StringUsage    INTEGER NOT NULL DEFAULT 0,
+  CardNo         INTEGER NOT NULL DEFAULT 0,
+  MoneyType      INTEGER NOT NULL DEFAULT 0,
+  zorder         INTEGER NOT NULL DEFAULT 0,
+  IsValid        INTEGER NOT NULL DEFAULT 1,
+  DateCreated    TEXT,
+  Description    TEXT NOT NULL DEFAULT '',
+  Usage          INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS FxString (
+  SN     INTEGER PRIMARY KEY,
+  String TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS FxPackageMap (
+  PackageSN     INTEGER NOT NULL,
+  StockSN       INTEGER NOT NULL,
+  Units         INTEGER NOT NULL DEFAULT 1,
+  Validitylevel INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS FxCouponMap (
+  CouponSN       INTEGER NOT NULL,
+  ItemSN         INTEGER NOT NULL,
+  Units          INTEGER NOT NULL DEFAULT 1,
+  ValidityPeriod INTEGER NOT NULL DEFAULT 0,
+  Validitylevel  INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS FxBonusMap (
+  Price   INTEGER NOT NULL,
+  StockSN INTEGER NOT NULL
 );
 `;
 
@@ -595,12 +627,12 @@ export class CDBMan {
     const row = db.query("SELECT TicketDate FROM FxUserDynamic WHERE ID = ?").get(id) as
       | { TicketDate: string | null }
       | undefined;
-    if (!row) return -1;
+    if (!row) return 0;
     const old = row.TicketDate ? Date.parse(row.TicketDate) : NaN;
     const base = !Number.isNaN(old) && old > Date.now() ? old : Date.now();
     const next = new Date(base + validityPeriod * 86400_000).toISOString();
     db.query("UPDATE FxUserDynamic SET TicketDate = ? WHERE ID = ?").run(next, id);
-    return 0;
+    return 1; // CDBMan::SetPremiumTicket returns BOOL — nonzero on success
   }
 
   // ========================== Inventory procs ==========================
@@ -1015,6 +1047,107 @@ export class CDBMan {
 
   prGetRowsetCols2(db: Database, table: string, where: string, columnSet: string): unknown[] {
     return db.query(`SELECT ${columnSet} FROM ${table} WHERE ${where}`).all();
+  }
+
+  /** CRSUserItem ("FxItem") — UpdateUserItemTable's select filter. */
+  GetFxItemRows(): { SN: number; Category: number; strAttr: string; nAttr1: number; nAttr2: number; nAttr3: number; strName: string }[] {
+    return this.item
+      .query("SELECT SN, Category, strAttr, nAttr1, nAttr2, nAttr3, strName FROM FxItem ORDER BY SN")
+      .all() as never;
+  }
+
+  /** CRSShopItem ("FxStock") — UpdateShopItemTable's 17-column select, WHERE IsValid > 0. */
+  GetFxStockRows(): {
+    SN: number; Category: number; Name: string; ItemSN: number; Unit: number; DataFile: string;
+    Price: number; FixedPrice: number; LimitLevel: number; LimitEx: number; ValidityPeriod: number;
+    ValidityLevel: number; StringDesc: number; StringUsage: number; CardNo: number; MoneyType: number; zorder: number;
+  }[] {
+    return this.item
+      .query(
+        `SELECT SN, Category, Name, ItemSN, Unit, DataFile, Price, FixedPrice, LimitLevel, LimitEx,
+                ValidityPeriod, ValidityLevel, StringDesc, StringUsage, CardNo, MoneyType, zorder
+         FROM FxStock WHERE IsValid > 0 ORDER BY SN`,
+      )
+      .all() as never;
+  }
+
+  /** CRSString ("FxString") — UpdateStringTable's select filter. */
+  GetFxStringRows(): { SN: number; String: string }[] {
+    return this.item.query("SELECT SN, String FROM FxString ORDER BY SN").all() as never;
+  }
+
+  /** CRSPackageMap ("FxPackageMap") — UpdatePackageMapTable's select filter. */
+  GetFxPackageMapRows(): { PackageSN: number; StockSN: number; Units: number; Validitylevel: number }[] {
+    return this.item
+      .query("SELECT PackageSN, StockSN, Units, Validitylevel FROM FxPackageMap ORDER BY PackageSN")
+      .all() as never;
+  }
+
+  /** CRSCouponMap ("FxCouponMap") — UpdateCouponMapTable's select filter. */
+  GetFxCouponMapRows(): { CouponSN: number; ItemSN: number; Units: number; ValidityPeriod: number; Validitylevel: number }[] {
+    return this.item
+      .query("SELECT CouponSN, ItemSN, Units, ValidityPeriod, Validitylevel FROM FxCouponMap ORDER BY CouponSN")
+      .all() as never;
+  }
+
+  /** CRSBonusMap ("FxBonusMap") — UpdateBonusMapTable's select filter. */
+  GetFxBonusMapRows(): { Price: number; StockSN: number }[] {
+    return this.item.query("SELECT Price, StockSN FROM FxBonusMap ORDER BY StockSN").all() as never;
+  }
+
+  /** CRSBillingSvr ("BillingSvr" on CAConfig) — CBillingProcess::UpdateBillingSvrList. */
+  GetBillingSvrs(): { SN: number; ip: string; port: number }[] {
+    return this.config.query("SELECT SN, ip, port FROM BillingSvr ORDER BY SN").all() as never;
+  }
+
+  /** CDBMan::GetUserInfo (prGetUserInfoShop) — the shop's _USERACCOUNT fill; the
+   *  @money/@win/@draw/@lose out-params come from FxUserDynamic. */
+  prGetUserInfoShop(id: string):
+    | null
+    | { SN: number; Name: string; Password: string; Email: string; EmailRcv: number; Gender: number;
+        Address: string; Tel: string; Reveal: number; Profile: string; TotalConn: number;
+        LastConn: string | null; Permission: number; ShopCardNo: number; CommunitySvr: number;
+        money: number; win: number; draw: number; lose: number } {
+    const row = this.userInfo[GetUserHashNo(id)]!
+      .query(
+        `SELECT a.SN, a.Name, a.Password, a.Email, a.EmailRcv, a.Gender, a.Address, a.Tel, a.Reveal,
+                a.Profile, a.TotalConn, a.LastConn, a.Permission, a.ShopCardNo, a.CommunitySvr,
+                COALESCE(d.Money, 0) AS money, COALESCE(d.Win, 0) AS win,
+                COALESCE(d.Draw, 0) AS draw, COALESCE(d.Lose, 0) AS lose
+         FROM FxUserAccount a LEFT JOIN FxUserDynamic d ON d.ID = a.ID WHERE a.ID = ?`,
+      )
+      .get(id) as never;
+    return (row ?? null) as never;
+  }
+
+  /** CDBMan::GetFxInventoryRows — the CUser inventory load (CRSInventory select). */
+  GetFxInventoryRows(id: string): { SN: number; ItemSN: number; StockSN: number; Slot: number; Amount: number; Verbose: string; DateCreated: string | null }[] {
+    return this.inventory[GetUserHashNo(id)]!
+      .query(
+        `SELECT SN, ItemSN, StockSN, Slot, Amount, Verbose, DateCreated
+         FROM FxUserInventory WHERE UserID = ? ORDER BY SN`,
+      )
+      .all() as never;
+  }
+
+  /** CDBMan::AddNewInventory (shop variant) — prAddInventory with the shop arg
+   *  set.  The @UserSN lookup runs on the user shard, the row lands on the
+   *  inventory shard (two separate databases).  Returns 1 on success, 0 on
+   *  failure — CDBMan::AddNewInventory's convention. */
+  prAddInventoryShop(id: string, itemSN: number, stockSN: number, unit: number, validityPeriod: number, userLevel: number): number {
+    const acc = this.userInfo[GetUserHashNo(id)]!
+      .query("SELECT COALESCE(SN, 0) AS UserSN FROM FxUserAccount WHERE ID = ?")
+      .get(id) as { UserSN: number } | undefined;
+    if (!acc) return 0;
+    const r = this.inventory[GetUserHashNo(id)]!
+      .query(
+        `INSERT INTO FxUserInventory (UserSN, UserID, ItemSN, StockSN, Slot, Amount, DateCreated, LevelCreated, Verbose)
+         VALUES (?, ?, ?, ?, 255, ?, datetime('now'), ?, '')
+         ON CONFLICT(UserID, ItemSN) DO UPDATE SET Amount = Amount + excluded.Amount
+         RETURNING ItemSN`,
+      )
+      .get(acc.UserSN, id, itemSN, stockSN, unit, userLevel) as { ItemSN: number } | undefined;
+    return r ? 1 : 0;
   }
 
   prGetStringAttr(attrId: string): { retval: number; strVal: string } {

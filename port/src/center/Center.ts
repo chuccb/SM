@@ -440,9 +440,19 @@ export class CxCenter {
     svr?.socket?.SendPacket(packet);
   }
 
-  /** CLocalServerMan::SendShopSvrInfoPacket — the shop gets the same list. */
-  SendShopSvrInfoPacket(nServerClass: number, nSvrIdx: number): void {
-    this.SendLocalSvrInfoPacket(nServerClass, nSvrIdx);
+  /** CLocalServerMan::SendShopSvrInfoPacket (CxCenter.exe.c:11832) — packet 6,
+   *  ONLY for the shop-class link: [E4 totalServers][per server: E4 ip][E2 port].
+   *  The list covers every configured local server (entry stride 96: +56 ip,
+   *  +60 port), not just the live ones. */
+  SendShopSvrInfoPacket(_nServerClass: number, _nSvrIdx: number): void {
+    const packet = new CSendPacket(CM_ReceivedPacket.OnShopServerInfo);
+    packet.Encode4(this.servers.length);
+    for (const svr of this.servers) {
+      packet.Encode4(IpToU32(svr.strIP));
+      packet.Encode2(svr.nPort);
+    }
+    const shop = this.servers.filter((s) => s.nServerClass === SVRCLASS_SHOP);
+    for (const s of shop) s.socket?.SendPacket(packet);
   }
 
   /** CLocalServerMan::SendLocalSvrStatePacket — packet 4 (CxCenter.exe.c:12304). */
@@ -530,10 +540,12 @@ export class CxCenter {
       case MC_ReceivedPacket.OnAdminNotifyGameServerMsg:
         this.Forward(n, MC_ReceivedPacket.OnAdminNotifyGameServerMsg, true); // forwarded with its own id (5)
         return;
-      case MC_ReceivedPacket.OnSvrReservedMsg:
-        // CGameServer::OnPacket routes 7 to OnRequestUserChannel; the other
-        // classes treat it as the operator-only slot.
-        if (owner.nServerClass === SVRCLASS_GAME) this.OnRequestUserChannel(owner, n);
+      case MC_ReceivedPacket.OnRequestUserChannel:
+        // CGameServer::OnPacket routes 7 to OnRequestUserChannel, and so does
+        // CShopServer::OnPacket (00414DD0); the other classes treat it as the
+        // operator-only slot.
+        if (owner.nServerClass === SVRCLASS_GAME || owner.nServerClass === SVRCLASS_SHOP)
+          this.OnRequestUserChannel(owner, n);
         return;
       case MC_ReceivedPacket.OnSetAuthenCode:
         return; // billing-side; no CAuthenThread in this suite
@@ -658,14 +670,25 @@ export class CxCenter {
     owner.socket?.SendPacket(packet);
   }
 
-  /** CLocalServer::OnConnEstablished (center side). */
+  /**
+   * CLocalServer::OnConnEstablished (center side) — class dependent.  The
+   * generic servers (CxCenter.exe.c:10365) decode
+   * [E1 n][n×(EStr, E4 serial)] and answer [E1 n][n×(E4 serial, E1 auth)][E1
+   * result]; the shop class (CShopServer::OnConnEstablished 00414B80) carries
+   * one extra E4 flag per user inbound and echoes it back as an extra E1 per
+   * user outbound (LOBYTE(entry[2]) — the billing flag FXSS stores at
+   * user+3116 and later rides inside client 18).
+   */
   OnConnEstablished(owner: CLocalServer, n: CReceivedPacket): void {
     const count = n.Decode1();
     const names: string[] = [];
     const serials: number[] = [];
+    const flags: number[] = [];
+    const fShop = owner.nServerClass === SVRCLASS_SHOP;
     for (let i = 0; i < count; i++) {
       names.push(n.DecodeStr());
       serials.push(n.Decode4());
+      if (fShop) flags.push(n.Decode4());
     }
     let result = 0;
     const users: (CUser | undefined)[] = names.map((nm) => this.userTable.get(nm));
@@ -681,12 +704,14 @@ export class CxCenter {
     } else {
       result = 0;
     }
-    // CxCenter.exe.c:10454 — [E1 n][n×(E4 serial, E1 authencode)][E1 flag]
+    // CxCenter.exe.c:10454 / CShopServer::OnConnEstablished —
+    // [E1 n][n×(E4 serial, E1 authencode(, E1 inbound flag))][E1 flag]
     const packet = new CSendPacket(CM_ReceivedPacket.OnCenterResConnEstablished);
     packet.Encode1(count);
     for (let i = 0; i < count; i++) {
       packet.Encode4(serials[i]!);
       packet.Encode1(users[i]?.GetAuthencode() ?? 0);
+      if (fShop) packet.Encode1(flags[i] ?? 0);
     }
     packet.Encode1(result);
     owner.socket?.SendPacket(packet);
