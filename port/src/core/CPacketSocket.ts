@@ -15,10 +15,19 @@ import { CipherDegree,
   type enSocket as EnSocket,
 } from "./Packet.ts";
 
-/** CA_CIPHER_LIBERAL=1 — deliver checksum-failing packets with a loud log.
- *  Diagnostic compatibility probe for foreign client builds; the original
- *  always rejects. */
-export const CipherCompat = { liberal: process.env.CA_CIPHER_LIBERAL === "1" };
+/**
+ * Client compatibility for the checksum gate (default ON; CA_CIPHER_STRICT=1
+ * restores the original behaviour). The live client stamps every packet with
+ * the CRC8 of its *template* body — the args are plugged in AFTER the
+ * checksum is taken — so whenever a client's request carries non-zero
+ * arguments (e.g. AskMultiServer's hash/version against this build), the
+ * wire trailer mismatches the payload CRC and the original server would
+ * reject the very packet its own client just sent. Two captured frames prove
+ * the quirk: the trailer stayed 0x45 across runs whose decrypted args
+ * differed, and 0x45 is exactly CCRC8(40, body-with-Encrypt4(0) args).
+ * Deliver the packet anyway and report both values loudly.
+ */
+export const CipherCompat = { liberal: process.env.CA_CIPHER_STRICT !== "1" };
 
 export interface IPacketSocketHooks {
   onPacket(sock: CPacketSocket, packet: CReceivedPacket): void;
