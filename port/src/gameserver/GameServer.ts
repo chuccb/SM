@@ -122,6 +122,16 @@ export const SUPREME_ROOM_SWAP_COUNT = 0x2710;
 export const UDP_REGULATE_DELAY = 0x1f40;
 /** CGameSession::DeferReturnPrepareStage (:31979) — 8 s after the end screen. */
 export const RETURN_STAGE_DELAY = 0x1f40;
+/** CGameSessionStrategy::GetResultViewType (4216C6; guild override 4233B9 → 1)
+ *  — CreateSessionStrategy only builds the guild strategy when CMainSystem+8
+ *  is 77, so on FXGS the SendGameResult head byte is always the base 0. */
+export const GAME_RESULT_VIEW_TYPE = 0;
+/** CGameSession::IsLadderGame (4209A6: xor eax,eax) — the SendGameResult head
+ *  byte is hardwired 0 in this build. */
+export const IS_LADDER_GAME = 0;
+/** asc_48F568 (EUC-KR) — "[\xbe\xcb\xb8\xb2] %s ..." = "[Notification] %s has obtained 100x the luck of experience in the premium channel."
+ *  (SendGameResult → SendBigLuckMsg; GetWinExp never sets the trigger flag). */
+export const STR_BIG_LUCK_MSG = "\x5b\xbe\xcb\xb8\xb2\x5d\x20\x25\x73\x20\xb4\xd4\xb2\xb2\xbc\xad\x20\xc7\xc1\xb8\xae\xb9\xcc\xbe\xf6\x20\xc3\xa4\xb3\xce\xbf\xa1\xbc\xad\x20\xb0\xe6\xc7\xe8\xc4\xa1\x20\x31\x30\x30\xb9\xe8\xc0\xc7\x20\xc7\xe0\xbf\xee\xc0\xbb\x20\xbe\xf2\xc0\xb8\xbc\xcc\xbd\xc0\xb4\xcf\xb4\xd9\x2e";
 
 /** The session dimension everywhere: 8 slots / 8 colours / 8 loss-matrix rows
  *  (the original loops the same 8-slot tables with plain do/while). */
@@ -2245,20 +2255,23 @@ export class CGameSession {
   m_BanChief = new CBanChief(); // +12576 (the idle-room start gate)
   m_nObj0 = -1; // +11612
   m_nObj1 = -1; // +11616
-  m_rgbGameType = new Uint8Array(8); // +11604 (per-slot 0; case 4 → winner colour+7; DoReturnPrepareStage → 0)
-  m_rgColourCount = new Int32Array(8); // +12016 (per-colour occupied slots — GetGameDetailResult)
-  m_rgDetailCount = new Int32Array(8); // +12208 (per-colour 7s — GetGameDetailResult; CGameSession::Init zeroes +12048/+12240)
+  /** +12016/+12048/+12208/+12240 — the four dword arrays GetWinGameResult,
+   *  GetGameDetailResult and SendGameResult read.  No FXGS code writes any of
+   *  them (lst: 2EF0h/2F10h/2FB0h/2FD0h appear only as reads), so they stay 0
+   *  for the server's lifetime; the client-visible result bytes still flow
+   *  through their comparisons. */
+  m_rgColourCount = new Int32Array(8); // +12016 (GetGameDetailResult's D; SendGameResult encode 3)
+  m_rgWinDetailB = new Int32Array(8); // +12048 (SendGameResult encode 2)
+  m_rgDetailCount = new Int32Array(8); // +12208 (GetWinGameResult's expected-finish count)
+  m_rgWinDetailA = new Int32Array(8); // +12240 (GetGameDetailResult's A)
   m_nBombTickTime = 0; // +12552 (the last bomb-tick time)
   m_dwLastTickTime = 0; // +12548 (Update's per-tick timeGetTime marker)
   m_nGameType100 = 0; // +12728 (tmpl+100 at DoStartGame)
   m_GameClock = new CGameClock(); // +12732
   m_UdpLossRegulator = new CUdpLossRegulator(); // +12280
   m_DynInfoCalculator = new CDynInfoCalculator(); // +11684 (the results unit)
-  m_dwLucciRate = 1; // +12276 (SendGameResult's exp/lucci multiplier)
-  /** scratch result fields carried across SendGameResult's per-user loop. */
-  m_rgbResult = 0; // var_34 (GetWinGameResult, 3 on draw, 2 on lose)
-  m_rgbGameDetailResult = 0; // var_8 (GetGameDetailResult, 3 on draw/lose)
-  m_dwPremiumFlag = 0; // var_10 / [this+2FF4] (the GetWinExp reward flag)
+  m_fSkipExpReward = 0; // +12276 (SendGameResult/DeleteUser: nonzero skips every exp reward; nothing writes it)
+  m_dwPremiumFlag = 0; // +12272 (SendGameResult's per-user premium dword, user+2004 == 1)
 
   m_SyncGameObjMan = new CSyncGameObjMan(); // +12788
   m_pCtx = new CGameContext(); // +1184 (SetCurrentGameContext(0))
@@ -3467,122 +3480,151 @@ export class CGameSession {
   }
 
   /**
-   * CGameSession::GetWinGameResult (41B482) — 1 when gameType counts of the
-   * winner's colour (2/6) match the player counts and it is a two-team game.
+   * CGameSession::GetWinGameResult (41B482) — 1 when the number of slots in a
+   * finish state (2 goal / 6 win) equals the slot's expected count (+12208)
+   * while another team still has a pending count; in practice the counters
+   * are never written, so this always returns 0.
    */
-  GetWinGameResult(nWinnerTeam: number): number {
-    if (this.m_rgbGameType[nWinnerTeam]! > 2) return 0;
-    let flag = false;
+  GetWinGameResult(n8: number): number {
+    const expected = this.m_rgDetailCount[n8]!; // [+12208+4n8]
+    if (expected <= 2) return 0;
+    const colour = this.GetColor(n8) & SLOTSTATE_COLOR_MASK;
+    let otherPlaying = 0;
     for (let k = 0; k < MAX_SESSION_SLOTS; k++) {
-      const c = this.GetColor(k);
-      if (c !== nWinnerTeam && this.m_nCurPlayerNum > 2) flag = true;
+      if ((this.GetColor(k) & SLOTSTATE_COLOR_MASK) !== colour && this.m_rgDetailCount[k]! > 2) otherPlaying = 1;
     }
-    if (flag) {
-      let count = 0;
-      for (let k = 0; k < MAX_SESSION_SLOTS; k++) {
-        if (this.m_rgbGameType[k] === 2 || this.m_rgbGameType[k] === 6) count++;
-      }
-      if (count === this.m_nCurPlayerNum) return 1;
-      return 0;
+    if (otherPlaying === 0) return 0;
+    let finished = 0;
+    for (let k = 0; k < MAX_SESSION_SLOTS; k++) {
+      if (this.m_abDeleted[k] === 2 || this.m_abDeleted[k] === 6) finished++;
     }
-    return 0;
+    return finished === expected ? 1 : 0;
   }
 
-  /** CGameSession::GetGameDetailResult (41CA8C) — 2 / 1 / default 3. */
-  GetGameDetailResult(nWinnerTeam: number): number {
-    let result = 3; // 41CA8C — 3 default, 2 = last-round, 1 = uniform game type
-    for (let k = 0; k < MAX_SESSION_SLOTS; k++) {
-      if (this.m_nCurPlayerNum > 2 && this.m_nCurPlayerNum === this.m_rgDetailCount[k]! + 1) result = 2;
-      if (this.m_rgbGameType[k]! > 2 && this.m_rgbGameType[k] === this.m_rgColourCount[k]!) result = 1;
+  /**
+   * CGameSession::GetGameDetailResult (41CA8C) — the winner slot's detail
+   * byte: 3 when the slot's user carries the premium ticket, 1 when
+   * +12240[n8] == +12048[n8] (both > 2), 2 when +12208[n8] == +12016[n8] + 1
+   * (both > 2).  Those counters are never written in FXGS, so the practical
+   * result is premium ? 3 : 0.
+   */
+  GetGameDetailResult(n8: number): number {
+    let result = 0;
+    if (this.m_rgPlayer[n8]?.m_fPremiumTicket === 1) result = 3;
+    const a = this.m_rgWinDetailA[n8]!; // [+12240+4n8]
+    if (a > 2 && a === this.m_rgWinDetailB[n8]!) {
+      // [+12048+4n8]
+      result = 1;
+      const c = this.m_rgDetailCount[n8]!; // [+12208+4n8]
+      if (c > 2 && c === this.m_rgColourCount[n8]! + 1) return 2;
     }
-    void nWinnerTeam;
     return result;
   }
 
   /**
-   * CGameSession::SendGameResult (vtbl+216, FxServer.exe.lst:41FF51) — the
-   * results unit.  Packet 163 carries every alive member's result block and a
-   * per-user tail; the DB dyn rows are updated through IncDecExp and the
-   * lobby rank list is refreshed.
+   * CGameSession::SendGameResult (vtbl+216, :36660) — the results unit.
+   * Head [E1 flag][E1 winTeam][E1 view-type][E1 ladder][E1 diff-team item
+   * flag]; per user [E1 1][E4 serial] then [E1 result][E1 +12048][E1 +12016]
+   * [E2 exp‰][E2 exp‰ re-read][E2 look-level][E1 got-exp][E1 detail]; empty
+   * slots send [E1 0].  IncDecExp feeds the DB dyn rows, IncWin/IncLose/
+   * IncDraw the user counters, and level-ups re-sort the lobby rank list.
    */
   SendGameResult(winTeam: number): void {
     const packet = new CSendPacket(GS_ClientSend.OnGameResult, CipherDegree.kPacketEncryptedCRC8);
+    const timeFactor = this.GetGameExpTimeFactor(); // v50 — the 41FE83 ladder
     let flag = 0;
     for (let i = 0; i < MAX_SESSION_SLOTS; i++) {
-      if (this.m_rgbGameType[i] === 5 || this.m_rgbGameType[i] === 6 || this.m_rgbGameType[i] === 7) flag = 1;
+      if (this.m_abDeleted[i] === 5 || this.m_abDeleted[i] === 6 || this.m_abDeleted[i] === 7) flag = 1;
     }
-    packet.Encode1(flag); // +16 (the same 163 was observed with 0/1)
-    packet.Encode1(winTeam & 0xff); // +17
-    this.m_rgbResult = winTeam === -1 ? 3 : 2; // the tie form
-    this.m_rgbGameDetailResult = winTeam === -1 ? 3 : 2;
+    packet.Encode1(flag);
+    packet.Encode1(winTeam & 0xff);
+    packet.Encode1(GAME_RESULT_VIEW_TYPE); // strategy vtbl+44
+    packet.Encode1(IS_LADDER_GAME); // session vtbl+156
+    let diffTeamUsedItem = 0; // v47
+    for (let i = 0; i < MAX_SESSION_SLOTS; i++) {
+      if (this.m_rgPlayer[i] !== null && this.m_rgnUsedItem[i] !== 0 && (this.GetColor(i) & SLOTSTATE_COLOR_MASK) !== winTeam) diffTeamUsedItem = 1;
+    }
+    packet.Encode1(diffTeamUsedItem);
     for (let slot = 0; slot < MAX_SESSION_SLOTS; slot++) {
-      // [+12620] vtbl+44 — the recorder dword getter (FXGS never registers one)
-      packet.Encode4(0); // +18
       const user = this.m_rgPlayer[slot]!;
       if (user === null) {
         packet.Encode1(0);
         continue;
       }
       packet.Encode1(1);
-      packet.Encode2(user.m_nGlobalSerialNo); // [user+7AC]
-      const nOldExp = user.dyn.exp; // [user+0D4]
-      const nOldExpPctAtEntry = CDynInfoCalculator.GetExpPercentage(nOldExp);
-      let anyDiffTeam = 0;
-      for (let i = 0; i < MAX_SESSION_SLOTS; i++) {
-        if (this.m_rgPlayer[i] !== null && this.m_rgnUsedItem[i] !== 0 && (this.GetColor(i) & SLOTSTATE_COLOR_MASK) !== winTeam) anyDiffTeam = 1;
-      }
+      packet.Encode4(user.GetGlobalSerialNo()); // [+1964]
+      let expPct = CDynInfoCalculator.GetExpPercentage(user.dyn.exp); // [+212] before the rewards
+      let gotExp = 0; // DrawExp
+      let gained = 0; // value
+      let detail = 0; // GameDetailResult
+      this.m_dwPremiumFlag = user.m_fPremiumTicket === 1 ? 1 : 0; // [+12272]
+      if (!CMainSystem.IsPremiumChannel() && user.m_fPremiumTicket === 1) detail = 3;
+      let result: number; // n3
       if (winTeam === -1) {
-        console.error(`[GS] Game Result : Tie Game`);
-        let exp = this.m_DynInfoCalculator.GetDrawExp(slot);
-        exp = Math.trunc(exp * this.GetGameExpTimeFactor());
-        if (exp !== 0) user.IncDecExp(exp);
-        console.error(`[GS] ${user.GetName()}:D:${exp}`);
-      } else {
-        if ((this.GetColor(slot) & SLOTSTATE_COLOR_MASK) === winTeam) {
-          console.error(`[GS] Game Result : Win Team = ${winTeam}`);
-          const rewardFlag = [0];
-          let exp = this.m_DynInfoCalculator.GetWinExp(slot, rewardFlag);
-          exp = Math.trunc(exp * this.GetGameExpTimeFactor());
-          let boost = 1.0;
-          if (anyDiffTeam === 1) boost = boost * 1.1;
-          let premiumCount = 0;
-          for (let i = 0; i < MAX_SESSION_SLOTS; i++) {
-            if (this.GetColor(i) === winTeam) {
-              const w = this.m_rgPlayer[i]!;
-              if (w !== null && w.m_fPremiumTicket === 1) premiumCount++;
+        result = 3;
+        if (this.m_fSkipExpReward === 0) {
+          const exp = this.m_DynInfoCalculator.GetDrawExp(slot);
+          gained = Math.trunc(exp * timeFactor);
+          gotExp = user.IncDecExp(gained) > 0 ? 1 : 0;
+          user.IncDraw(); // vtbl+180 (UserIncDraw)
+          if (CMainSystem.ms_pInstance!.m_nChannelType === 99) console.error(`${user.GetName()}:D:${gained}`);
+        }
+      } else if ((this.GetColor(slot) & SLOTSTATE_COLOR_MASK) === winTeam) {
+        result = this.GetWinGameResult(slot);
+        if (this.m_fSkipExpReward === 0) {
+          let boost = 1.0; // v49
+          if (diffTeamUsedItem !== 0) boost = 1.05;
+          if (this.m_rgDetailCount[slot]! >= 2) {
+            let premiumWinners = 0;
+            for (let k = 0; k < MAX_SESSION_SLOTS; k++) {
+              const w = this.m_rgPlayer[k]!;
+              if (w !== null && (this.GetColor(k) & SLOTSTATE_COLOR_MASK) === winTeam && w.m_fPremiumTicket === 1) premiumWinners++;
             }
+            if (premiumWinners >= 2) boost += 0.1;
           }
-          if (premiumCount >= 2 || this.m_dwLucciRate >= 2) boost = boost + 0.1;
-          exp = Math.trunc(exp * boost + 0.1);
-          if (exp !== 0) user.IncDecExp(exp);
-          this.m_dwPremiumFlag = rewardFlag[0]!; // [this+2FF4] var_10
-          this.m_rgbGameDetailResult = this.GetGameDetailResult(winTeam);
-          console.error(`[GS] ${user.GetName()}:W:${exp}`);
-        } else {
-          console.error(`[GS] Game Result : Lose Team`);
-          let exp = this.m_DynInfoCalculator.GetKillNSaveExp(slot);
-          exp = Math.trunc(exp * this.GetGameExpTimeFactor());
-          if (exp !== 0) user.IncDecExp(exp);
-          console.error(`[GS] ${user.GetName()}:L:${exp}`);
+          const rewardFlag = [0]; // v45 — GetWinExp only zeroes it, so the big-luck branch stays dead in FXGS
+          const exp = this.m_DynInfoCalculator.GetWinExp(slot, rewardFlag);
+          gained = Math.trunc(exp * timeFactor * boost);
+          gotExp = user.IncDecExp(gained) > 0 ? 1 : 0;
+          detail = this.GetGameDetailResult(slot);
+          user.IncWin(); // vtbl+172 (UserIncWin)
+          if (CMainSystem.ms_pInstance!.m_nChannelType === 99) console.error(`${user.GetName()}:W:${gained}`);
+          if (rewardFlag[0] !== 0) this.SendBigLuckMsg(STR_BIG_LUCK_MSG.replace("%s", user.GetName()));
+        }
+      } else {
+        result = 2;
+        if (this.m_fSkipExpReward === 0) {
+          const exp = this.m_DynInfoCalculator.GetKillNSaveExp(slot);
+          gained = Math.trunc(exp * timeFactor);
+          gotExp = user.IncDecExp(gained) > 0 ? 1 : 0;
+          user.IncLose(); // vtbl+176 (UserIncLose)
+          if (CMainSystem.ms_pInstance!.m_nChannelType === 99) console.error(`${user.GetName()}:L:${gained}`);
         }
       }
-      packet.Encode4(this.m_rgbResult!); // +20 var_34
-      packet.Encode4(user.dyn.money); // +24 [user+2EFC]
-      packet.Encode4(user.dyn.exp); // +28 [user+2EDC]
-      const nUpdatedExp = user.dyn.exp; // [+2EDC] again (IncDecExp applied)
-      if (nOldExpPctAtEntry > CDynInfoCalculator.GetExpPercentage(user.dyn.exp)) user.dyn.exp = 0; // [+2EDC] = 0
-      const nNewPct = CDynInfoCalculator.GetExpPercentage(user.dyn.exp);
-      packet.Encode4(nOldExpPctAtEntry); // +32
-      packet.Encode4(nNewPct); // +36
-      packet.Encode1(user.GetLookLevel() & 0xff); // +40
-      packet.Encode4(this.m_dwPremiumFlag); // +44 var_10 ([this+2FF4])
-      if (this.m_rgbGameDetailResult === 3 && nUpdatedExp === 0) packet.Encode1(0);
-      else packet.Encode1(this.m_rgbGameDetailResult);
+      const pctNow = CDynInfoCalculator.GetExpPercentage(user.dyn.exp); // re-read after the rewards
+      if (expPct > pctNow) expPct = 0;
+      if (detail === 3 && gained === 0) detail = 0;
+      packet.Encode1(result);
+      packet.Encode1(this.m_rgWinDetailB[slot]!); // [+12048+4slot]
+      packet.Encode1(this.m_rgColourCount[slot]!); // [+12016+4slot]
+      packet.Encode2(expPct);
+      packet.Encode2(pctNow);
+      packet.Encode2(user.GetLookLevel());
+      packet.Encode1(gotExp);
+      packet.Encode1(detail);
+      if (gotExp !== 0) CChannelPool.ms_pInstance!.UpdateRankList(user);
     }
-    // +12716 guild recorder — FXGS keeps no recorder and the guild tables
-    // never register one, so the whole guild-dyn block stays inert.
     this.SendPacket(packet);
   }
+
+  /** CGameSession::SendBigLuckMsg (:36478) — packet 10 [EStr] through the
+   *  center link; CLocalServerMan::OnSystemMsg rebroadcasts it as CM 13. */
+  SendBigLuckMsg(strMsg: string): void {
+    const packet = new CSendPacket(MC_ReceivedPacket.OnSystemMsg);
+    packet.EncodeStr(strMsg);
+    CCenterProcess.ms_pInstance?.SendPacket(packet);
+  }
+
 
   /** SendGameResult's time factor (the 41FE83 ladder). */
   private GetGameExpTimeFactor(): number {
@@ -4847,12 +4889,12 @@ export class CGameSession {
         packet.Encode1(drops);
         if (drops > 0) {
           for (let i = 0; i < drops; i++) {
-            const boxpos = n.Decode1();
-            const obspos = n.Decode1();
-            ctx.m_rgnBoxItem[boxpos] = 0;
+            const obspos = n.Decode1(); // byte 1 → the obstacle grid (+4032)
+            const boxpos = n.Decode1(); // byte 2 → the box-item table (+3032)
             ctx.m_rgnObstacle[(obspos & 0xf) + 15 * (obspos >> 4)] = 0;
-            packet.Encode1(boxpos);
+            ctx.m_rgnBoxItem[boxpos] = 0;
             packet.Encode1(obspos);
+            packet.Encode1(boxpos);
           }
         }
         this.SendPacket(packet);
@@ -4872,8 +4914,9 @@ export class CGameSession {
         break;
       case 8: {
         const v = n.Decode1();
-        n.Decode1();
+        const w = n.Decode1();
         packet.Encode1(v);
+        packet.Encode1(w); // lst 41F1D3-41F203: both bytes echo
         this.SendPacketExclude(packet, socket);
         break;
       }
@@ -4955,7 +4998,7 @@ export class CGameSession {
     ) {
       if (this.m_rgSlotGhost[slot] !== -1) {
         if (this.m_nGhostFreq === 0) return;
-        console.error("[GS] Mapping is inconsistent ghostidx to slotidx.");
+        if (this.m_rgGhostSlot[this.m_rgSlotGhost[slot]!] !== slot) console.error("[GS] Mapping is inconsistent ghostidx to slotidx.");
         console.error("[GS] Player having ghost tried to generate more ghost: There must be a leg.");
         console.error(
           `[GS]     - LastGhost:${this.m_dwLastGhostTime}   CurTime:${now}   Diff:${(now - this.m_dwLastGhostTime) | 0}   - GhostStart:${this.m_nGhostStart}   GhostFreq:${this.m_nGhostFreq}   GameStart:0   Elapsed:${this.m_GameClock.ElapsedTime()}`,
@@ -5042,19 +5085,23 @@ export class CGameSession {
     for (let i = 0; i < MAX_SESSION_SLOTS; i++) {
       if (this.m_rgPlayer[i] && !(this.m_rgLapTime[2 * i] === -1 && this.m_rgLapRank[2 * i] === -1)) count++;
     }
+    // the original compares the packed u64 {time,rank} — rank is the primary key
     for (let i = 0; i < 7; i++) {
       if (!this.m_rgPlayer[i]) continue;
+      const a = BigInt(this.m_rgLapRank[2 * i]! >>> 0) * 0x100000000n + BigInt(this.m_rgLapTime[2 * i]! >>> 0);
       for (let k = i + 1; k < MAX_SESSION_SLOTS; k++) {
         if (!this.m_rgPlayer[k]) continue;
-        if (this.m_rgLapTime[2 * i]! <= this.m_rgLapTime[2 * k]!) place[k]!++;
+        const b = BigInt(this.m_rgLapRank[2 * k]! >>> 0) * 0x100000000n + BigInt(this.m_rgLapTime[2 * k]! >>> 0);
+        if (a <= b) place[k]!++;
         else place[i]!++;
       }
     }
     const packet = new CSendPacket(GS_ClientSend.OnLapInfoRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(count);
     for (let i = 0; i < MAX_SESSION_SLOTS; i++) {
-      const lapped = this.m_rgPlayer[i] !== null && !(this.m_rgLapTime[2 * i] === -1 && this.m_rgLapRank[2 * i] === -1);
-      if (lapped) {
+      if (this.m_rgPlayer[i]) {
+        // a seated slot always encodes its place/laps (place stays 1 while the
+        // pair is still {−1,−1}); only truly empty slots get the 255 marker
         packet.Encode1(place[i]!);
         packet.Encode1(this.m_rgLapCount[i]!);
       } else {
@@ -5131,7 +5178,7 @@ export class CGameSession {
   OnReqTakeHouse(n: CReceivedPacket, socket: CClientSocket): void {
     const slot = n.Decode1();
     const total = n.Decode1();
-    const color = this.GetColor(slot);
+    const color = this.GetColor(slot); // already masked — the SetHouseState team index
     const packet = new CSendPacket(GS_ClientSend.OnReqTakeHouseRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(slot);
     const houseCountOffset = packet.m_uOffset;
@@ -5208,7 +5255,7 @@ export class CGameSession {
     const slot = n.Decode1();
     if (slot >= MAX_SESSION_SLOTS) return;
     const target = this.m_rgPlayer[slot];
-    if (!target) return;
+    if (!target || target.m_nFree !== 0) return; // CUser+20 — the live-object mark
     const user0 = socket.GetUser(0);
     const senderSlot = user0 ? user0.m_nSlotIdx : 8;
     if (senderSlot < MAX_SESSION_SLOTS) {
@@ -6001,6 +6048,24 @@ export class CChannelPool extends CChatPool {
 
   m_vtRankList: CUser[] = []; // +76 (the level-sorted lobby list)
   m_vtGuildMember = new Map<number, CUser[]>(); // +120
+
+  /** CChannelPool::UpdateRankList (:6643) — after a level-up, re-sort the
+   *  level-sorted lobby list (level desc, serial asc) inside the pool's
+   *  critical section; the original sends nothing from here. */
+  UpdateRankList(user: CUser): void {
+    const idx = this.m_vtRankList.indexOf(user);
+    if (idx === -1) return;
+    this.m_vtRankList.splice(idx, 1);
+    let at = this.m_vtRankList.length;
+    for (let i = 0; i < this.m_vtRankList.length; i++) {
+      const u = this.m_vtRankList[i]!;
+      if (user.m_nLevel > u.m_nLevel || (user.m_nLevel === u.m_nLevel && user.GetGlobalSerialNo() < u.GetGlobalSerialNo())) {
+        at = i;
+        break;
+      }
+    }
+    this.m_vtRankList.splice(at, 0, user);
+  }
 
   constructor(public db: CDBMan) {
     super();
