@@ -7,7 +7,7 @@ import { CServerConfig } from "../src/core/Config.ts";
 import { CxCenter } from "../src/center/Center.ts";
 import { main as loginMain } from "../src/login/Login.ts";
 import { inet_addr } from "../src/login/MultiServer.ts";
-import { main as gameMain } from "../src/gameserver/GameServer.ts";
+import { CClientSocket, CBomberAttr, main as gameMain } from "../src/gameserver/GameServer.ts";
 import { UpdateCRC32 } from "../src/core/CRC.ts";
 import { CLocalSocket } from "../src/lib/CenterLink.ts";
 import { SVRCLASS_UTIL, MC_ReceivedPacket } from "../src/lib/S2S.ts";
@@ -29,22 +29,23 @@ const DATA_DIR = DIR + "/data";
  */
 function writeGameDataPackage(): void {
   mkdirSync(DATA_DIR, { recursive: true });
-  // Attr/BomberAttr: [u32 len]["test"][attr1][attr2][attr3][attr4][speed]
-  //                  [attr6][bombCount][attr8][bombPower][attr10]
+  // Attr/BomberAttr: [u32 len]["test"] + the ten payload dwords (+256..+292)
+  // in record order: nAttr1 (hidden flag), nCurrentSpeed, nAttr3, nBombCount,
+  // nAttr5Clamped (the load-time <=10 clamp), nBombPower, nAttr7..nAttr10.
   const bomber = Buffer.alloc(4 + 4 + 10 * 4);
   let o = 0;
   o = bomber.writeUInt32LE(4, o);
   o += bomber.write("test", o, "latin1");
-  o = bomber.writeUInt32LE(0, o); // attr1 (0 = a normal, selectable entry)
-  o = bomber.writeUInt32LE(1, o); // attr2
-  o = bomber.writeUInt32LE(1, o); // attr3
-  o = bomber.writeUInt32LE(1, o); // attr4
-  o = bomber.writeUInt32LE(5, o); // def speed (clamped at 10)
-  o = bomber.writeUInt32LE(0, o); // attr6
-  o = bomber.writeUInt32LE(1, o); // def bomb count
-  o = bomber.writeUInt32LE(0, o); // attr8
-  o = bomber.writeUInt32LE(1, o); // def bomb power
-  o = bomber.writeUInt32LE(0, o); // attr10
+  o = bomber.writeUInt32LE(0, o); // nAttr1 (0 = a normal, selectable entry)
+  o = bomber.writeUInt32LE(1, o); // nCurrentSpeed
+  o = bomber.writeUInt32LE(1, o); // nAttr3
+  o = bomber.writeUInt32LE(1, o); // nBombCount
+  o = bomber.writeUInt32LE(5, o); // nAttr5Clamped (the <=10 clamp target)
+  o = bomber.writeUInt32LE(0, o); // nBombPower
+  o = bomber.writeUInt32LE(1, o); // nAttr7
+  o = bomber.writeUInt32LE(0, o); // nAttr8
+  o = bomber.writeUInt32LE(1, o); // nAttr9
+  o = bomber.writeUInt32LE(0, o); // nAttr10
   // Attr/ItemAttr: the 8-byte header + an empty id→item map section.
   const itemAttr = Buffer.alloc(12);
   itemAttr.writeUInt32LE(0, 8); // mapCount
@@ -1135,5 +1136,42 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
     const p87 = await roomLobby!.recv(87, 3000);
     expect(r2(p87)).toBe(0);
     expect(r4(p87)).toBeGreaterThan(0);
+  });
+});
+
+describe("audit regression: 82 auto-join, before-join ring, BomberAttr map", () => {
+  test("auto join (82): a matching request always answers [E1 2] — the +1316 candidate list is never filled", async () => {
+    const { gs } = await enterGame("tester05");
+    gs.send(82, (e) => {
+      e.u8(1); // count == GetUserCount
+      e.u8(0); // one discarded select byte (Decode1 % (total + 1))
+    });
+    const res = await gs.recv(82);
+    expect(r1(res)).toBe(2);
+  });
+
+  test("AddBeforeJoinSession keeps the original 5-deep shift ring (+476/+496)", () => {
+    const socket = Object.create(CClientSocket.prototype) as CClientSocket;
+    socket.m_anBeforeJoinSession = [];
+    socket.AddBeforeJoinSession(1);
+    socket.AddBeforeJoinSession(2);
+    socket.AddBeforeJoinSession(3);
+    socket.AddBeforeJoinSession(2); // the duplicate is ignored
+    expect(socket.m_anBeforeJoinSession).toEqual([1, 2, 3]);
+    socket.AddBeforeJoinSession(4);
+    socket.AddBeforeJoinSession(5);
+    socket.AddBeforeJoinSession(6); // full — entry 0 falls off
+    expect(socket.m_anBeforeJoinSession).toEqual([2, 3, 4, 5, 6]);
+  });
+
+  test("BomberAttr: the 109 compares read dwords 1/3/5; hidden counts nAttr1 != 0", () => {
+    const attr = CBomberAttr.ms_pInstance!;
+    expect(attr.GetTotalCount()).toBe(1);
+    expect(attr.GetNormalCount()).toBe(1); // nAttr1 == 0 → not hidden
+    expect(attr.GetCurrentSpeed(0)).toBe(1); // +260 dword1
+    expect(attr.GetBombCount(0)).toBe(1); // +268 dword3
+    expect(attr.GetBombPower(0)).toBe(0); // +276 dword5
+    expect(attr.IsValidSelectIdx(0)).toBe(true);
+    expect(attr.IsValidSelectIdx(1)).toBe(true); // the random index (== total)
   });
 });
