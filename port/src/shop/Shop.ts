@@ -27,7 +27,7 @@ import {
   SS_ReceivedPacket,
   PACKET_NAME_TABLES,
 } from "../lib/PacketIDs.ts";
-import { CM_ReceivedPacket, MC_ReceivedPacket, SVRCLASS_SHOP } from "../lib/S2S.ts";
+import { CM_ReceivedPacket, CENTER_VERSION, CONN_HELLO_VERSION, MC_ReceivedPacket, SVRCLASS_SHOP } from "../lib/S2S.ts";
 import { CDynInfoCalculator_GetLevel } from "../login/LevelTable.ts";
 import { CItemMan, type ShopItem } from "./CItemMan.ts";
 
@@ -1598,9 +1598,12 @@ export class CCenterProcess {
 
 // ============================ CMainSystem ============================
 
+/** CMainSystem::OnConnEstablished (FxShop.exe.c:21056) — the client patch URL. */
+const CONN_PATCH_URL = "ftp://patch.nexon.co.kr/ca";
+
 /** CMainSystem — the shop's system object; OnConnEstablished pushes the
  *  accept packet (FxShop.exe.c:21041):
- *  0: [E2 3][E2 7][E4 headerType][EStr "ftp://patch.nexon.co.kr/ca"]. */
+ *  0: [E2 CENTER_VERSION][E2 CONN_HELLO_VERSION[class]][E4 headerType][EStr url]. */
 export class CMainSystem {
   static ms_pInstance: CMainSystem | null = null;
 
@@ -1610,10 +1613,10 @@ export class CMainSystem {
 
   OnConnEstablished(socket: CClientSocket): void {
     const packet = new CSendPacket(SC_SendPacket.OnConnect);
-    packet.Encode2(3);
-    packet.Encode2(7);
+    packet.Encode2(CENTER_VERSION);
+    packet.Encode2(CONN_HELLO_VERSION[SVRCLASS_SHOP]);
     packet.Encode4(socket.m_nHeaderType);
-    packet.EncodeStr("ftp://patch.nexon.co.kr/ca");
+    packet.EncodeStr(CONN_PATCH_URL);
     socket.SendPacket(packet);
   }
 }

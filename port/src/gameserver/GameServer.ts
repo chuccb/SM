@@ -46,7 +46,7 @@ import {
   SplitDatagram,
 } from "./MTUDP.ts";
 import { CLocalSocket } from "../lib/CenterLink.ts";
-import { CM_ReceivedPacket, MC_ReceivedPacket, SVRCLASS_GAME } from "../lib/S2S.ts";
+import { CM_ReceivedPacket, CENTER_VERSION, CONN_HELLO_VERSION, MC_ReceivedPacket, SVRCLASS_GAME } from "../lib/S2S.ts";
 import {
   CLIENTSOCKET_HEADER_CODE_MODIFIER,
   CLIENTSOCKET_HEADER_CODE_RCV,
@@ -64,6 +64,11 @@ import {
   kLevelTableSize,
 } from "../login/LevelTable.ts";
 
+
+/** CMainSystem::OnConnEstablished (FxServer.exe.c:20694) — the client patch
+ *  URL; the GS hands out the download root (shop/util hand out the patch
+ *  root, the LS its UrlPatch config table). */
+const CONN_PATCH_URL = "ftp://download.nexon.co.kr/ca";
 
 /** p7 client-check constants (CConnectPool::OnConnEstablished). */
 const FxCLIENT_HASH_A = 0xf1164b8b;
@@ -6491,10 +6496,10 @@ export class CMainSystem {
    *  (CSendPacket(&v3, 0, 0) — plain on every server). */
   OnConnEstablished(socket: CClientSocket): void {
     const packet = new CSendPacket(GS_ClientSend.OnConnect, CipherDegree.kPacketRaw);
-    packet.Encode2(3);
-    packet.Encode2(7);
+    packet.Encode2(CENTER_VERSION);
+    packet.Encode2(CONN_HELLO_VERSION[SVRCLASS_GAME]);
     packet.Encode4(socket.m_nHeaderType);
-    packet.EncodeStr("ftp://download.nexon.co.kr/ca");
+    packet.EncodeStr(CONN_PATCH_URL);
     socket.SendPacket(packet);
   }
 

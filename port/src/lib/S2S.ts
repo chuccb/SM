@@ -100,3 +100,20 @@ export const CLIENT_VERSION: Readonly<Record<number, number>> = {
   [SVRCLASS_SHOP]: 3,
   [SVRCLASS_UTIL]: 3,
 };
+
+/**
+ * CMainSystem::OnConnEstablished — the [E2 CENTER_VERSION][E2 gameVersion]
+ * head of the client accept hello (packet 0).  Anchors: FxServer.exe.c:20690,
+ * CxLogin.exe.c:16395, FxShop.exe.c:21051 (all 3/7), CxUtil.exe.c:21697
+ * (3/5).  Every class advertises its own GAME_VERSION entry except the login
+ * server: its clients are game clients, so the LS advertises the GAME
+ * class's gameVersion (LS identifies to the center with 0/0 but still says
+ * 7 here) — the same value the client echoes back in its p6 CheckEnterGame
+ * request, where CheckEnterGame compares it against the GAME entry.
+ */
+export const CONN_HELLO_VERSION: Readonly<Record<number, number>> = {
+  [SVRCLASS_LOGIN]: GAME_VERSION[SVRCLASS_GAME],
+  [SVRCLASS_GAME]: GAME_VERSION[SVRCLASS_GAME],
+  [SVRCLASS_SHOP]: GAME_VERSION[SVRCLASS_SHOP],
+  [SVRCLASS_UTIL]: GAME_VERSION[SVRCLASS_UTIL],
+};

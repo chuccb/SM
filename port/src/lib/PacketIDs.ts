@@ -82,6 +82,7 @@ export const LS_SendPacket = {
 
 /** LS → client ids with no matching request id (CxLogin.exe.c send sites). */
 export const LS_ClientSend = {
+  OnConnect: 0, // CMainSystem::OnConnEstablished [E2 CENTER_VERSION][E2 CONN_HELLO_VERSION][E4 headerType][EStr url]
   OnChannelInfo: 10, // CChannelCache::MakeInfoPacket (24883) — [E1 full][OSstream]
   OnChannelsExtraInfo: 11, // CCenterProcess::MakeChannelsExtraInfoPacket (6414)
   OnChannelState: 13, // CChannelCache::MakeStatePacket (24737) — [E2 n][n×E2 users]
@@ -128,7 +129,7 @@ export const GS_ReceivedPacket = {
 
 /** Client-facing packet ids only the game server sends. */
 export const GS_ClientSend = {
-  OnConnect: 0, // CMainSystem::OnConnEstablished [E2 3][E2 7][E4 headerType]
+  OnConnect: 0, // CMainSystem::OnConnEstablished [E2 CENTER_VERSION][E2 CONN_HELLO_VERSION][E4 headerType][EStr url]
   OnReqConnectToSvrRes: 2, // CM 1 success path: [E1 1][E1 type][E4 idx][E4 ip][E2 port]
   OnReqConnectToSvrFail: 6, // CheckEnterGame failure code
   OnChannelsState: 13, // CCenterProcess::MakeChannelsStatePacket
@@ -306,7 +307,7 @@ export const SS_ReceivedPacket = {
 // FxShop.exe.c).  The ids are the same shared namespace, read from the other
 // direction: 200/205/213 are the cached CItemMan table packets.
 export const SC_SendPacket = {
-  OnConnect: 0, // CMainSystem::OnConnEstablished — [E2 3][E2 7][E4 headerType]
+  OnConnect: 0, // CMainSystem::OnConnEstablished — [E2 CENTER_VERSION][E2 CONN_HELLO_VERSION][E4 headerType][EStr url]
   OnResConnectToSvr: 6, // CMainPool::OnCenterResConnectToSvr
   OnInitialInfo: 18, // CMainPool::OnCenterResConnEstablished — account + bonus map
   OnEstimateRTTRes: 20,
@@ -358,7 +359,7 @@ export const UTIL_ClientPacket = {
 
 /** What the util sends its admin tools (all degree 0 — SetCipherDegree(0)). */
 export const UTIL_ClientSend = {
-  OnConnect: 0, // CMainSystem::OnConnEstablished [E2 3][E2 5][E4 headerType][EStr url]
+  OnConnect: 0, // CMainSystem::OnConnEstablished [E2 CENTER_VERSION][E2 CONN_HELLO_VERSION][E4 headerType][EStr url]
   OnEstimateRTTRes: 20, // CUserPool::OnEstimateRTT
   OnAdminNotifyMsg: 26, // CCenterProcess::OnAdminNotifyMsg rebroadcast
   OnUserDetailInfo: 64, // CMainPool::SendUserDetailInfo [E1 n][E4 n2]

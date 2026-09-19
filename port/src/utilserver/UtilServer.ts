@@ -28,13 +28,16 @@ import {
 import {
   CM_ReceivedPacket,
   MC_ReceivedPacket,
+  CENTER_VERSION,
+  CONN_HELLO_VERSION,
   SVRCLASS_UTIL,
 } from "../lib/S2S.ts";
 import { CLocalSocket } from "../lib/CenterLink.ts";
 import { PACKET_NAME_TABLES, US_ReceivedPacket, UTIL_ClientPacket, UTIL_ClientSend } from "../lib/PacketIDs.ts";
 
-/** CMainSystem::OnConnEstablished — the tool hello's patch URL. */
-const SERVER_URL = "ftp://patch.nexon.co.kr/ca";
+/** CMainSystem::OnConnEstablished (CxUtil.exe.c:21701) — the tool hello's
+ *  patch URL. */
+const CONN_PATCH_URL = "ftp://patch.nexon.co.kr/ca";
 /** CListenThread::Proc — htons(0x1FC0); cfg ServerPort is dead config. */
 const LISTEN_PORT = 0x1fc0;
 
@@ -189,10 +192,10 @@ export class CMainSystem {
     User.SetGlobalSerialNo(++this.m_nConnNo);
     if (CLocalUserTable.ms_pInstance?.Insert(User) === 0) console.error("Error! Failed to Add User");
     const packet = new CSendPacket(UTIL_ClientSend.OnConnect, CipherDegree.kPacketRaw);
-    packet.Encode2(3);
-    packet.Encode2(5);
+    packet.Encode2(CENTER_VERSION);
+    packet.Encode2(CONN_HELLO_VERSION[SVRCLASS_UTIL]);
     packet.Encode4(rConnectedSocket.m_nHeaderType);
-    packet.EncodeStr(SERVER_URL);
+    packet.EncodeStr(CONN_PATCH_URL);
     rConnectedSocket.SendPacket(packet);
   }
 }

@@ -27,7 +27,7 @@ import { MTUDPServer, SetLocalUserTableFinder } from "./MTUDPServer.ts";
 import { CChannelCache } from "./ChannelCache.ts";
 import { CDynInfoCalculator_GetLevel } from "./LevelTable.ts";
 import { CLocalSocket } from "../lib/CenterLink.ts";
-import { MC_ReceivedPacket, SVRCLASS_GAME } from "../lib/S2S.ts";
+import { MC_ReceivedPacket, CENTER_VERSION, CONN_HELLO_VERSION, SVRCLASS_GAME, SVRCLASS_LOGIN } from "../lib/S2S.ts";
 import {
   CLIENTSOCKET_HEADER_CODE_MODIFIER,
   CLIENTSOCKET_HEADER_CODE_RCV,
@@ -1219,9 +1219,9 @@ class CMainSystem {
   }
 
   OnConnEstablished(socket: CClientSocket): void {
-    const packet = new CSendPacket(0, CipherDegree.kPacketRaw);
-    packet.Encode2(3);
-    packet.Encode2(7);
+    const packet = new CSendPacket(LS_ClientSend.OnConnect, CipherDegree.kPacketRaw);
+    packet.Encode2(CENTER_VERSION);
+    packet.Encode2(CONN_HELLO_VERSION[SVRCLASS_LOGIN]);
     packet.Encode4(socket.m_nHeaderType);
     // round-robin: idx = (idx + 1) % count, then send table[idx]
     if (this.m_astrUrlPatch.length > 0) {
