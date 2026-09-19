@@ -968,18 +968,25 @@ export class CMainPool extends CUserPool {
       if (!entry) break;
       this.OnReqPurchaseStockItem(user, entry.stockSN);
       const item = CItemMan.ms_pInstance!.GetShopItem(entry.stockSN);
-      if (item === null || item.MoneyType === 0) break; // billing items close the cart
+      if (item === null || item.MoneyType === 0) break; // billing items leave the tranx open, no receipt
       user.ResetTranxInfo();
       const idx = user.m_nCartCount;
       if ((user.m_anCart[idx]?.cnt ?? 0) <= 0) user.m_nCartCount = idx - 1;
-      if (user.m_anCart[user.m_nCartCount]) user.m_anCart[user.m_nCartCount]!.cnt--;
+      if (user.m_nCartCount < 0) {
+        // the cart receipt: client 215 [E1 9][E1 0][EBuffer 8 variant time]
+        // (CMainPool::PurchaseCartList tail, FxShop.exe.c 00416CF0)
+        if (user.m_pSocket) {
+          const p = new CSendPacket(SC_SendPacket.OnPurchaseCartListRes, CipherDegree.kPacketEncryptedCRC8);
+          p.Encode1(9);
+          p.Encode1(0);
+          p.EncodeBuffer(variantTime(new Date()), 8);
+          user.m_pSocket.SendPacket(p);
+        }
+        user.ResetTranxInfo();
+        return;
+      }
+      user.m_anCart[user.m_nCartCount]!.cnt--;
     }
-    // the cart receipt: client 204 [E1 0][8B variant time]
-    const p = new CSendPacket(SC_SendPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
-    p.Encode1(0);
-    p.EncodeBuffer(variantTime(new Date()), 8);
-    user.m_pSocket?.SendPacket(p);
-    user.ResetTranxInfo();
   }
 
   /** CMainPool::OnReqDigiQAuthorization — client 224 [EStr][Estr]. */

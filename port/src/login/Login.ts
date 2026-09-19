@@ -27,27 +27,17 @@ import { MTUDPServer, SetLocalUserTableFinder } from "./MTUDPServer.ts";
 import { CChannelCache } from "./ChannelCache.ts";
 import { CDynInfoCalculator_GetLevel } from "./LevelTable.ts";
 import { CLocalSocket } from "../lib/CenterLink.ts";
-import { SVRCLASS_GAME } from "../lib/S2S.ts";
+import { MC_ReceivedPacket, SVRCLASS_GAME } from "../lib/S2S.ts";
 import {
   CLIENTSOCKET_HEADER_CODE_MODIFIER,
   CLIENTSOCKET_HEADER_CODE_RCV,
   CLIENTSOCKET_HEADER_CODE_SND,
   CLIENTSOCKET_SEQ,
   CLIENTSOCKET_SEQ_DELTA,
+  LS_ClientSend,
   LS_ReceivedPacket,
   LS_SendPacket,
 } from "../lib/PacketIDs.ts";
-
-/** LS → client packet ids that have no matching request id. */
-export const LS_ClientSend = {
-  OnChannelInfo: 10, // CChannelCache::MakeInfoPacket
-  OnChannelsGameState: 14, // CCenterProcess::MakeChannelsGameStatePacket
-  OnChannelsExtraInfo: 11, // CCenterProcess::MakeChannelsExtraInfoPacket
-  OnChannelState: 13, // CChannelCache::MakeStatePacket
-  OnSvrReservedMsg: 16, // CCenterProcess::OnSvrReservedMsg
-  OnAdminNotifyMsg: 26,
-  OnSystemMsg: 30,
-} as const;
 
 /** "현재 게임을 하고 계시는 곳" (byte_47A458, EUC-KR) — the double-login notice. */
 const STR_ALREADY_PLAYING = "\xc7\xf6\xc0\xe7 \xb0\xd4\xc0\xd3\xc0\xbb \xc7\xcf\xb0\xed \xb0\xe8\xbd\xc3\xb4\xc2 \xb0\xf7";
@@ -914,7 +904,7 @@ export class CCenterProcess {
 
   /** CCenterProcess::DestructCenterSvr (CxLogin.exe.c:1406) — center packet 100. */
   DestructCenterSvr(): void {
-    const packet = new CSendPacket(100);
+    const packet = new CSendPacket(MC_ReceivedPacket.OnDestructCenterSvr);
     this.SendPacketToCenter(packet);
   }
 

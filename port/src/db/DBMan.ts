@@ -330,6 +330,13 @@ export class CDBMan {
           .run(r.sn, r.type, r.value, r.strAttr);
       if (rows.CAString.length) console.log(`CAString: seeded ${rows.CAString.length} row(s) from ${bakPath}`);
     }
+    if (Count("FxUserOptions") === 0) {
+      for (const r of rows.FxUserOptions)
+        this.config
+          .query("INSERT INTO FxUserOptions (NAME, VALUE) VALUES (?,?)")
+          .run(r.NAME, r.VALUE);
+      if (rows.FxUserOptions.length) console.log(`FxUserOptions: seeded ${rows.FxUserOptions.length} row(s) from ${bakPath}`);
+    }
   }
 
   private open(path: string, schema: string): Database {

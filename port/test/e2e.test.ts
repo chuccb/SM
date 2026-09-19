@@ -348,7 +348,7 @@ describe("login flow", () => {
     expect(r1(p11)).toBe(1); // relay count
     expect(r4(p11)).toBe(inet_addr("127.0.0.1"));
     expect(r2(p11)).toBe(0); // fx messages (FxMessage MessageUse = 1)
-    expect(r2(p11)).toBe(0); // PRECHMAPREWARD (FxUserOptions, empty in this DB)
+    expect(r2(p11)).toBe(1); // PRECHMAPREWARD (FxUserOptions, seeded 1.0f → long 1)
     expect(r1(p11)).toBe(1); // JUM count
     expect(r4(p11)).toBe(inet_addr("127.0.0.1"));
     expect(r2(p11)).toBe(17360);

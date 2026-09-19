@@ -27,9 +27,11 @@
  *   0x0010, nValues 5, strCount 2 → fixed (SN, Param, Current) +
  *   "Name", "IP".  The backup's single row is the operator's test row
  *   ("world name" @ "123", Current = 1 = the selected server).
- * The float-first rows (FxUserOptions LEVELLIMIT…, value 1.0f) and the
- * 3-column rows (old server list entries with ports 7000/9898) fail the
- * sanity gates below and are excluded.
+ * The float-first FxUserOptions rows (LEVELLIMIT…/PRECH…, VALUE 1.0f) parse
+ * through the dedicated gate in ParseCAConfigBak (their VALUE seeds as the
+ * ODBC float→long truncation 1). The 3-column rows that look like old server
+ * list entries (ports 7000/9898) still fail the CALoginSvr sanity gates and
+ * are excluded.
  */
 import * as FS from "node:fs";
 import * as Path from "node:path";
@@ -71,6 +73,11 @@ export interface ICAStringRow {
   strAttr: string;
 }
 
+export interface IFxUserOptionsRow {
+  NAME: string;
+  VALUE: number;
+}
+
 export interface ICAConfigBakRows {
   CAMultiSvr: ICAMultiSvrRow[];
   CALoginSvr: ICALoginSvrRow[];
@@ -78,6 +85,14 @@ export interface ICAConfigBakRows {
    *  CxLogin.exe.c:29957-29960; OnReceiveRow binds sn/type long + value/strAttr
    *  text — CxLogin.exe.lst:411F90) that feed the AskMultiServer notice stream */
   CAString: ICAStringRow[];
+  /** the FxUserOptions rows (CRSOptions::OnReceiveRow, CxLogin.exe.c:17512 —
+   *  NAME text + VALUE). The backup stores VALUE as a float column image
+   *  (leading 0x3F800000 = 1.0f); the original reads it through Get_FieldLong,
+   *  whose ODBC float→long conversion truncates, so the seeded VALUE is the
+   *  truncated float (1.0f → 1). LEVELLIMITMAX/MIN drive
+   *  CCenterProcess::UpdateLevelLimit, PRECHMAPREWARD/PRECHLUCKPRO the
+   *  premium-channel reward/luck readers. */
+  FxUserOptions: IFxUserOptionsRow[];
 }
 
 function ReadCString(buf: Uint8Array, off: number, end: number): string {
@@ -88,9 +103,11 @@ function ReadCString(buf: Uint8Array, off: number, end: number): string {
 
 /** ParseCAConfigBak — extract the CAMultiSvr / CALoginSvr rows. */
 export function ParseCAConfigBak(buf: Uint8Array): ICAConfigBakRows {
-  const out: ICAConfigBakRows = { CAMultiSvr: [], CALoginSvr: [], CAString: [] };
+  const out: ICAConfigBakRows = { CAMultiSvr: [], CALoginSvr: [], CAString: [], FxUserOptions: [] };
   const u16 = (o: number) => buf[o]! | (buf[o + 1]! << 8);
   const u32 = (o: number) => (u16(o) | (u16(o + 2) << 16)) >>> 0;
+  /** the IEEE-754 bits → float → Get_FieldLong's ODBC float→long truncation */
+  const f32BitsToLong = (bits: number) => Math.trunc(new Float32Array(new Uint32Array([bits]).buffer)[0]!);
 
   for (let h = 0; h + 24 <= buf.length; h++) {
     if (u16(h) !== LOG_RECORD_TAG) continue;
@@ -137,9 +154,26 @@ export function ParseCAConfigBak(buf: Uint8Array): ICAConfigBakRows {
         } else {
           const s1 = ReadCString(buf, strsAt, strsAt + strLen);
           if (![...s1].every((c) => c >= " " && c < "\x7f")) continue;
-          // CALoginSvr: fixed (SN, Port, Flag) + IP — the sanity gates also
-          // exclude the float-first FxUserOptions rows (0x3F800000).
+          // FxUserOptions (CRSOptions::OnReceiveRow, CxLogin.exe.c:17512):
+          // fixed (VALUE float, 0, 0) + NAME. The float leading image
+          // (0x3F800000 = 1.0f) is what the CALoginSvr gate above rejects;
+          // the operator's option identifiers are all-caps alphanumerics,
+          // which also excludes the two same-shaped backup rows carrying
+          // bare IP strings (no LS reader queries those names). The UTF-16
+          // system-catalog rows the backup walk picked up fail the
+          // printable gate above.
           if (
+            op === LOG_RECORD_INSERT &&
+            fixedv.length === 3 &&
+            fixedv[1]! === 0 &&
+            fixedv[2]! === 0 &&
+            (fixedv[0]! & 0x7f800000) !== 0 &&
+            (fixedv[0]! & 0x7f800000) !== 0x7f800000 &&
+            /^[A-Z0-9]+$/.test(s1)
+          ) {
+            out.FxUserOptions.push({ NAME: s1, VALUE: f32BitsToLong(fixedv[0]!) });
+            h = strsAt + strLen - 1;
+          } else if (
             op === LOG_RECORD_INSERT &&
             fixedv.length === 3 &&
             fixedv[0]! < 0x10000 &&

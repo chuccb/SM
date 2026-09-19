@@ -25,8 +25,8 @@ import {
   CCenterProcess,
   CClientSocket as LsClientSocket,
   CLoginPool,
-  LS_ClientSend,
 } from "../src/login/Login.ts";
+import { LS_ClientSend } from "../src/lib/PacketIDs.ts";
 import { CMultiServer } from "../src/login/MultiServer.ts";
 import {
   CClientSocket,
@@ -319,7 +319,7 @@ describe("login server (CxLogin)", () => {
     db.config.run(
       "INSERT INTO FxMessage (Message, MessageAttr, MessageUse) VALUES ('welcome', 7, 1), ('hidden', 9, 0)",
     );
-    db.config.run("INSERT INTO FxUserOptions (NAME, VALUE) VALUES ('PRECHMAPREWARD', 0x1234)");
+    db.config.run("UPDATE FxUserOptions SET VALUE = 0x1234 WHERE NAME = 'PRECHMAPREWARD'");
     center.UpdateFxMessage();
     center.UpdatePremiumChannelMapSelReward();
     const p = new CSendPacket(LS_ClientSend.OnChannelsExtraInfo, 0);

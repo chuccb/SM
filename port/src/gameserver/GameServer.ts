@@ -46,6 +46,7 @@ import {
   CLIENTSOCKET_HEADER_CODE_SND,
   CLIENTSOCKET_SEQ,
   CLIENTSOCKET_SEQ_DELTA,
+  GS_ClientSend,
   GS_ReceivedPacket,
   SESSION_ReceivedPacket,
 } from "../lib/PacketIDs.ts";
@@ -55,88 +56,6 @@ import {
   kLevelTableSize,
 } from "../login/LevelTable.ts";
 
-/** Client-facing packet ids only the game server sends. */
-export const GS_ClientSend = {
-  OnConnect: 0, // CMainSystem::OnConnEstablished [E2 3][E2 7][E4 headerType]
-  OnEstimateRTTRes: 20, // CUserPool::OnEstimateRTT
-  OnReqConnectToSvrRes: 2, // CM 1 success path: [E1 1][E1 type][E4 idx][E4 ip][E2 port]
-  OnReqConnectToSvrFail: 6, // CheckEnterGame failure code
-  OnChannelAnnounce: 15, // the empty lobby announce (OnAddNewSocket / 83)
-  OnChannelsState: 13, // CCenterProcess::MakeChannelsStatePacket
-  OnChannelsGameState: 14, // CCenterProcess::MakeChannelsGameStatePacket
-  OnSvrReservedMsg: 16, // CCenterProcess::OnSvrReservedMsg
-  OnAdminNotifyMsg: 26,
-  OnChatMsg: 25, // lobby/in-session chat
-  OnWhisperRes: 27, // CChatPool::OnWhisper (to the receiver)
-  OnWhisperFail: 28, // target absent: [E1 0][EStr name]
-  OnItemMsg: 25, // CChatPool::OnItemMsg shares the chat id
-  OnSystemMsg: 30,
-  OnInviteUser: 29,
-  OnShoutMsg: 74,
-  OnKickoffUser: 26, // CGameSessionTable::KickImp "abnormal state…"
-  OnGuildBanRes: 17, // guild-table overflow on entry
-  OnRequestUserSimpleInfoRes: 70, // CChannelPool::PutUserSimpleInfoPacket
-  OnRequestMyInfoRes: 64, // CChannelPool::OnRequestMyInfo
-  OnGuildMemberListRes: 67, // CChannelPool::PutGuildMemberListPacket
-  OnRequestUserInfoDetailRes: 71,
-  OnRequestUserLocationRes: 72,
-  OnRequestGuildInfoRes: 66,
-  OnUserItemList: 202, // the whole FxItem table
-  OnPreInventory: 207, // [E1 n][per-user pre-inventory]
-  OnUserInventory: 201, // [E1 n][per-user inventory]
-  OnEnterGame: 210, // [E1 attr] — the entry-accepted packet
-  OnSessionSimpleInfo: 83, // CListSession::MakeSimpleInfoPacket (room list)
-  OnSessionCreated: 85, // CListSession::MakeCreatedPacket
-  OnSessionModified: 86, // CListSession::MakeModifiedPacket
-  OnSessionDestroyed: 87, // CListSession::MakeDestroyedPacket
-  OnCreateSessionRes: 80, // [E1 result][E2 idx][E4 serial][E1 gameType]
-  OnJoinSessionRes: 81, // [E1 result]
-  OnGameTypeMod: 92, // CGameSession::SendGameTypeMod (empty body)
-  OnGameTypeNormal: 93, // CGameSession::SendGameTypeNormal (empty body)
-  OnSetPlayer: 105, // CBaseSession::MakeSetPlayerPacket
-  OnResetPlayer: 106, // CBaseSession::SendResetPlayer [E1 slot][E4 serial]
-  OnSetSlotState: 107, // CBaseSession::MakeSetSlotStatePacket [E1 slot][EBuffer 3]
-  OnSelectColorRes: 108, // CBaseSession::OnSelectColor [E1 (slot<<4)|color]
-  OnSelectBomberRes: 109, // CBaseSession::OnSelectBomber [E1 (slot<<4)|bomber]
-  OnOpenCloseSlotRes: 110, // CListSession::DoOpenCloseSlot [E1 (slot<<4)|closed]
-  OnBanVoteRequest: 113, // CListSession::OnHostAskBanPlayer [E4 serial][EStr name]
-  OnBanPlayerRes: 114, // CListSession::DeferBanPlayer [E1 code][EStr name?]
-  OnSessionMapIdx: 112, // CGameSession::SendSessionInfoPacket tail [E2 mapIdx]
-  OnStartGameRes: 115, // CGameSession::OnRequestStartGame [E1 CanStartGame]
-  OnStartGame: 116, // CGameSession::LaunchGameStage
-  OnChangeTitle: 117, // CBaseSession::DoChangeTitle [EStr title]
-  OnPlayEmotion: 118, // CBaseSession::OnPlayEmotion (SendPacketExclude self)
-  OnBangPok: 122, // CListSession::DoBangPok (empty body)
-  OnRequestUDPRelayRes: 54, // OnNotifyUDPLoss/OnRequestUDPRelay → the target [E1 senderSlot]
-  OnUDPPeerInfo: 120, // CGameSession::OnUDPPeerInfo — the peer matrix broadcast
-  OnStartGame2: 150, // CGameSession::DoStartGame [E4 seed][E4 seq][E4 ghostStartMs][E4 ghostFreqMs]
-  OnBombIgniteRes: 153, // CGameSession::OnBombIgnite [E1 slot][E1 pos][E1 attr][E2 bombId]
-  OnBombKickThrowRes: 154, // CGameSession::OnBombKickThrow [E1 slot][E2 bombId][E1 pos]
-  OnMovableBoxMoveRes: 155, // CGameSession::OnMovableBoxMove [E1×4 relay]
-  OnRequestEatItemRes: 156, // CGameSession::OnRequestEatItem [E1 slot][E1 box][E1 item](+lucci [E1 n])
-  OnRequestEatObstacleRes: 157, // CGameSession::OnRequestEatObstacle [E1 slot][E1 pos]
-  OnEffectRes: 160, // CGameSession::OnSetEffect [buffer relay]
-  OnBomberEvent: 159, // CGameSession::OnSetBomberEvent/OnBomberDie relay
-  OnDropObstacleRes: 161, // CGameSession::OnDropObstacle [E1 a][E1 pos]
-  OnGhostGenerate: 166, // CGameSession::OnRequestGenerateGhost [E1 ghost][E1 slot|0x80][E1 tag]
-  OnGhostDestroy: 167, // OnRequestDestroyGhost/DealWithGhostOfLeavingPlayer [E1 ghost]
-  OnDestroyBoxRes: 165, // CGameSession::OnDestroyBox [E1×3 relay]
-  OnRequestAirplaneRes: 171, // CGameSession::OnRequestAirplane [E4 t][E1 n][n×(E1×4)]
-  OnLapInfoRes: 170, // CGameSession::OnLapInfo [E1 n][8×(E1 place][E1 laps)]
-  OnItemThrowRes: 172, // CGameSession::OnItemThrow [E1×6 relay]
-  OnObjCreate: 174, // CSyncGameObjMan::OnReqCreateObj [E2 id][E1 slot][E2 type][EBuffer 20]
-  OnObjInitial: 175, // CSyncGameObjMan::SetInitialObjNo [E2 id][E1 slot]
-  OnObjDestroy: 176, // OnReqDestroyObj/OnPlayerLeave [E2 id][E4 crc]
-  OnReqEatBulaRes: 177, // CGameSession::OnReqEatBula [E1 n][n×(E1 x][E1 y][E1 slot)]
-  OnReqTakeHouseRes: 178, // CGameSession::OnReqTakeHouse [E1 slot][E1 n]…
-  OnSetBombTimerRes: 152, // CGameSession::Update tick [E1 n][n×(E2 bombId)(E1 kick)]
-  OnReturnPrepareStage: 164, // CGameSession::DoReturnPrepareStage [E1 0]
-  OnGameResult: 163, // CGameSession::SendGameResult (the results unit)
-  OnNeedStartGame: 121, // CGameSession::DeferBanChief [E1 0/1/2/3][E2 seconds]
-  OnUdpLossBan: 195, // asm-only site in Update: empty body + stage=4 (UDP-loss kick)
-  OnAirplaneItemProb: 173, // CGameSession::SendAirplaneItemProb [E1 prob]
-  OnHackingKick: 196, // CGameSession::OnHackingSuspected [E1 slot]
-} as const;
 
 /** p7 client-check constants (CConnectPool::OnConnEstablished). */
 const FxCLIENT_HASH_A = 0xf1164b8b;
@@ -6324,25 +6243,48 @@ export class CChannelPool extends CChatPool {
     socket.SendPacket(packet);
   }
 
-  /** CChannelPool::OnRequestModifyUserInfo — packet 66 (prUpdateUserAccount). */
+  /**
+   * CChannelPool::OnRequestModifyUserInfo — packet 66 (FxServer.exe.c:5856).
+   * Wire: [E1 slot][EStr name][E1 gender][EStr address][EStr profile]
+   *       [EStr birthday][E1 reveal]
+   * → CDBMan::ModifyUserInfo (prUpdateUserAccount @ID/@Name/@Gender/@Address/
+   *   @Reveal/@Profile/@Birthday, FxServer.exe.c:11993) and reply
+   *   65 [E1 result] — 1 when the stored proc ran, 0 on failure.
+   */
   OnRequestModifyUserInfo(n: CReceivedPacket, socket: CClientSocket): void {
-    const user = socket.GetUser(0);
+    const slot = n.Decode1();
+    const user = socket.GetUser(slot);
     if (!user) return;
-    user.account.strName = n.DecodeStr();
-    user.account.Gender = n.Decode1();
-    user.account.Address = n.DecodeStr();
-    user.account.Reveal = n.Decode1();
-    user.account.Profile = n.DecodeStr();
-    user.account.Birthday = n.DecodeStr();
-    this.db.prUpdateUserAccount(
-      user.account.strID,
-      user.account.strName,
-      user.account.Gender,
-      user.account.Address,
-      user.account.Reveal,
-      user.account.Profile,
-      user.account.Birthday,
-    );
+    const strName = n.DecodeStr();
+    const gender = n.Decode1();
+    const address = n.DecodeStr();
+    const profile = n.DecodeStr();
+    const birthday = n.DecodeStr();
+    const reveal = n.Decode1();
+    const result =
+      this.db.prUpdateUserAccount(
+        user.account.strID,
+        strName,
+        gender,
+        address,
+        reveal,
+        profile,
+        birthday,
+      ) === 0
+        ? 1
+        : 0;
+    if (result === 1) {
+      // CDBMan::ModifyUserInfo success path: mirror onto the live account
+      user.account.strName = strName;
+      user.account.Gender = gender;
+      user.account.Address = address;
+      user.account.Profile = profile;
+      user.account.Birthday = birthday;
+      user.account.Reveal = reveal;
+    }
+    const packet = new CSendPacket(GS_ClientSend.OnRequestModifyUserInfoRes, CipherDegree.kPacketEncryptedCRC8);
+    packet.Encode1(result);
+    socket.SendPacket(packet);
   }
 
   /** CChannelPool::OnRequestUserInfoDetail — packet 67. */

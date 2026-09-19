@@ -1,10 +1,29 @@
 /**
- * Client-facing packet IDs. There is no kPacket* enum in the original PDBs —
- * the numbers below are the dispatch values read straight out of the
- * OnPacket handlers of the decompiled servers (CxLogin.exe.c /
- * FxServer.exe.c / FxShop.exe.c / CxUtil.exe.c / CxCenter.exe.c).  They form
- * one shared namespace per direction; each server handles its own subset.
- * Handler names are the official ones.
+ * Client-facing packet IDs — the single enumeration point for every server.
+ *
+ * There is no kPacket* enum in the original PDBs; every number below was
+ * audited out of the decompiled servers (CxLogin.exe.c / FxServer.exe.c /
+ * FxShop.exe.c / CxUtil.exe.c / CxCenter.exe.c):
+ *
+ *   receive side = the literal `case` values of each pool's OnPacket dispatch
+ *     — LS CLoginPool::OnPacket (CxLogin.exe.c:15254, cases 1-9/20/60/61),
+ *     GS CChannelPool::OnPacket (FxServer.exe.c:6942; connect stage
+ *     CConnectPool::OnPacket 10361; chat CChatPool::OnPacket 7297; in-session
+ *     CGameSession::OnPacket 37668 for ids 96..189 via CBaseSessionTable
+ *     vtbl+84), shop CMainPool::OnPacket, util CMainPool::OnPacket 21528;
+ *
+ *   send side = the second argument of every CSendPacket ctor / InitPacket
+ *     call in each .c.  A ctor site whose packet is pushed through the
+ *     CCenterProcess link (vtbl+68 on `this+4`) is NOT client-facing — those
+ *     are the MC_* server→center ids and live in lib/S2S.ts (CxCenter's own
+ *     sends are the CM_* family).  LS 0/1/7/9/100, GS 1/3/4/7/9/10/11 and
+ *     shop 2/3/9 all resolved to S2S this way.
+ *
+ * One shared namespace per direction; each server handles its own subset.
+ * Handler names are the official ones.  GS ids owned by the in-play
+ * strategies that are not implemented yet are inventoried in
+ * GS_INPLAY_SendInventory below; the billing-dependent shop replies (209)
+ * are marked as stub paths.
  */
 
 // ===================== client → login/game/shop/util servers =====================
@@ -24,7 +43,13 @@ export const LS_ReceivedPacket = {
   OnReplyDestoryService: 61,
 } as const;
 
-// CChannelPool::OnPacket (FxServer.exe.c:6942) — the game-server lobby dispatch
+// CChannelPool::OnPacket (FxServer.exe.c:6942) — the game-server lobby dispatch.
+// Structure: 7 → CConnectPool::OnConnEstablished (CConnectPool::OnPacket
+// FxServer.exe.c:10361 decodes E1==7, anything else falls through to
+// CUserPool::OnPacket); the lobby ids below per CChannelPool::OnPacket;
+// 96..189 → CBaseSessionTable vtbl+84 (CGameSession::OnPacket, FxServer.exe.c:37668);
+// 208 → CChatPool::OnPacket (FxServer.exe.c:7297 — chat subtypes 25/26/27/28/
+// 30/31/71/74/216, tail always CUserPool::OnPacket); 209 → OnRequestUserInventory.
 export const GS_ReceivedPacket = {
   OnConnEstablished: 7, // CConnectPool::OnConnEstablished
   OnReqConnectToSvr: 6,
@@ -48,7 +73,7 @@ export const GS_ReceivedPacket = {
   OnRequestGuildMemberInfo: 85,
   OnJoinSession: 86, // vtbl+60
   OnRequestUserInventory: 209,
-  Chat: 208, // CChatPool::OnPacket (also the default branch)
+  Chat: 208, // explicit case → ResetOffset + CChatPool::OnPacket
 } as const;
 
 // CGameSession::OnPacket (FxServer.exe.c:37668) — in-room packets 96..189
@@ -94,6 +119,112 @@ export const SESSION_ReceivedPacket = {
 } as const;
 
 // CMonitorSocket::OnPacket (center) — operator console protocol
+/** Client-facing packet ids only the game server sends. */
+
+/** Client-facing packet ids only the game server sends. */
+export const GS_ClientSend = {
+  OnConnect: 0, // CMainSystem::OnConnEstablished [E2 3][E2 7][E4 headerType]
+  OnEstimateRTTRes: 20, // CUserPool::OnEstimateRTT
+  OnReqConnectToSvrRes: 2, // CM 1 success path: [E1 1][E1 type][E4 idx][E4 ip][E2 port]
+  OnReqConnectToSvrFail: 6, // CheckEnterGame failure code
+  OnChannelAnnounce: 15, // the empty lobby announce (OnAddNewSocket / 83)
+  OnChannelsState: 13, // CCenterProcess::MakeChannelsStatePacket
+  OnChannelsGameState: 14, // CCenterProcess::MakeChannelsGameStatePacket
+  OnSvrReservedMsg: 16, // CCenterProcess::OnSvrReservedMsg
+  OnAdminNotifyMsg: 26,
+  OnChatMsg: 25, // lobby/in-session chat
+  OnWhisperRes: 27, // CChatPool::OnWhisper (to the receiver)
+  OnWhisperFail: 28, // target absent: [E1 0][EStr name]
+  OnItemMsg: 25, // CChatPool::OnItemMsg shares the chat id
+  OnSystemMsg: 30,
+  OnInviteUser: 29,
+  OnShoutMsg: 74,
+  OnKickoffUser: 26, // CGameSessionTable::KickImp "abnormal state…"
+  OnGuildBanRes: 17, // guild-table overflow on entry
+  OnRequestUserSimpleInfoRes: 70, // CChannelPool::PutUserSimpleInfoPacket
+  OnRequestMyInfoRes: 64, // CChannelPool::OnRequestMyInfo
+  OnRequestModifyUserInfoRes: 65, // CChannelPool::OnRequestModifyUserInfo [E1 result] (1 = ok, 0 = db failure)
+  OnGuildMemberListRes: 67, // CChannelPool::PutGuildMemberListPacket
+  OnRequestUserInfoDetailRes: 71,
+  OnRequestUserLocationRes: 72,
+  OnRequestGuildInfoRes: 66,
+  OnUserItemList: 202, // the whole FxItem table
+  OnPreInventory: 207, // [E1 n][per-user pre-inventory]
+  OnUserInventory: 201, // [E1 n][per-user inventory]
+  OnEnterGame: 210, // [E1 attr] — the entry-accepted packet
+  OnSessionSimpleInfo: 83, // CListSession::MakeSimpleInfoPacket (room list)
+  OnSessionCreated: 85, // CListSession::MakeCreatedPacket
+  OnSessionModified: 86, // CListSession::MakeModifiedPacket
+  OnSessionDestroyed: 87, // CListSession::MakeDestroyedPacket
+  OnCreateSessionRes: 80, // [E1 result][E2 idx][E4 serial][E1 gameType]
+  OnJoinSessionRes: 81, // [E1 result]
+  OnGameTypeMod: 92, // CGameSession::SendGameTypeMod (empty body)
+  OnGameTypeNormal: 93, // CGameSession::SendGameTypeNormal (empty body)
+  OnSetPlayer: 105, // CBaseSession::MakeSetPlayerPacket
+  OnResetPlayer: 106, // CBaseSession::SendResetPlayer [E1 slot][E4 serial]
+  OnSetSlotState: 107, // CBaseSession::MakeSetSlotStatePacket [E1 slot][EBuffer 3]
+  OnSelectColorRes: 108, // CBaseSession::OnSelectColor [E1 (slot<<4)|color]
+  OnSelectBomberRes: 109, // CBaseSession::OnSelectBomber [E1 (slot<<4)|bomber]
+  OnOpenCloseSlotRes: 110, // CListSession::DoOpenCloseSlot [E1 (slot<<4)|closed]
+  OnBanVoteRequest: 113, // CListSession::OnHostAskBanPlayer [E4 serial][EStr name]
+  OnBanPlayerRes: 114, // CListSession::DeferBanPlayer [E1 code][EStr name?]
+  OnSessionMapIdx: 112, // CGameSession::SendSessionInfoPacket tail [E2 mapIdx]
+  OnStartGameRes: 115, // CGameSession::OnRequestStartGame [E1 CanStartGame]
+  OnStartGame: 116, // CGameSession::LaunchGameStage
+  OnChangeTitle: 117, // CBaseSession::DoChangeTitle [EStr title]
+  OnPlayEmotion: 118, // CBaseSession::OnPlayEmotion (SendPacketExclude self)
+  OnBangPok: 122, // CListSession::DoBangPok (empty body)
+  OnRequestUDPRelayRes: 54, // OnNotifyUDPLoss/OnRequestUDPRelay → the target [E1 senderSlot]
+  OnUDPPeerInfo: 120, // CGameSession::OnUDPPeerInfo — the peer matrix broadcast
+  OnStartGame2: 150, // CGameSession::DoStartGame [E4 seed][E4 seq][E4 ghostStartMs][E4 ghostFreqMs]
+  OnBombIgniteRes: 153, // CGameSession::OnBombIgnite [E1 slot][E1 pos][E1 attr][E2 bombId]
+  OnBombKickThrowRes: 154, // CGameSession::OnBombKickThrow [E1 slot][E2 bombId][E1 pos]
+  OnMovableBoxMoveRes: 155, // CGameSession::OnMovableBoxMove [E1×4 relay]
+  OnRequestEatItemRes: 156, // CGameSession::OnRequestEatItem [E1 slot][E1 box][E1 item](+lucci [E1 n])
+  OnRequestEatObstacleRes: 157, // CGameSession::OnRequestEatObstacle [E1 slot][E1 pos]
+  OnEffectRes: 160, // CGameSession::OnSetEffect [buffer relay]
+  OnBomberEvent: 159, // CGameSession::OnSetBomberEvent/OnBomberDie relay
+  OnDropObstacleRes: 161, // CGameSession::OnDropObstacle [E1 a][E1 pos]
+  OnGhostGenerate: 166, // CGameSession::OnRequestGenerateGhost [E1 ghost][E1 slot|0x80][E1 tag]
+  OnGhostDestroy: 167, // OnRequestDestroyGhost/DealWithGhostOfLeavingPlayer [E1 ghost]
+  OnDestroyBoxRes: 165, // CGameSession::OnDestroyBox [E1×3 relay]
+  OnRequestAirplaneRes: 171, // CGameSession::OnRequestAirplane [E4 t][E1 n][n×(E1×4)]
+  OnLapInfoRes: 170, // CGameSession::OnLapInfo [E1 n][8×(E1 place][E1 laps)]
+  OnItemThrowRes: 172, // CGameSession::OnItemThrow [E1×6 relay]
+  OnObjCreate: 174, // CSyncGameObjMan::OnReqCreateObj [E2 id][E1 slot][E2 type][EBuffer 20]
+  OnObjInitial: 175, // CSyncGameObjMan::SetInitialObjNo [E2 id][E1 slot]
+  OnObjDestroy: 176, // OnReqDestroyObj/OnPlayerLeave [E2 id][E4 crc]
+  OnReqEatBulaRes: 177, // CGameSession::OnReqEatBula [E1 n][n×(E1 x][E1 y][E1 slot)]
+  OnReqTakeHouseRes: 178, // CGameSession::OnReqTakeHouse [E1 slot][E1 n]…
+  OnSetBombTimerRes: 152, // CGameSession::Update tick [E1 n][n×(E2 bombId)(E1 kick)]
+  OnReturnPrepareStage: 164, // CGameSession::DoReturnPrepareStage [E1 0]
+  OnGameResult: 163, // CGameSession::SendGameResult (the results unit)
+  OnNeedStartGame: 121, // CGameSession::DeferBanChief [E1 0/1/2/3][E2 seconds]
+  OnUdpLossBan: 195, // asm-only site in Update: empty body + stage=4 (UDP-loss kick)
+  OnAirplaneItemProb: 173, // CGameSession::SendAirplaneItemProb [E1 prob]
+  OnHackingKick: 196, // CGameSession::OnHackingSuspected [E1 slot]
+} as const;
+
+/**
+ * Ctor-verified send ids of the in-play strategies (FxServer.exe.c
+ * CSendPacket/InitPacket audit) — the strategy unit implements these; they are
+ * listed here so the namespace stays enumerable in one place.  Each entry is
+ * the enclosing (official) handler name of the construction site.
+ */
+export const GS_INPLAY_SendInventory = {
+  OnBombIgnite: 153, // CGameSession::OnBombIgnite (InitPacket)
+  OnBomberDie: 159, // CGameSession::OnBomberDie
+  OnSetEffect: 160, // CGameSession::OnSetEffect
+  OnDropObstacle: 161, // CGameSession::OnDropObstacle
+  OnDestroyBox: 165, // CGameSession::OnDestroyBox
+  OnLapInfo: 170, // CGameSession::OnLapInfo
+  OnRequestAirplane: 171, // CGameSession::OnRequestAirplane
+  OnReqCreateObj: 174, // CSyncGameObjMan::OnReqCreateObj
+  OnChangeAILevel: 111, // CPracticeSession::MakeChangeAILevelPacket (InitPacket)
+  OnGuildSessionInfo: 88, // CGuildSessionStrategy::EncodeGuildSessionInfo (InitPacket)
+  OnPracticeSessionCreated: 89, // CGameSessionTable::DoCreatePracticeSession (3 sites)
+} as const;
+
 export const MONITOR_ReceivedPacket = {
   OnRequestCurrentUserStat: 1,
   OnRequestSvrState: 2,
@@ -114,6 +245,20 @@ export const LS_SendPacket = {
   OnChannelState: 13, // CChannelCache::MakeStatePacket
   OnEstimateRTTRes: 20,
   OnRequestDestoryServiceRes: 60,
+} as const;
+
+/** The CSendPacket-side LS table — ids the login server initiates itself
+ * (CxLogin.exe.c LS_ClientSend; the response ids above live in LS_SendPacket). */
+/** LS → client packet ids that have no matching request id. */
+export const LS_ClientSend = {
+  OnChannelInfo: 10, // CChannelCache::MakeInfoPacket
+  OnChannelsGameState: 14, // CCenterProcess::MakeChannelsGameStatePacket
+  OnChannelsExtraInfo: 11, // CCenterProcess::MakeChannelsExtraInfoPacket
+  OnChannelState: 13, // CChannelCache::MakeStatePacket
+  OnSvrReservedMsg: 16, // CCenterProcess::OnSvrReservedMsg
+  OnAdminNotifyMsg: 26,
+  OnWhisper: 27, // CCenterProcess::OnWhisper (CxLogin.exe.c:5058) — relay to the target's socket [EStr][EStr][EStr][EStr][EStr][E4][E4][E4]; no caller in CxCenter.exe.c (arrives via the S2S vtbl)
+  OnSystemMsg: 30,
 } as const;
 
 // Util server client dispatch (CxUtil.exe.c: CMainPool::OnPacket 21528)
@@ -182,10 +327,12 @@ export const SC_SendPacket = {
   OnReqPurchaseRes: 206, // CMainPool::OnRequestCharge — [E1 attr][E4 sn][E4 cash]
   OnPreInventory: 207, // [E1 n][n×(nothing)] — CUser::MakePreInventoryPacket is empty
   OnUseCouponRes: 208, // CMainPool::OnRequestUseCoupon — [E1 code]
+  OnDigiQAuthenRes: 209, // CBillingProcess::OnDigiQAuthen — [E1 12][E4][E4] then RequestRemainCashTw | [E1 13][EStr msg] (billing stub path)
   OnTranxData: 211, // CMainPool::OnRequestTranxData
   OnPackageMap: 213, // CItemMan cached packet (UpdatePackageMapPacket)
   OnCartList: 214, // CMainPool::OnRequestCartList
   OnShopSvrInfo: 212, // CCenterProcess::MakeShopInfoPacket — [E4 n][n×(E4 ip, E2 port)]
+  OnPurchaseCartListRes: 215, // CMainPool::PurchaseCartList tail — [E1 9][E1 0][EBuffer 8 variant time] to the user's socket
 } as const;
 
 // The shop ↔ digicell billing link (CBillingSocketTw).  Request ids encode the

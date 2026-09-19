@@ -49,6 +49,7 @@ export const MC_ReceivedPacket = {
   OnSetAuthenCode: 9, // CShopServer::OnSetAuthenCode
   OnSystemMsg: 10,
   OnSystemCmd: 11,
+  OnDestructCenterSvr: 100, // CxCenter.exe.c:15315 CLoginServer::OnPacket — LS shutdown notice → CGlobalUserTable::GetUser(-1) + SetFree
   OnLocalServerState: 4, // CGameServer::OnPacket → OnAdminNotifyMsg(4); state via LS handler
 } as const;
 
