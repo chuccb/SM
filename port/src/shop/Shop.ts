@@ -1571,34 +1571,20 @@ export class CCenterProcess {
     CxShop.ms_pInstance!.m_nFXAttr = attr;
   }
 
-  /** CCenterProcess::OnUpdateTable — CM 14 [E1 table]: reload one of the five
-   *  item tables (and its cached packet). */
-  OnUpdateTable(n: CReceivedPacket): void {
-    const table = n.Decode1();
+  /**
+   * CCenterProcess::OnItemDBInit — CM 14 (FxShop.exe.c:4365): the packet has
+   * NO body (the center's CLocalServerMan::OnSystemCmd sends a bare
+   * CSendPacket(14) for "UpdateFxItem") and reloads ALL five tables in the
+   * decompiled order; return values are ignored.
+   */
+  OnUpdateTable(_n: CReceivedPacket): void {
     const itemMan = CItemMan.ms_pInstance!;
     const db = this.db;
-    switch (table) {
-      case 0:
-        itemMan.UpdateUserItemTable(db);
-        break;
-      case 1:
-        itemMan.UpdateShopItemTable(db);
-        break;
-      case 2:
-        itemMan.UpdateStringTable(db);
-        break;
-      case 3:
-        itemMan.UpdateCouponMapTable(db);
-        break;
-      case 4:
-        itemMan.UpdatePackageMapTable(db);
-        break;
-      case 5:
-        itemMan.UpdateBonusMapTable(db);
-        break;
-      default:
-        break;
-    }
+    itemMan.UpdateUserItemTable(db);
+    itemMan.UpdateStringTable(db);
+    itemMan.UpdateShopItemTable(db);
+    itemMan.UpdateCouponMapTable(db);
+    itemMan.UpdatePackageMapTable(db);
   }
 }
 

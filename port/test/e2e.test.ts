@@ -7,6 +7,9 @@ import { CServerConfig } from "../src/core/Config.ts";
 import { CxCenter } from "../src/center/Center.ts";
 import { main as loginMain } from "../src/login/Login.ts";
 import { CRC32, main as gameMain } from "../src/gameserver/GameServer.ts";
+import { CLocalSocket } from "../src/lib/CenterLink.ts";
+import { SVRCLASS_UTIL, MC_ReceivedPacket } from "../src/lib/S2S.ts";
+import { CSendPacket } from "../src/core/Packet.ts";
 import { SimpleStreamEncrypt3, SimpleStreamDecrypt3 } from "../src/core/StreamCipher.ts";
 import { mkdirSync, rmSync } from "node:fs";
 import { inflateSync } from "node:zlib";
@@ -867,6 +870,43 @@ describe("game server room flow (FXGS)", () => {
     expect(rstr(p27)).toBe("tester03 : go go");
   });
 
+describe("admin broadcast chain (util tool → center → GS client)", () => {
+  // CChatPool::SendAll fans over the CChannelPool — the entry-flow client
+  // below is its live member.
+  const util = new CLocalSocket({ onPacket: () => {} });
+
+  test("the fake util attaches as server class 99", async () => {
+    await util.ConnectToCenter("127.0.0.1", 12828, SVRCLASS_UTIL, 0, 5, 3);
+    for (let i = 0; i < 200 && !center.GetSvr(SVRCLASS_UTIL, 0)?.socket; i++) await Bun.sleep(5);
+    expect(center.GetSvr(SVRCLASS_UTIL, 0)?.socket).toBeTruthy();
+  });
+
+  test("tool 25 (MC 4) → CM 8 → the GS client sees 26 [EStr]", async () => {
+    const p = new CSendPacket(MC_ReceivedPacket.OnAdminNotifyMsg);
+    p.EncodeStr("admin says hi");
+    util.SendToCenter(p);
+    const got = await entryGsClient!.recv(26);
+    expect(rstr(got)).toBe("admin says hi");
+  });
+
+  test("tool 31 (MC 10) → CM 13 → the GS client sees 30 [EStr]", async () => {
+    const p = new CSendPacket(MC_ReceivedPacket.OnSystemMsg);
+    p.EncodeStr("system says");
+    util.SendToCenter(p);
+    const got = await entryGsClient!.recv(30);
+    expect(rstr(got)).toBe("system says");
+  });
+
+  test("tool 26 (MC 5, type 10) → CM 8 → the GS client sees 26", async () => {
+    const p = new CSendPacket(MC_ReceivedPacket.OnAdminNotifyGameServerMsg);
+    p.Encode1(10);
+    p.EncodeStr("gs-only says");
+    util.SendToCenter(p);
+    const got = await entryGsClient!.recv(26);
+    expect(rstr(got)).toBe("gs-only says");
+  });
+});
+
   test("start game (106) → 115 (can) + 116 (launch) with both slots", async () => {
     const chief = roomChief!;
     const member = roomMember!;
@@ -1009,5 +1049,3 @@ describe("game server room flow (FXGS)", () => {
     expect(r4(p87)).toBeGreaterThan(0);
   });
 });
-
-
