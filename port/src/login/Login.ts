@@ -109,20 +109,20 @@ export class CUser {
     return this.nGlobalSerialNo;
   }
 
-  SetGlobalSerialNo(a2: number): void {
-    this.nGlobalSerialNo = a2 >>> 0;
+  SetGlobalSerialNo(serial: number): void {
+    this.nGlobalSerialNo = serial >>> 0;
   }
 
-  SetGuildSerialNo(a2: number): void {
-    this.nGuildSerialNo = a2;
+  SetGuildSerialNo(serial: number): void {
+    this.nGuildSerialNo = serial;
   }
 
   GetPremiumTicket(): number {
     return this.nPremiumTicket;
   }
 
-  SetPremiumTicket(a2: number): void {
-    this.nPremiumTicket = a2;
+  SetPremiumTicket(ticket: number): void {
+    this.nPremiumTicket = ticket;
   }
 
   GetSocket(): CClientSocket {
@@ -159,7 +159,7 @@ export class CClientSocket extends CPacketSocket {
     this.m_szLogTag = "LS";
     this.m_fClientLink = true;
     // dword_49F968: the header type comes from the counter's PRE-increment
-    // value (v5 = counter; counter = v5 + 1; SetHeaderType(v5 % 16)) — the
+    // value (read the counter, THEN increment; SetHeaderType(counter % 16)) — the
     // first client connection gets header type 0.
     this.SetHeaderType(CClientSocket.ms_nHeaderTypeCounter % 16);
     CClientSocket.ms_nHeaderTypeCounter++;
@@ -171,8 +171,8 @@ export class CClientSocket extends CPacketSocket {
   }
 
   /** CClientSocket::GetSocketFromLocalSerialNo */
-  static GetSocketFromLocalSerialNo(a1: number): CClientSocket | null {
-    return CClientSocket.ms_tblSN2Obj.get(a1) ?? null;
+  static GetSocketFromLocalSerialNo(serialNo: number): CClientSocket | null {
+    return CClientSocket.ms_tblSN2Obj.get(serialNo) ?? null;
   }
 
   /** CClientSocket::GetLocalSerialNo */
@@ -181,8 +181,8 @@ export class CClientSocket extends CPacketSocket {
   }
 
   /** CClientSocket::SetGameRoomCode */
-  SetGameRoomCode(a2: number): void {
-    this.m_nGameRoomCode = a2;
+  SetGameRoomCode(code: number): void {
+    this.m_nGameRoomCode = code;
   }
 
   GetGameRoomCode(): number {
@@ -190,8 +190,8 @@ export class CClientSocket extends CPacketSocket {
   }
 
   /** CClientSocket::SetMachineId */
-  SetMachineId(a2: Uint8Array): void {
-    this.m_machineId.set(a2.subarray(0, 16));
+  SetMachineId(machineId: Uint8Array): void {
+    this.m_machineId.set(machineId.subarray(0, 16));
   }
 
   GetMachineId(): Uint8Array {
@@ -199,14 +199,14 @@ export class CClientSocket extends CPacketSocket {
   }
 
   /** CClientSocket::AddNewUsers */
-  AddNewUsers(a2: number): void {
+  AddNewUsers(count: number): void {
     this.m_apUser = [];
-    for (let i = 0; i < a2; i++) this.m_apUser.push(new CUser(this));
-    this.m_nUserCount = a2;
+    for (let i = 0; i < count; i++) this.m_apUser.push(new CUser(this));
+    this.m_nUserCount = count;
   }
 
-  GetUser(a2: number): CUser | null {
-    return this.m_apUser[a2] ?? null;
+  GetUser(i: number): CUser | null {
+    return this.m_apUser[i] ?? null;
   }
 
   GetUserCount(): number {
@@ -352,9 +352,9 @@ export class CLoginPool {
     const timer = setInterval(() => {
       if (n % 9000 === 0) center.UpdateLevelLimit();
       if (nAdv % 150 === 0) {
-        const v5 = nAdv % 4500;
+        const advCycle = nAdv % 4500;
         nAdv++;
-        center.UpdateAdvertisement(v5 === 0 ? 1 : 0);
+        center.UpdateAdvertisement(advCycle === 0 ? 1 : 0);
       }
       if (n % 3000 === 0) center.UpdateGuildServerList();
       if (n % 9999 === 0) center.UpdateFxMessage();
@@ -373,9 +373,9 @@ export class CLoginPool {
   /** CUserPool::OnEstimateRTT (CxLogin.exe.c:23317) */
   OnEstimateRTT(n: CReceivedPacket, socket: CClientSocket): void {
     const packet = new CSendPacket(LS_SendPacket.OnEstimateRTTRes, CipherDegree.kPacketEncryptedCRC8);
-    const v3 = n.Decode4();
+    const rttValue = n.Decode4(); // the client's stamp, echoed verbatim
     const time = Date.now() & 0x7fffffff;
-    packet.Encode4(v3);
+    packet.Encode4(rttValue);
     packet.Encode4(time);
     socket.m_dwLastRTT = time;
     socket.SendPacket(packet);
@@ -428,10 +428,10 @@ export class CLoginPool {
   /** CLoginPool::OnAskMultiServer (CxLogin.exe.c:14561) */
   OnAskMultiServer(n: CReceivedPacket, socket: CClientSocket): void {
     const hashValue = this.m_multiServer.GetHashValue();
-    const v4 = n.Decode4();
-    const v5 = this.m_multiServer.m_nVersion;
-    const fHashMismatch = v4 !== hashValue ? 1 : 0;
-    const fVersionMismatch = n.Decode4() !== v5 ? 1 : 0;
+    const clientHash = n.Decode4();
+    const serverVersion = this.m_multiServer.m_nVersion; // CMultiServer+72
+    const fHashMismatch = clientHash !== hashValue ? 1 : 0;
+    const fVersionMismatch = n.Decode4() !== serverVersion ? 1 : 0;
     socket.SendPacket(this.m_multiServer.GetInfoPacket(fHashMismatch, fVersionMismatch));
   }
 
@@ -457,22 +457,22 @@ export class CLoginPool {
     for (const u of socket.m_apUser) if (u) this.DelUser(u);
     socket.ClearAttachedUsers();
     socket.AddNewUsers(inited);
-    let v3 = 0;
+    let userIdx = 0;
     if (inited > 0) {
       do {
-        const user = socket.GetUser(v3)!;
+        const user = socket.GetUser(userIdx)!;
         const id = n.DecodeEncryptedStr(0x11223344);
         const pw = n.DecodeEncryptedStr(0x44332211);
         inited = CDBMan_InitUser(this.m_db, user, id, pw);
         if (inited !== 0) break;
-        v3++;
-      } while (v3 < count);
+        userIdx++;
+      } while (userIdx < count);
     }
     socket.m_nDeleteUserSN = n.Decode4();
     if (inited !== 0) {
       const packet = new CSendPacket(LS_SendPacket.OnLoginRes, CipherDegree.kPacketEncryptedCRC8);
       packet.Encode1(inited >= 2 && inited <= 3 ? 1 : 3);
-      packet.Encode1(v3);
+      packet.Encode1(userIdx);
       socket.SendPacket(packet);
     } else {
       this.m_center.RegisterConnection(socket);
@@ -482,9 +482,9 @@ export class CLoginPool {
   /** CLoginPool::OnNewUserConfirmId (CxLogin.exe.c:14900) */
   OnNewUserConfirmId(n: CReceivedPacket, socket: CClientSocket): void {
     const id = n.DecodeStr();
-    const v3 = this.m_db.prConfirmUnregisteredId(id);
+    const confirmResult = this.m_db.prConfirmUnregisteredId(id);
     const packet = new CSendPacket(LS_SendPacket.OnNewUserConfirmIdRes, CipherDegree.kPacketEncryptedCRC8);
-    packet.Encode1(v3);
+    packet.Encode1(confirmResult);
     socket.SendPacket(packet);
   }
 
@@ -512,7 +512,7 @@ export class CLoginPool {
     const tel = n.DecodeStr();
     const profile = n.DecodeStr();
     const reveal = n.Decode1();
-    const v6 = CDBMan_RegisterNewUser(
+    const regResult = CDBMan_RegisterNewUser(
       this.m_db,
       strId,
       strPassword,
@@ -530,7 +530,7 @@ export class CLoginPool {
       birthday,
     );
     const packet = new CSendPacket(LS_SendPacket.OnNewUserRes, CipherDegree.kPacketEncryptedCRC8);
-    packet.Encode1(v6);
+    packet.Encode1(regResult);
     socket.SendPacket(packet);
   }
 
@@ -545,8 +545,8 @@ export class CLoginPool {
     const nServerType = n.Decode1();
     const nSvrIdx = n.Decode4();
     const nVersion = n.Decode2();
-    const v10 = this.m_center.CheckEnterGame(nServerType, nSvrIdx, nVersion);
-    if (v10 === 1) {
+    const gate = this.m_center.CheckEnterGame(nServerType, nSvrIdx, nVersion);
+    if (gate === 1) {
       const userCount = socket.GetUserCount();
       const packet = new CSendPacket(MC_ReceivedPacket.OnReqConnectToSvr); // MC
       packet.Encode1(userCount);
@@ -556,7 +556,7 @@ export class CLoginPool {
       this.m_center.SendPacketToCenter(packet);
     } else {
       const packet = new CSendPacket(LS_SendPacket.OnReqConnectToSvrRes, CipherDegree.kPacketEncryptedCRC8);
-      packet.Encode1(v10);
+      packet.Encode1(gate);
       socket.SendPacket(packet);
     }
   }
@@ -583,8 +583,8 @@ export class CLoginPool {
       socket.Close();
       return;
     }
-    const v6 = n.Decode4() === this.m_channelCache.GetHashValue();
-    const infoPacket = this.m_channelCache.GetInfoPacket(v6 ? 0 : 1);
+    const fHashMatch = n.Decode4() === this.m_channelCache.GetHashValue();
+    const infoPacket = this.m_channelCache.GetInfoPacket(fHashMatch ? 0 : 1);
     socket.SendPacket(infoPacket);
     socket.SendPacket(this.m_channelCache.GetStatePacket());
     const p14 = new CSendPacket(LS_ClientSend.OnChannelsGameState, CipherDegree.kPacketEncryptedCRC8);
@@ -599,11 +599,11 @@ export class CLoginPool {
   OnRequestDestoryService(n: CReceivedPacket, socket: CClientSocket): void {
     if (socket.m_nHeaderType === n.Decode4()) {
       const packet = new CSendPacket(LS_SendPacket.OnRequestDestoryServiceRes, CipherDegree.kPacketEncryptedCRC8);
-      const v3 = Math.floor(Math.random() * 0x8000) & 3;
+      const roomCode = Math.floor(Math.random() * 0x8000) & 3;
       packet.Encode4(socket.GetLocalSerialNo());
-      packet.Encode4(v3);
+      packet.Encode4(roomCode);
       socket.SendPacket(packet);
-      socket.SetGameRoomCode(v3);
+      socket.SetGameRoomCode(roomCode);
     } else {
       socket.Close();
     }
@@ -617,13 +617,13 @@ export class CLoginPool {
     const count = n.Decode1();
     const sns: number[] = [];
     const authencodes: number[] = [];
-    let v33 = 1; // fAllSimpleInfo
+    let fAllSimpleInfo = 1; // cleared when any authencode is the 2 (simple-info) form
     for (let i = 0; i < count; i++) {
       sns.push(n.Decode4());
       if (fAllAdded !== 0) {
-        const v7 = n.Decode1();
-        authencodes.push(v7);
-        if (v7 === 2) v33 = 0;
+        const authencode = n.Decode1();
+        authencodes.push(authencode);
+        if (authencode === 2) fAllSimpleInfo = 0;
       } else {
         authencodes.push(0);
       }
@@ -632,19 +632,19 @@ export class CLoginPool {
       if (fAllAdded !== 0) for (const sn of sns) this.m_center.UnregisterConnection(sn);
       return;
     }
-    let j = 1; // all users found in the pool
+    let fAllFound = 1; // all users still seated on the socket and in the pool
     const users: (CUser | null)[] = [];
-    for (let v9 = 0; v9 < count; v9++) {
-      const user = socket.GetUser(v9);
+    for (let i = 0; i < count; i++) {
+      const user = socket.GetUser(i);
       users.push(user);
       if (user !== null && this.FindUser(user)) {
         if (fAllAdded !== 0) {
-          user.SetGlobalSerialNo(sns[v9]!);
+          user.SetGlobalSerialNo(sns[i]!);
           this.m_localUserTable.Insert(user);
           console.log(`User login(${user.GetName()})`);
         }
       } else {
-        j = 0;
+        fAllFound = 0;
       }
     }
     if (fAllAdded === 0) {
@@ -653,7 +653,7 @@ export class CLoginPool {
       socket.SendPacket(packet);
       return;
     }
-    if (j === 0) {
+    if (fAllFound === 0) {
       for (const sn of sns) this.m_center.UnregisterConnection(sn);
       socket.Close();
       return;
@@ -662,27 +662,27 @@ export class CLoginPool {
     let strDes = count <= 1 ? STR_ALREADY_PLAYING : STR_PC;
     const packet = new CSendPacket(LS_SendPacket.OnLoginRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(0);
-    packet.Encode2(v33 !== 0 ? 1 : 0);
+    packet.Encode2(fAllSimpleInfo !== 0 ? 1 : 0);
     packet.EncodeStr(strDes);
     packet.Encode1(count);
-    for (let v3 = 0; v3 < count; v3++) {
-      const v21 = users[v3]!;
-      packet.Encode4(sns[v3]!);
-      packet.EncodeStr(v21.strId);
+    for (let i = 0; i < count; i++) {
+      const user = users[i]!;
+      packet.Encode4(sns[i]!);
+      packet.EncodeStr(user.strId);
       packet.Encode1(0); // LOBYTE of the never-initialized _USERACCOUNT int (UA+76)
       packet.Encode2(0);
       packet.Encode1(1);
       packet.Encode1(10);
-      packet.Encode2(CDynInfoCalculator_GetLevel(v21.nFxexp));
-      packet.Encode4(v21.nFxMoney);
-      packet.Encode4(v21.nGuildSerialNo);
+      packet.Encode2(CDynInfoCalculator_GetLevel(user.nFxexp));
+      packet.Encode4(user.nFxMoney);
+      packet.Encode4(user.nGuildSerialNo);
       packet.Encode1(0);
-      packet.EncodeStr(v21.strEmail);
+      packet.EncodeStr(user.strEmail);
       // CUser::CheckVajinishi — the SSN-based adult/gender flags
-      const [adult, gender] = CheckVajinishi(v21.strSSN1, v21.strSSN2);
+      const [adult, gender] = CheckVajinishi(user.strSSN1, user.strSSN2);
       packet.Encode1(adult);
       packet.Encode1(gender);
-      packet.Encode4(authencodes[v3]!);
+      packet.Encode4(authencodes[i]!);
     }
     packet.EncodeStr(""); // dst — zero-initialized buffer
     socket.SendPacket(packet);
@@ -699,13 +699,13 @@ export class CLoginPool {
  */
 export function CheckVajinishi(ssn1: string, ssn2: string): [number, number] {
   if (ssn1.length === 0 || ssn2.length === 0) return [2, 2];
-  const v24 = ssn2.charCodeAt(0) - 48;
-  if (v24 > 4 || v24 <= 0) return [2, 2];
+  const genderDigit = ssn2.charCodeAt(0) - 48;
+  if (genderDigit > 4 || genderDigit <= 0) return [2, 2];
   const now = new Date();
-  const v23 = now.getDate() + 100 * (now.getMonth() + 1 + 100 * now.getFullYear()); // GetLocalTime
-  const v25 = 10000 * (v24 <= 2 ? 1918 : 2018) + Number.parseInt(ssn1.slice(0, 6), 10);
-  const adult = v23 - v25 < 0 ? 1 : 0;
-  const gender = (v24 & 1) === 1 ? 1 : 0;
+  const todayPacked = now.getDate() + 100 * (now.getMonth() + 1 + 100 * now.getFullYear()); // GetLocalTime yyyymmdd
+  const birthPacked = 10000 * (genderDigit <= 2 ? 1918 : 2018) + Number.parseInt(ssn1.slice(0, 6), 10);
+  const adult = todayPacked - birthPacked < 0 ? 1 : 0;
+  const gender = (genderDigit & 1) === 1 ? 1 : 0;
   return [adult, gender];
 }
 
@@ -925,17 +925,17 @@ export class CCenterProcess {
 
   /** CCenterProcess::GetLevelLimit (CxLogin.exe.c:2436) */
   GetLevelLimit(nType: number): number {
-    const v3 = this.m_anSvrType[nType] ?? 0;
-    if ((v3 !== 1 && v3 !== 99) || !this.m_db) return 0;
-    return v3 === 1 ? this.m_nLevelLimitMax : this.m_nLevelLimitMin;
+    const svrType = this.m_anSvrType[nType] ?? 0;
+    if ((svrType !== 1 && svrType !== 99) || !this.m_db) return 0;
+    return svrType === 1 ? this.m_nLevelLimitMax : this.m_nLevelLimitMin;
   }
 
   /** CCenterProcess::OnLocalServerInfo (CxLogin.exe.c:5520) — center p3. */
   OnLocalServerInfo(n: CReceivedPacket): void {
     this.UpdateLevelLimit();
-    const v5 = n.Decode4();
-    this.m_nChannelNo = v5;
-    this.m_pChannelCache.SetChannelNo(v5);
+    const channelNo = n.Decode4();
+    this.m_nChannelNo = channelNo;
+    this.m_pChannelCache.SetChannelNo(channelNo);
     this.m_anSvrType = [];
     this.m_anChannelMaxUser = [];
     this.m_anFieldB = [];
@@ -962,22 +962,22 @@ export class CCenterProcess {
 
   /** CCenterProcess::OnLocalServerState (CxLogin.exe.c:2389) — center p4. */
   OnLocalServerState(n: CReceivedPacket): void {
-    const v4 = this.m_nChannelNo;
-    if (v4 !== n.Decode4()) return;
+    const channelNo = this.m_nChannelNo;
+    if (channelNo !== n.Decode4()) return;
     this.m_anConnNo = [];
-    for (let v5 = 0; v5 < v4; v5++) {
-      const v7 = n.Decode4();
-      this.m_anConnNo.push(v7);
-      this.m_pChannelCache.SetChannelInfo(v5, v7);
+    for (let i = 0; i < channelNo; i++) {
+      const connNo = n.Decode4();
+      this.m_anConnNo.push(connNo);
+      this.m_pChannelCache.SetChannelInfo(i, connNo);
     }
     this.m_pChannelCache.MakeStatePacket();
   }
 
   /** CCenterProcess::OnLocalGameState (CxLogin.exe.c:5820) — center p5. */
   OnLocalGameState(n: CReceivedPacket): void {
-    const v5 = n.Decode1();
+    const count = n.Decode1();
     this.m_vtGameState = [];
-    for (let i = 0; i < v5; i++) {
+    for (let i = 0; i < count; i++) {
       const type = n.Decode1();
       this.m_vtGameState.push(type);
       this.m_mapGameState.set(type, n.Decode1());
@@ -987,43 +987,43 @@ export class CCenterProcess {
   }
 
   /** CCenterProcess::MakeChannelsGameStatePacket (CxLogin.exe.c:5925) — client p14. */
-  MakeChannelsGameStatePacket(a2: CSendPacket): void {
-    a2.InitPacket(LS_ClientSend.OnChannelsGameState);
-    a2.Encode1(this.m_vtGameState.length);
+  MakeChannelsGameStatePacket(packet: CSendPacket): void {
+    packet.InitPacket(LS_ClientSend.OnChannelsGameState);
+    packet.Encode1(this.m_vtGameState.length);
     for (const type of this.m_vtGameState) {
-      a2.Encode1(type);
-      a2.Encode1(this.m_mapGameState.get(type) ?? 0);
-      a2.Encode2(this.m_mapGameVersion.get(type) ?? 0);
-      a2.Encode2(this.m_mapClientVersion.get(type) ?? 0);
+      packet.Encode1(type);
+      packet.Encode1(this.m_mapGameState.get(type) ?? 0);
+      packet.Encode2(this.m_mapGameVersion.get(type) ?? 0);
+      packet.Encode2(this.m_mapClientVersion.get(type) ?? 0);
     }
   }
 
   /** CCenterProcess::MakeChannelsExtraInfoPacket (CxLogin.exe.c:6414) — client p11. */
-  MakeChannelsExtraInfoPacket(a2: CSendPacket): void {
-    a2.InitPacket(LS_ClientSend.OnChannelsExtraInfo);
+  MakeChannelsExtraInfoPacket(packet: CSendPacket): void {
+    packet.InitPacket(LS_ClientSend.OnChannelsExtraInfo);
     // rotating advertisement: [EStr strImage][E2 Param1][E2 Param2][E2 60]
     const adv = this.GetAdvertisement();
-    a2.EncodeStr(adv.strImage);
-    a2.Encode2(adv.Param1 & 0xffff);
-    a2.Encode2(adv.Param2 & 0xffff);
-    a2.Encode2(60);
-    // guild server list: at most 2 entries, window start rotates per call
-    const v6 = this.m_vtGuildSvrList.length;
-    let v8 = 0;
-    if (v6 > 2) {
-      a2.Encode1(2);
-      v8 = this.m_nGuildSvrCursor % (v6 - 2);
+    packet.EncodeStr(adv.strImage);
+    packet.Encode2(adv.Param1 & 0xffff);
+    packet.Encode2(adv.Param2 & 0xffff);
+    packet.Encode2(60);
+    // guild server list: at most 2 entries, the window start rotates per call
+    const guildCount = this.m_vtGuildSvrList.length;
+    let guildStart = 0;
+    if (guildCount > 2) {
+      packet.Encode1(2);
+      guildStart = this.m_nGuildSvrCursor % (guildCount - 2);
     } else {
       this.m_nGuildSvrCursor = 0;
-      a2.Encode1(v6);
+      packet.Encode1(guildCount);
     }
-    let v5 = 0;
-    for (let i = v8; i < v6 && v5 < 2; i++, v5++) {
+    let guildSent = 0;
+    for (let i = guildStart; i < guildCount && guildSent < 2; i++, guildSent++) {
       const gs = this.m_vtGuildSvrList[i]!;
-      a2.Encode4(inet_addr(gs.strIp));
-      a2.Encode2(gs.nPort);
+      packet.Encode4(inet_addr(gs.strIp));
+      packet.Encode2(gs.nPort);
     }
-    if (v6 > 2) this.m_nGuildSvrCursor++;
+    if (guildCount > 2) this.m_nGuildSvrCursor++;
     // NDA list: at most 2, round-robin cursor
     if (this.m_nNdaIps.length === 0) {
       const ndaCfg = this.m_cfg ?? CServerConfig.ms_pInstance;
@@ -1031,11 +1031,11 @@ export class CCenterProcess {
       for (let i = 0; i < ndaNumber; i++) this.m_nNdaIps.push(inet_addr(ndaCfg.GetAttribute(`NDAIP${i}`)));
     }
     {
-      const v14 = this.m_nNdaIps.length;
-      const v47 = v14 < 2 ? v14 : 2;
-      a2.Encode1(v47);
-      for (let j = v47; j !== 0; j--) {
-        a2.Encode4(this.m_nNdaIps[this.m_nNdaCursor]!);
+      const ndaCount = this.m_nNdaIps.length;
+      const ndaMax = ndaCount < 2 ? ndaCount : 2;
+      packet.Encode1(ndaMax);
+      for (let j = ndaMax; j !== 0; j--) {
+        packet.Encode4(this.m_nNdaIps[this.m_nNdaCursor]!);
         this.m_nNdaCursor = (this.m_nNdaCursor + 1) % this.m_nNdaIps.length;
       }
     }
@@ -1045,24 +1045,24 @@ export class CCenterProcess {
       const relayNumber = relayCfg.GetNumAttribute("RelayNumber");
       for (let i = 0; i < relayNumber; i++) this.m_nRelayIps.push(inet_addr(relayCfg.GetAttribute(`RelayIP${i}`)));
     }
-    a2.Encode1(this.m_nRelayIps.length);
-    for (const ip of this.m_nRelayIps) a2.Encode4(ip);
+    packet.Encode1(this.m_nRelayIps.length);
+    for (const ip of this.m_nRelayIps) packet.Encode4(ip);
     // fx messages: [E2 count][count×(E1 0, E1 attr, EStr message)]
-    a2.Encode2(this.m_vtFxMessage.length);
+    packet.Encode2(this.m_vtFxMessage.length);
     for (const m of this.m_vtFxMessage) {
-      a2.Encode1(0);
-      a2.Encode1(m.nAttr);
-      a2.EncodeStr(m.strMessage);
+      packet.Encode1(0);
+      packet.Encode1(m.nAttr);
+      packet.EncodeStr(m.strMessage);
     }
     // premium channel map-select reward (FxUserOptions PRECHMAPREWARD)
-    a2.Encode2(this.m_nPreChMapSelReward & 0xffff);
+    packet.Encode2(this.m_nPreChMapSelReward & 0xffff);
     // JUM servers
     const cfg = this.m_cfg ?? CServerConfig.ms_pInstance;
     const jumNumber = cfg.GetNumAttribute("JUMSvrNumber");
-    a2.Encode1(jumNumber);
+    packet.Encode1(jumNumber);
     for (let i = 0; i < jumNumber; i++) {
-      a2.Encode4(inet_addr(cfg.GetAttribute(`JUMSvrIP${i}`)));
-      a2.Encode2(cfg.GetNumAttribute(`JUMSvrPort${i}`));
+      packet.Encode4(inet_addr(cfg.GetAttribute(`JUMSvrIP${i}`)));
+      packet.Encode2(cfg.GetNumAttribute(`JUMSvrPort${i}`));
     }
   }
 
@@ -1073,9 +1073,9 @@ export class CCenterProcess {
     if (this.m_vtSelAdvertisement.length === 0) {
       return { strImage: "", Param1: 0, Param2: 0, Param3: 0, Param4: 0, Param5: 0 };
     }
-    const v5 = this.m_nAdvCursor % this.m_vtSelAdvertisement.length;
+    const idx = this.m_nAdvCursor % this.m_vtSelAdvertisement.length;
     this.m_nAdvCursor++;
-    return this.m_vtSelAdvertisement[v5]!;
+    return this.m_vtSelAdvertisement[idx]!;
   }
 
   /** CCenterProcess::UpdateAdvertisement (CxLogin.exe.c:7742) — aFull
@@ -1096,9 +1096,9 @@ export class CCenterProcess {
     }
     const sel: _Advertisement[] = [];
     for (const ad of this.m_vtAdvertisement) {
-      const v12 = ad.Param4;
-      const v24 = ad.Param5;
-      const visible = v24 < v12 ? v12 <= nowHour || nowHour <= v24 : v12 <= nowHour && nowHour <= v24;
+      const fromHour = ad.Param4;
+      const toHour = ad.Param5;
+      const visible = toHour < fromHour ? fromHour <= nowHour || nowHour <= toHour : fromHour <= nowHour && nowHour <= toHour;
       if (visible) for (let i = 0; i < ad.Param3; i++) sel.push(ad);
     }
     this.m_vtSelAdvertisement = sel;
@@ -1170,29 +1170,30 @@ export class CCenterProcess {
 
   /** CCenterProcess::OnCenterResConnectToSvr (CxLogin.exe.c:14715) — center p1. */
   OnCenterResConnectToSvr(n: CReceivedPacket): void {
-    const v4 = n.Decode1();
+    const count = n.Decode1();
     let user: CUser | null = null;
-    let v5 = 0;
-    if (v4 !== 0) {
+    let checked = 0;
+    if (count !== 0) {
+      // walk the serial list; the LAST resolved user's socket gets the reply
       for (;;) {
-        const v6 = n.Decode4();
-        user = this.m_pLoginPool.m_localUserTable.FindUserFromGlobalSerialNo(v6);
+        const serial = n.Decode4();
+        user = this.m_pLoginPool.m_localUserTable.FindUserFromGlobalSerialNo(serial);
         if (user === null) return;
-        if (++v5 >= v4) break;
+        if (++checked >= count) break;
       }
     }
-    const v8 = n.Decode1();
+    const result = n.Decode1();
     const packet = new CSendPacket(LS_SendPacket.OnReqConnectToSvrRes, CipherDegree.kPacketEncryptedCRC8);
-    packet.Encode1(v8);
-    if (v8 === 1) {
+    packet.Encode1(result);
+    if (result === 1) {
       const svrType = n.Decode1();
-      const v9 = n.Decode4();
-      const v10 = n.Decode4();
-      const v12 = n.Decode2();
+      const svrIdx = n.Decode4();
+      const ip = n.Decode4();
+      const port = n.Decode2();
       packet.Encode1(svrType);
-      packet.Encode4(v9);
-      packet.Encode4(v10);
-      packet.Encode2(v12);
+      packet.Encode4(svrIdx);
+      packet.Encode4(ip);
+      packet.Encode2(port);
     }
     user?.GetSocket().SendPacket(packet);
   }

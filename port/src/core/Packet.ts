@@ -29,9 +29,9 @@ import type { COSmartStream, CISmartStream } from "./SmartStream.ts";
 export const CipherDegree = {
   /** [code][E2 BE len-3][body] — the accept packet, monitor and billing frames. */
   kPacketRaw: 0,
-  /** [code][E2 BE (len-7)^a569][SES3(seq)][E4 crc32] — the billing link. */
+  /** [code][E2 BE (len-7) ^ 0xA569][SES3(seq)][E4 crc32] — the billing link. */
   kPacketEncrypted: 1,
-  /** [code][E2 BE (len-4)^a569][SES3(seq)][E1 crc8] — every client link. */
+  /** [code][E2 BE (len-4) ^ 0xA569][SES3(seq)][E1 crc8] — every client link. */
   kPacketEncryptedCRC8: 2,
 } as const;
 export type CipherDegree = (typeof CipherDegree)[keyof typeof CipherDegree];
@@ -348,16 +348,16 @@ export class CReceivedPacket extends CMemBlock {
     if (this.m_nCipherDegree === CipherDegree.kPacketEncryptedCRC8) {
       const len4 = len - 4;
       if (len4 > 0 && this.Alloc(len4) !== 0) {
-        const v10 = B.Decode1(pBuf, pBufOff + len - 1);
+        const wireCrc = B.Decode1(pBuf, pBufOff + len - 1);
         SimpleStreamDecrypt3(pBuf, pBufOff + 3, this.m_pBlock, 0, len4, dwCrcKey);
         this.m_nPacketType = B.Decrypt1(this.m_pBlock, 0) & 0xff;
         this.m_uLength = len4;
         this.m_uOffset = 0;
         const crc = UpdateCRC8(dwCrcKey & 0xff, this.m_pBlock, 0, len4);
-        if (crc !== v10) {
+        if (crc !== wireCrc) {
           if (!fLiberal) return false;
           console.error(
-            `[CIPHER-COMPAT] checksum mismatch — computed 0x${crc.toString(16)} vs wire 0x${v10.toString(16)} (key=${dwCrcKey}); delivering anyway`,
+            `[CIPHER-COMPAT] checksum mismatch — computed 0x${crc.toString(16)} vs wire 0x${wireCrc.toString(16)} (key=${dwCrcKey}); delivering anyway`,
           );
         }
         return true;
@@ -367,12 +367,12 @@ export class CReceivedPacket extends CMemBlock {
     if (this.m_nCipherDegree === CipherDegree.kPacketEncrypted) {
       const len7 = len - 7;
       if (len7 <= 0 || this.Alloc(len7) === 0) return false;
-      const v13 = B.Decode4(pBuf, pBufOff + len - 4);
+      const wireCrc = B.Decode4(pBuf, pBufOff + len - 4);
       SimpleStreamDecrypt3(pBuf, pBufOff + 3, this.m_pBlock, 0, len7, dwCrcKey);
       this.m_nPacketType = B.Decrypt1(this.m_pBlock, 0) & 0xff;
       this.m_uLength = len7;
       this.m_uOffset = 0;
-      return UpdateCRC32(dwCrcKey >>> 0, this.m_pBlock, 0, len7) === v13;
+      return UpdateCRC32(dwCrcKey >>> 0, this.m_pBlock, 0, len7) === wireCrc;
     }
     return false;
   }

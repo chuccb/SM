@@ -14,8 +14,8 @@ const crc8_table = new Uint8Array(256);
 
 (function GenCRCTable() {
   for (let i = 0; i < 256; i++) {
-    // FxServer.exe.c CCRC32::GenCRCTable: v1 = (i << 25) ^ (i & 0x80 ? poly : 0)
-    // followed by 7 more MSB rounds — i.e. the byte starts in the TOP bits,
+    // FxServer.exe.c CCRC32::GenCRCTable: the byte starts in the TOP bits
+    // ((i << 25) ^ (i & 0x80 ? poly : 0)) then 7 more MSB rounds — i.e.
     // the classic (i << 24) + 8 shift-xor rounds.  Starting from `i` unchecked
     // produced a completely different table (self-consistent, so every port-
     // side round-trip stayed green, but the client compares real CRC values).

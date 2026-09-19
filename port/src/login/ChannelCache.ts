@@ -33,31 +33,32 @@ export class CChannelCache {
   m_packetState = new CSendPacket(LS_ClientSend.OnChannelState, CipherDegree.kPacketEncryptedCRC8);
 
   /** CChannelCache::SetChannelNo */
-  SetChannelNo(a2: number): void {
-    this.m_nChannelNo = a2;
+  SetChannelNo(channelNo: number): void {
+    this.m_nChannelNo = channelNo;
   }
 
   /** CChannelCache::SetChannelInfo(idx, userCount) — the state-packet variant. */
-  SetChannelInfo(a2: number, a3: number): void;
-  /** CChannelCache::SetChannelInfo(idx, name, 0, chNo, levelLimit, type, attr, community, enterable) */
+  SetChannelInfo(idx: number, userCount: number): void;
+  /** CChannelCache::SetChannelInfo(idx, name, userCount, maxUser, levelLimit,
+   *  type, attr, community, enterableType) — the CM3 per-channel columns. */
   SetChannelInfo(
-    a2: number,
-    _M_start: string,
-    a4: number,
-    a5: number,
-    LevelLimit: number,
-    a7: number,
-    a8: number,
-    a9: number,
-    a10: number,
+    idx: number,
+    strName: string,
+    userCount: number,
+    maxUser: number,
+    levelLimit: number,
+    type: number,
+    attr: number,
+    community: number,
+    enterableType: number,
   ): void;
   SetChannelInfo(...args: unknown[]): void {
-    const a2 = args[0] as number;
+    const idx = args[0] as number;
     if (args.length === 2) {
-      this.m_nUserCount[a2] = args[1] as number;
+      this.m_nUserCount[idx] = args[1] as number;
       return;
     }
-    const [_M_start, a4, a5, LevelLimit, a7, a8, a9, a10] = args.slice(1) as [
+    const [strName, userCount, maxUser, levelLimit, type, attr, community, enterableType] = args.slice(1) as [
       string,
       number,
       number,
@@ -67,16 +68,16 @@ export class CChannelCache {
       number,
       number,
     ];
-    this.m_strChannelName[a2] = _M_start;
-    this.m_nUserCount[a2] = a4;
-    // the decompile guards every non-name field on a5 != -1
-    if (a5 !== -1) {
-      this.m_nMaxUser[a2] = a5;
-      this.m_nLevelLimit[a2] = LevelLimit;
-      this.m_nType[a2] = a7;
-      this.m_nBattleType[a2] = a8;
-      this.m_nCommunity[a2] = a9;
-      this.m_nEnterableType[a2] = a10;
+    this.m_strChannelName[idx] = strName;
+    this.m_nUserCount[idx] = userCount;
+    // the original guards every non-name field on maxUser != -1
+    if (maxUser !== -1) {
+      this.m_nMaxUser[idx] = maxUser;
+      this.m_nLevelLimit[idx] = levelLimit;
+      this.m_nType[idx] = type;
+      this.m_nBattleType[idx] = attr;
+      this.m_nCommunity[idx] = community;
+      this.m_nEnterableType[idx] = enterableType;
     }
   }
 
@@ -115,9 +116,9 @@ export class CChannelCache {
     this.m_packetState = state;
   }
 
-  /** CChannelCache::GetInfoPacket(a2) — a2 != 0 → the full variant. */
-  GetInfoPacket(a2: number): CSendPacket {
-    return a2 === 0 ? this.m_packetMatch : this.m_packetFull;
+  /** CChannelCache::GetInfoPacket(fFull) — fFull != 0 → the full variant. */
+  GetInfoPacket(fFull: number): CSendPacket {
+    return fFull === 0 ? this.m_packetMatch : this.m_packetFull;
   }
 
   /** CChannelCache::GetStatePacket */

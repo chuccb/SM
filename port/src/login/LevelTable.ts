@@ -66,14 +66,14 @@ export function CDynInfoCalculator_GetMaxExpInLevel(nLevel: number): number {
 
 /** CDynInfoCalculator::GetLevel — the binary search from CxLogin.exe.c:11524. */
 export function CDynInfoCalculator_GetLevel(nExp: number): number {
-  let v1 = kLevelTableSize;
-  let v2 = 0;
+  let hi = kLevelTableSize;
+  let lo = 0;
   if (kLevelTableSize !== 1) {
     do {
-      const mid = (v1 + v2) >> 1;
-      if (nExp >= g_nLevel2ExpTable[mid]!) v2 = mid;
-      else v1 = mid;
-    } while (v2 + 1 !== v1);
+      const mid = (hi + lo) >> 1;
+      if (nExp >= g_nLevel2ExpTable[mid]!) lo = mid;
+      else hi = mid;
+    } while (lo + 1 !== hi);
   }
-  return v1;
+  return hi;
 }

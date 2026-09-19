@@ -54,28 +54,29 @@ class cUnreliableQueueIn {
   m_nPacketCount = 0; // +12328: packets queued, ever
   m_dwLastTick = 0; // +12332
 
-  /** cUnreliableQueueIn::AddPacket */
-  AddPacket(a2: number, pSrc: Uint8Array, a4: number, a5: number): void {
-    if (pSrc === null || a4 === 0 || a4 > cUnreliableQueueIn.MAX_PACKET) return;
-    if (this.m_nCount + a4 + 2 > cUnreliableQueueIn.CAPACITY) {
-      console.error(`CUnreliableQueueIn::AddPacket - rcv buffer overflow ${a4},${this.m_nCount}`);
+  /** cUnreliableQueueIn::AddPacket (CxLogin.exe.c:26173) — the original's
+   *  second argument is a flag the two call sites pass as literal 0.
+   *  [E4 len][payload] entries; 2 bytes of queue overhead per entry. */
+  AddPacket(_flags: number, pSrc: Uint8Array, len: number, tick: number): void {
+    if (pSrc === null || len === 0 || len > cUnreliableQueueIn.MAX_PACKET) return;
+    if (this.m_nCount + len + 2 > cUnreliableQueueIn.CAPACITY) {
+      console.error(`CUnreliableQueueIn::AddPacket - rcv buffer overflow ${len},${this.m_nCount}`);
       return;
     }
-    const len = a4;
     const at = 36 + this.m_nCount;
     for (let k = 0; k < 4; k++) this.m_anBuf[at + k] = (len >>> (24 - 8 * k)) & 0xff; // Encode4 (BE)
     this.m_anBuf.set(pSrc.subarray(0, len), at + 4);
     this.m_nCount += 4 + len;
     this.m_nPacketCount += 1;
-    this.m_dwLastTick = a5;
+    this.m_dwLastTick = tick;
   }
 
   /** cUnreliableQueueIn::GetPacket — returns the bytes copied (0 = empty). */
-  GetPacket(pDes: Uint8Array, a3: number): number {
+  GetPacket(pDes: Uint8Array, maxSize: number): number {
     if (this.m_nCount === 0) return 0;
     const len =
       ((this.m_anBuf[36]! << 24) | (this.m_anBuf[37]! << 16) | (this.m_anBuf[38]! << 8) | this.m_anBuf[39]!) >>> 0;
-    const n = Math.min(a3, len);
+    const n = Math.min(maxSize, len);
     pDes.set(this.m_anBuf.subarray(40, 40 + n), 0);
     const rest = this.m_nCount - len - 4;
     if (rest > 0) this.m_anBuf.copyWithin(36, 40 + len, 40 + len + rest);
@@ -98,9 +99,9 @@ class cHost {
   m_nUnreliableSendCount = 0; // +12460
   m_queueIn = new cUnreliableQueueIn(); // +120
 
-  constructor(a2: number, a3: number) {
-    this.m_addrIp = a2;
-    this.m_nPort = a3;
+  constructor(ip: number, port: number) {
+    this.m_addrIp = ip;
+    this.m_nPort = port;
   }
 }
 
@@ -186,17 +187,17 @@ export class MTUDPServer {
   }
 
   /** MTUDPBase::HostCreate (27745) */
-  HostCreate(a2: number, a3: number): cHost | null {
-    const host = new cHost(a2, a3);
-    this.m_mpHost.set(ipPortKey(a2, a3), host);
+  HostCreate(ip: number, port: number): cHost | null {
+    const host = new cHost(ip, port);
+    this.m_mpHost.set(ipPortKey(ip, port), host);
     return host;
   }
 
   /** MTUDPBase::GetUnreliableData (26966) — pull one record from the hosts
    *  in map order; fills the HOSTHANDLE of the owning host. */
-  GetUnreliableData(a2: Uint8Array, a3: number): { nLen: number; handle: HOSTHANDLE } | null {
+  GetUnreliableData(buf: Uint8Array, maxSize: number): { nLen: number; handle: HOSTHANDLE } | null {
     for (const host of this.m_mpHost.values()) {
-      const nLen = host.m_queueIn.GetPacket(a2, a3);
+      const nLen = host.m_queueIn.GetPacket(buf, maxSize);
       if (nLen !== 0) return { nLen, handle: { ip: host.m_addrIp, port: host.m_nPort } };
     }
     return null;
@@ -204,20 +205,20 @@ export class MTUDPServer {
 
   /** MTUDPBase::UnreliableSendTo (27157) — [len][payload][crc8] out through
    *  the socket to the registered host. */
-  UnreliableSendTo(a2: Uint8Array, a3: number, a4: number, a5: number): number {
-    const pHost = this.m_mpHost.get(ipPortKey(a4, a5));
+  UnreliableSendTo(buf: Uint8Array, len: number, ip: number, port: number): number {
+    const pHost = this.m_mpHost.get(ipPortKey(ip, port));
     if (pHost === null || pHost === undefined) {
-      console.error(`MTUDPBase::ReliableSendTo - Invalid parameters. ${a4}, ${a5}`);
+      console.error(`MTUDPBase::ReliableSendTo - Invalid parameters. ${ip}, ${port}`);
       return 1;
     }
-    if (a2 !== null && a3 + 1 > 0xff) {
+    if (buf !== null && len + 1 > 0xff) {
       console.error("Request to send too long udp packet");
       return 2;
     }
-    const frame = BuildFrame(a2.subarray(0, a3));
-    const fSent = this.m_nSocket!.send(frame, a5, u32ToAddress(a4));
+    const frame = BuildFrame(buf.subarray(0, len));
+    const fSent = this.m_nSocket!.send(frame, port, u32ToAddress(ip));
     this.m_nBytesSend += frame.length;
-    if (PacketLog.ShowsClient()) PacketLog.Datagram("send", a2.subarray(0, a3), this.m_szLogTag);
+    if (PacketLog.ShowsClient()) PacketLog.Datagram("send", buf.subarray(0, len), this.m_szLogTag);
     if (!fSent) {
       console.error(`MTUDPBase::ResendData() - Sent 0 of ${frame.length} bytes.`);
     }
@@ -226,8 +227,8 @@ export class MTUDPServer {
   }
 
   /** MTUDPBase::HostDestroy (27235) */
-  HostDestroy(a2: number, a3: number): void {
-    this.m_mpHost.delete(ipPortKey(a2, a3));
+  HostDestroy(ip: number, port: number): void {
+    this.m_mpHost.delete(ipPortKey(ip, port));
   }
 
   /** MTUDPBase::HostDestroyAll (27267) */
@@ -271,27 +272,27 @@ export class CUDPPacketDispatcher {
 
   /** CUDPPacketDispatcher::OnUDPPacket (22617) — the login server's only
    *  UDP payload: the type-0 'check udp comm' handshake. */
-  OnUDPPacket(a2: Uint8Array, a3: HOSTHANDLE): void {
-    if (a2[0] !== 0) return; // CReceivedPacketBase::Decode1(a2)
+  OnUDPPacket(datagram: Uint8Array, host: HOSTHANDLE): void {
+    if (datagram[0] !== 0) return; // the frame type byte (always 0 here)
     const pServer = MTUDPServer.ms_pInstance!;
-    if (a2.length !== 5) {
-      pServer.HostDestroy(a3.ip, a3.port);
+    if (datagram.length !== 5) {
+      pServer.HostDestroy(host.ip, host.port);
       return;
     }
-    const v3 = ((a2[1]! << 24) | (a2[2]! << 16) | (a2[3]! << 8) | a2[4]!) >>> 0; // Decode4 (BE)
-    const v5 = FindUserFromGlobalSerialNo(v3);
-    if (v5 === null) {
-      pServer.HostDestroy(a3.ip, a3.port);
+    const serial = ((datagram[1]! << 24) | (datagram[2]! << 16) | (datagram[3]! << 8) | datagram[4]!) >>> 0; // Decode4 (BE)
+    const user = FindUserFromGlobalSerialNo(serial);
+    if (user === null) {
+      pServer.HostDestroy(host.ip, host.port);
       return;
     }
-    if (v5.GetGlobalSerialNo() === 0) {
-      console.error(`Unauthenticated user try to send 'check udp comm' packet(${v5.GetName()})`);
-      v5.socket.Close(); // the user's CSocket, vtbl+72(0)
-      pServer.HostDestroy(a3.ip, a3.port);
+    if (user.GetGlobalSerialNo() === 0) {
+      console.error(`Unauthenticated user try to send 'check udp comm' packet(${user.GetName()})`);
+      user.socket.Close(); // the user's CSocket, vtbl+72(0)
+      pServer.HostDestroy(host.ip, host.port);
       return;
     }
-    pServer.UnreliableSendTo(Uint8Array.of(2), 1, a3.ip, a3.port);
-    pServer.HostDestroy(a3.ip, a3.port);
+    pServer.UnreliableSendTo(Uint8Array.of(2), 1, host.ip, host.port);
+    pServer.HostDestroy(host.ip, host.port);
   }
 }
 

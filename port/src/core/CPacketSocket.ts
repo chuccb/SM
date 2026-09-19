@@ -163,10 +163,10 @@ export abstract class CPacketSocket {
       }
       return code === expected;
     }
-    // First packet: derive the header type from it.
-    const v5 = (code ^ ((this.m_nHeaderCodeRcvBase + this.m_nPacketRcvSeq) & 0xff)) & 0xff;
-    this.m_nHeaderType = (code ^ ((this.m_nHeaderCodeRcvBase + this.m_nPacketRcvSeq) & 0xff)) - (this.m_nHeaderCodeModifier & 0xff);
-    this.m_nHeaderType = (v5 - (this.m_nHeaderCodeModifier & 0xff)) & 0xff;
+    // First packet: derive the header type from it (mask BEFORE subtracting
+    // the modifier — the decompile's unmasked intermediate never lands).
+    const rawType = (code ^ ((this.m_nHeaderCodeRcvBase + this.m_nPacketRcvSeq) & 0xff)) & 0xff;
+    this.m_nHeaderType = (rawType - (this.m_nHeaderCodeModifier & 0xff)) & 0xff;
     this.m_fHeaderTypeSet = 1;
     return true;
   }

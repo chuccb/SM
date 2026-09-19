@@ -157,7 +157,7 @@ export class MTUDPServer {
     TickCount: number,
   ): void {
     let sender: HOSTHANDLEEX | null = null;
-    let registered = false; // v31
+    let registered = false;
     let off = 0;
     let left = n2;
     while (left !== 0) {

@@ -233,8 +233,8 @@ export class CClientSocket extends CPacketSocket {
     this.m_nUserCount = n;
   }
 
-  GetUser(a2: number): CUser | null {
-    return this.m_apUser[a2] ?? null;
+  GetUser(i: number): CUser | null {
+    return this.m_apUser[i] ?? null;
   }
 
   GetUserCount(): number {
@@ -560,7 +560,7 @@ export class CMainPool extends CUserPool {
   OnCenterResConnEstablished(n: CReceivedPacket): void {
     const count = n.Decode1();
     const serials: number[] = [];
-    const authencodes: number[] = []; // the v26 byte array
+    const authencodes: number[] = []; // the per-user authencode bytes
     const billingFlags: number[] = []; // the ptr+24 dword array
     for (let i = 0; i < count; i++) {
       serials.push(n.Decode4());
@@ -595,7 +595,7 @@ export class CMainPool extends CUserPool {
       });
     }
 
-    // the v27==0 tail: close serial[0]'s socket (no reply anywhere)
+    // the failure tail (result flag 0): close serial[0]'s socket (no reply anywhere)
     if (!ok) {
       const first = CLocalUserTable.ms_pInstance!.FindUserFromGlobalSerialNo(serials[0]!);
       first?.m_pSocket?.Close();

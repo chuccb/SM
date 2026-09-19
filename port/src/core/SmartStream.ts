@@ -164,17 +164,17 @@ export class CISmartStream {
    */
   SetBuffer(pBuf: Uint8Array, _off = 0): number {
     if (pBuf[0] !== 24) throw new Error("[CISmartStream::SetBuffer(LPCBYTE)] wrong magic number");
-    const v4 =
+    const compLen =
       (pBuf[1]! | (pBuf[2]! << 8) | (pBuf[3]! << 16) | (pBuf[4]! << 24)) >>> 0;
-    if (v4 !== 0) {
-      this.CalcCRCnUncompressBuffer(pBuf, 5, v4);
+    if (compLen !== 0) {
+      this.CalcCRCnUncompressBuffer(pBuf, 5, compLen);
     } else {
       this.pRawBuf = new Uint8Array(0);
       this.sizeRawBuf = 0;
       this.nCompHash = 0;
       this.posDecode = 0;
     }
-    return v4 + 5;
+    return compLen + 5;
   }
 
   DecodeBuffer(len: number): Uint8Array {

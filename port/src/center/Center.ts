@@ -101,8 +101,8 @@ export class CUser {
   }
 
   /** CUser::SetAuthenCode */
-  SetAuthenCode(a2: number): void {
-    if (this.nAuthencode !== 1) this.nAuthencode = a2;
+  SetAuthenCode(code: number): void {
+    if (this.nAuthencode !== 1) this.nAuthencode = code;
   }
 
   /**
@@ -183,8 +183,8 @@ export class CUser {
 /** One attached local server (CLocalServer, 100 bytes, on the center side). */
 export class CLocalServer {
   strName: string;
-  nServerClass: number; // +20 (the class byte, Init's a3)
-  nSvrIdx: number; // +16 (the table slot, Init's a2)
+  nServerClass: number; // +20 (the class byte, Init's 3rd arg)
+  nSvrIdx: number; // +16 (the table slot, Init's 2nd arg)
   strIP: string;
   nPort: number;
   m_nMaxUser = 0; // +28 : cfg FXGSMaxUser (CM 3's E4 field)
@@ -509,18 +509,18 @@ export class CxCenter {
 
   /** CLocalServerMan::SendLocalSvrStatePacket — packet 4 (CxCenter.exe.c:12304). */
   /** CLocalServerMan::SendLocalSvrStatePacket (CxCenter.exe.c:12304) —
-   *  [E4 FXGSNumber][per GS: nConnNo or -1].  a2!=0 (the register path)
-   *  broadcasts to every connected LS+GS; a2==0 (CTimerThread::OnTimer)
+   *  [E4 FXGSNumber][per GS: nConnNo or -1].  fRegister!=0 (the register
+   *  path) broadcasts to every connected LS+GS; fRegister==0 (CTimerThread)
    *  sends to at most 10 connected LS+GS per call through a rotating
    *  cursor (dword_48108C). */
   m_nStateRotate = 0;
 
-  SendLocalSvrStatePacket(a2: number): void {
+  SendLocalSvrStatePacket(fRegister: number): void {
     const packet = new CSendPacket(CM_ReceivedPacket.OnLocalServerState);
     const gsServers = this.servers.filter((s) => s.nServerClass === SVRCLASS_GAME);
     packet.Encode4(gsServers.length);
     for (const gs of gsServers) packet.Encode4(gs.socket ? gs.nConnNo : -1);
-    if (a2 !== 0) {
+    if (fRegister !== 0) {
       this.SendPacketToAllLoginAndGameSvr(packet);
       return;
     }

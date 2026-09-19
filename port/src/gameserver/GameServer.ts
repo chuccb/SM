@@ -124,7 +124,7 @@ export const UDP_REGULATE_DELAY = 0x1f40;
 export const RETURN_STAGE_DELAY = 0x1f40;
 
 /** The session dimension everywhere: 8 slots / 8 colours / 8 loss-matrix rows
- *  (the original loops `do {} while (n8 < MAX_SESSION_SLOTS)` over the same tables). */
+ *  (the original loops the same 8-slot tables with plain do/while). */
 export const MAX_SESSION_SLOTS = 8;
 
 /** CTime::GetVariantTime — the OLE automation date double. */
@@ -352,13 +352,13 @@ export class CUser {
     return this.strName;
   }
 
-  SetName(a2: string): void {
-    this.strName = a2;
+  SetName(strName: string): void {
+    this.strName = strName;
   }
 
   /** CUser::SetGlobalSerialNo */
-  SetGlobalSerialNo(a2: number): void {
-    this.m_nGlobalSerialNo = a2 >>> 0;
+  SetGlobalSerialNo(serial: number): void {
+    this.m_nGlobalSerialNo = serial >>> 0;
   }
 
   GetGlobalSerialNo(): number {
@@ -366,8 +366,8 @@ export class CUser {
   }
 
   /** CUser::SetGuildSerialNo */
-  SetGuildSerialNo(a2: number): void {
-    this.m_nGuildSN = a2;
+  SetGuildSerialNo(serial: number): void {
+    this.m_nGuildSN = serial;
   }
 
   GetGuildSerialNo(): number {
@@ -375,8 +375,8 @@ export class CUser {
   }
 
   /** CUser::SetSessionIdx — through the owning socket (+500). */
-  SetSessionIdx(a2: number): void {
-    if (this.m_pSocket) this.m_pSocket.m_nSessionIdx = a2;
+  SetSessionIdx(idx: number): void {
+    if (this.m_pSocket) this.m_pSocket.m_nSessionIdx = idx;
   }
 
   /** CUser::GetSessionIdx — unsigned __int16 (FxServer.exe.c:26925; the
@@ -386,8 +386,8 @@ export class CUser {
   }
 
   /** CUser::SetSessionSerialNo — through the owning socket (+504). */
-  SetSessionSerialNo(a2: number): void {
-    if (this.m_pSocket) this.m_pSocket.m_nSessionSerialNo = a2 >>> 0;
+  SetSessionSerialNo(serial: number): void {
+    if (this.m_pSocket) this.m_pSocket.m_nSessionSerialNo = serial >>> 0;
   }
 
   GetSessionSerialNo(): number {
@@ -395,8 +395,8 @@ export class CUser {
   }
 
   /** CUser::SetPoolType / GetPoolType — the owning socket's stage tag (+468). */
-  SetPoolType(a2: number): void {
-    if (this.m_pSocket) this.m_pSocket.m_nPoolType = a2;
+  SetPoolType(type: number): void {
+    if (this.m_pSocket) this.m_pSocket.m_nPoolType = type;
   }
 
   GetPoolType(): number {
@@ -464,8 +464,8 @@ export class CUser {
   }
 
   /** CUser::DeferFlushModifiedInfo — prUpdateUserDynamic when forced or bursty. */
-  DeferFlushModifiedInfo(db: CDBMan, a2: number): void {
-    if (a2 !== 0 || this.m_nFlushCount >= DYN_FLUSH_BURST) {
+  DeferFlushModifiedInfo(db: CDBMan, fForce: number): void {
+    if (fForce !== 0 || this.m_nFlushCount >= DYN_FLUSH_BURST) {
       this.m_nFlushCount = 0;
       if (this.m_fMoneyModified !== 0) {
         db.prUpdateUserDynamic(this.dyn.strID, this.dyn.money, this.dyn.exp, this.dyn.win, this.dyn.draw, this.dyn.lose);
@@ -620,12 +620,12 @@ export class CClientSocket extends CPacketSocket {
   }
 
   /** CClientSocket::SetUser / GetUser / GetUserCount */
-  SetUser(a2: number, user: CUser): void {
-    this.m_apUser[a2] = user;
+  SetUser(i: number, user: CUser): void {
+    this.m_apUser[i] = user;
   }
 
-  GetUser(a2: number): CUser | null {
-    return this.m_apUser[a2] ?? null;
+  GetUser(i: number): CUser | null {
+    return this.m_apUser[i] ?? null;
   }
 
   GetUserCount(): number {
@@ -642,15 +642,14 @@ export class CClientSocket extends CPacketSocket {
   }
 
   /** CClientSocket::CheckInBeforeJoinSession */
-  CheckInBeforeJoinSession(a2: number): boolean {
-    return this.m_anBeforeJoinSession.includes(a2);
+  CheckInBeforeJoinSession(idx: number): boolean {
+    return this.m_anBeforeJoinSession.includes(idx);
   }
 
   /** CClientSocket::AddBeforeJoinSession */
-  AddBeforeJoinSession(a2: number): void {
-    if (this.CheckInBeforeJoinSession(a2)) return;
-    if (this.m_anBeforeJoinSession.length >= 5) this.m_anBeforeJoinSession.shift();
-    this.m_anBeforeJoinSession.push(a2);
+  AddBeforeJoinSession(idx: number): void {
+    if (this.CheckInBeforeJoinSession(idx)) return;
+    this.m_anBeforeJoinSession.push(idx);
   }
 
   /** CClientSocket::GetSelfidxFromSerialNo */
@@ -865,10 +864,10 @@ export class CUserPool {
   OnPacket(n: CReceivedPacket, socket: CClientSocket): void {
     if (n.Decode1() !== GS_ReceivedPacket.OnEstimateRTT) return;
     const packet = new CSendPacket(GS_ClientSend.OnEstimateRTTRes, CipherDegree.kPacketEncryptedCRC8);
-    const v3 = n.Decode4();
+    const rttValue = n.Decode4(); // the client's stamp, echoed verbatim
     const hash = n.Decode4();
     const now = Date.now() & 0x7fffffff;
-    packet.Encode4(v3);
+    packet.Encode4(rttValue);
     packet.Encode4(now);
     const last = socket.m_dwLastRTT;
     socket.m_dwLastRTT = now;
@@ -2558,7 +2557,8 @@ export class CGameSession {
 
   /** CBaseSession::SendJoinPacket — build the newcomer's self-view 105
    *  (fSelf=1, so the category-4 deco byte rides along) and PutPacket it to
-   *  every room socket EXCEPT the joiner (CBaseSession::PutPacket skips a3,
+   *  every room socket EXCEPT the joiner (CBaseSession::PutPacket skips the
+   *  excluded socket,
    *  FxServer.exe.c:30670-30686) — this is how the seated players see the
    *  joiner.  The joiner got the full roster from SendSessionInfoPacket
    *  (vtbl+80) already.  FlushPacket drains the whole room either way
@@ -2584,7 +2584,7 @@ export class CGameSession {
   }
 
   /** CBaseSession::SendResetPlayer — 106 for the leaver's users. */
-  SendResetPlayer(socket: CClientSocket, a3: number): void {
+  SendResetPlayer(socket: CClientSocket, fSendReset: number): void {
     const packet = new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8);
     const n = socket.GetUserCount();
     for (let i = 0; i < n; i++) {
@@ -2596,7 +2596,7 @@ export class CGameSession {
         this.PutPacket(packet);
       }
     }
-    if (a3 !== 0) socket.SendPacket(packet);
+    if (fSendReset !== 0) socket.SendPacket(packet);
     this.FlushPacket();
   }
 
@@ -2850,7 +2850,7 @@ export class CGameSession {
     this.m_rgVote[slot] = 0;
     this.m_nCurPlayerNum--;
     this.m_fModified |= 4;
-    this.m_aBomberIdx[slot] = -1; // dword[n8 + 2893]
+    this.m_aBomberIdx[slot] = -1; // CGameSession+11572 dword[slot]
     const host = this.m_rgUdpHost[slot]!;
     if (host.some((b) => b !== 0)) host.fill(0); // HOSTHANDLE::operator!= invalidHost
   }
@@ -2983,7 +2983,7 @@ export class CGameSession {
     for (const socket of [...this.m_setSocket]) {
       const p = new CSendPacket(GS_ClientSend.OnBangPok, CipherDegree.kPacketEncryptedCRC8);
       socket.SendPacket(p);
-      socket.m_nPoolType = 4; // v2[117] = 4 (MoveToExchangeSession)
+      socket.m_nPoolType = 4; // CClientSocket+468 = 4 (MoveToExchangeSession)
       CGameSessionTable.ms_pInstance!.MoveToExchangeSession(socket, 0);
     }
   }
@@ -3100,7 +3100,7 @@ export class CGameSession {
   // ---- leaving ----
 
   /** CGameSession::DestroyPlayer — the full leave path (FxServer.exe.c:32692). */
-  DestroyPlayer(socket: CClientSocket, a3: number): number {
+  DestroyPlayer(socket: CClientSocket, fSendReset: number): number {
     const wasChief = this.IsChief(socket);
     let dissolve = false;
     // CListSession::DestroyPlayer → CBaseSession::DestroyPlayer:
@@ -3129,7 +3129,7 @@ export class CGameSession {
         this.DeleteUser(slot);
       }
     }
-    this.SendResetPlayer(socket, a3);
+    this.SendResetPlayer(socket, fSendReset);
     socket.m_nPoolType = 1; // socket +468 = 1 (back to the lobby)
     // m_pStrategy vtbl+24 OnLeaveSession — an empty thunk in the original
     this.m_SyncGameObjMan.OnPlayerLeave(firstSlot);
@@ -3165,9 +3165,9 @@ export class CGameSession {
       if (slot < 0 || slot >= MAX_SESSION_SLOTS) continue;
       const ghost = this.m_rgSlotGhost[slot]!;
       if (ghost === -1) continue;
-      let n8 = 0;
-      while (n8 < MAX_SESSION_SLOTS && !(this.m_rgPlayer[n8] !== null && this.m_rgSlotGhost[n8] === -1)) n8++;
-      if (n8 >= MAX_SESSION_SLOTS) {
+      let freeSlot = 0;
+      while (freeSlot < MAX_SESSION_SLOTS && !(this.m_rgPlayer[freeSlot] !== null && this.m_rgSlotGhost[freeSlot] === -1)) freeSlot++;
+      if (freeSlot >= MAX_SESSION_SLOTS) {
         const p = new CSendPacket(GS_ClientSend.OnGhostDestroy, CipherDegree.kPacketEncryptedCRC8);
         p.Encode1(ghost);
         this.SendPacket(p);
@@ -3176,11 +3176,11 @@ export class CGameSession {
       } else {
         const p = new CSendPacket(GS_ClientSend.OnGhostGenerate, CipherDegree.kPacketEncryptedCRC8);
         p.Encode1(ghost);
-        p.Encode1(n8);
+        p.Encode1(freeSlot);
         this.SendPacket(p);
         this.m_rgSlotGhost[slot] = -1;
-        this.m_rgGhostSlot[n8] = ghost;
-        this.m_rgSlotGhost[n8] = ghost;
+        this.m_rgGhostSlot[freeSlot] = ghost;
+        this.m_rgSlotGhost[freeSlot] = ghost;
       }
     }
   }
@@ -3490,13 +3490,13 @@ export class CGameSession {
 
   /** CGameSession::GetGameDetailResult (41CA8C) — 2 / 1 / default 3. */
   GetGameDetailResult(nWinnerTeam: number): number {
-    let v2 = 3;
+    let result = 3; // 41CA8C — 3 default, 2 = last-round, 1 = uniform game type
     for (let k = 0; k < MAX_SESSION_SLOTS; k++) {
-      if (this.m_nCurPlayerNum > 2 && this.m_nCurPlayerNum === this.m_rgDetailCount[k]! + 1) v2 = 2;
-      if (this.m_rgbGameType[k]! > 2 && this.m_rgbGameType[k] === this.m_rgColourCount[k]!) v2 = 1;
+      if (this.m_nCurPlayerNum > 2 && this.m_nCurPlayerNum === this.m_rgDetailCount[k]! + 1) result = 2;
+      if (this.m_rgbGameType[k]! > 2 && this.m_rgbGameType[k] === this.m_rgColourCount[k]!) result = 1;
     }
     void nWinnerTeam;
-    return v2;
+    return result;
   }
 
   /**
@@ -3505,20 +3505,20 @@ export class CGameSession {
    * per-user tail; the DB dyn rows are updated through IncDecExp and the
    * lobby rank list is refreshed.
    */
-  SendGameResult(a2: number): void {
+  SendGameResult(winTeam: number): void {
     const packet = new CSendPacket(GS_ClientSend.OnGameResult, CipherDegree.kPacketEncryptedCRC8);
     let flag = 0;
     for (let i = 0; i < MAX_SESSION_SLOTS; i++) {
       if (this.m_rgbGameType[i] === 5 || this.m_rgbGameType[i] === 6 || this.m_rgbGameType[i] === 7) flag = 1;
     }
     packet.Encode1(flag); // +16 (the same 163 was observed with 0/1)
-    packet.Encode1(a2 & 0xff); // +17
-    this.m_rgbResult = a2 === -1 ? 3 : 2; // var_34
-    this.m_rgbGameDetailResult = a2 === -1 ? 3 : 2; // var_8
-    for (let n8 = 0; n8 < MAX_SESSION_SLOTS; n8++) {
+    packet.Encode1(winTeam & 0xff); // +17
+    this.m_rgbResult = winTeam === -1 ? 3 : 2; // the tie form
+    this.m_rgbGameDetailResult = winTeam === -1 ? 3 : 2;
+    for (let slot = 0; slot < MAX_SESSION_SLOTS; slot++) {
       // [+12620] vtbl+44 — the recorder dword getter (FXGS never registers one)
       packet.Encode4(0); // +18
-      const user = this.m_rgPlayer[n8]!;
+      const user = this.m_rgPlayer[slot]!;
       if (user === null) {
         packet.Encode1(0);
         continue;
@@ -3529,25 +3529,25 @@ export class CGameSession {
       const nOldExpPctAtEntry = CDynInfoCalculator.GetExpPercentage(nOldExp);
       let anyDiffTeam = 0;
       for (let i = 0; i < MAX_SESSION_SLOTS; i++) {
-        if (this.m_rgPlayer[i] !== null && this.m_rgnUsedItem[i] !== 0 && (this.GetColor(i) & SLOTSTATE_COLOR_MASK) !== a2) anyDiffTeam = 1;
+        if (this.m_rgPlayer[i] !== null && this.m_rgnUsedItem[i] !== 0 && (this.GetColor(i) & SLOTSTATE_COLOR_MASK) !== winTeam) anyDiffTeam = 1;
       }
-      if (a2 === -1) {
+      if (winTeam === -1) {
         console.error(`[GS] Game Result : Tie Game`);
-        let exp = this.m_DynInfoCalculator.GetDrawExp(n8);
+        let exp = this.m_DynInfoCalculator.GetDrawExp(slot);
         exp = Math.trunc(exp * this.GetGameExpTimeFactor());
         if (exp !== 0) user.IncDecExp(exp);
         console.error(`[GS] ${user.GetName()}:D:${exp}`);
       } else {
-        if ((this.GetColor(n8) & SLOTSTATE_COLOR_MASK) === a2) {
-          console.error(`[GS] Game Result : Win Team = ${a2}`);
+        if ((this.GetColor(slot) & SLOTSTATE_COLOR_MASK) === winTeam) {
+          console.error(`[GS] Game Result : Win Team = ${winTeam}`);
           const rewardFlag = [0];
-          let exp = this.m_DynInfoCalculator.GetWinExp(n8, rewardFlag);
+          let exp = this.m_DynInfoCalculator.GetWinExp(slot, rewardFlag);
           exp = Math.trunc(exp * this.GetGameExpTimeFactor());
           let boost = 1.0;
           if (anyDiffTeam === 1) boost = boost * 1.1;
           let premiumCount = 0;
           for (let i = 0; i < MAX_SESSION_SLOTS; i++) {
-            if (this.GetColor(i) === a2) {
+            if (this.GetColor(i) === winTeam) {
               const w = this.m_rgPlayer[i]!;
               if (w !== null && w.m_fPremiumTicket === 1) premiumCount++;
             }
@@ -3556,11 +3556,11 @@ export class CGameSession {
           exp = Math.trunc(exp * boost + 0.1);
           if (exp !== 0) user.IncDecExp(exp);
           this.m_dwPremiumFlag = rewardFlag[0]!; // [this+2FF4] var_10
-          this.m_rgbGameDetailResult = this.GetGameDetailResult(a2);
+          this.m_rgbGameDetailResult = this.GetGameDetailResult(winTeam);
           console.error(`[GS] ${user.GetName()}:W:${exp}`);
         } else {
           console.error(`[GS] Game Result : Lose Team`);
-          let exp = this.m_DynInfoCalculator.GetKillNSaveExp(n8);
+          let exp = this.m_DynInfoCalculator.GetKillNSaveExp(slot);
           exp = Math.trunc(exp * this.GetGameExpTimeFactor());
           if (exp !== 0) user.IncDecExp(exp);
           console.error(`[GS] ${user.GetName()}:L:${exp}`);
@@ -3682,25 +3682,29 @@ export class CGameSession {
     if (mapIdx === -1) teams = 8;
     else if (mapIdx >= 0) teams = CGameMapTmplList.ms_pInstance?.GetMapMaxTeam(mapIdx) ?? 0;
     else teams = CGameMapTmplList.ms_pInstance?.m_apTheme[321 - mapIdx]?.m_nMaxTeam ?? 0;
-    // the colors in use (v19; 0x11111111 = untouched sentinel)
-    const v19 = new Int32Array(8).fill(-1);
+    // The color -> target-color map (:33264).  memset(0xFF) leaves every
+    // entry at -1 (untouched); each color actually in use gets the marker
+    // 0x11111111 (286331153).  For team counts the fold switch does not
+    // cover (5/6/7) the marker survives into the apply step, whose `& 0xff`
+    // then yields the original's quirky 0x11 — kept verbatim.
+    const colorMap = new Int32Array(8).fill(-1);
     let usedColors = 0;
     for (let slot = 0; slot < MAX_SESSION_SLOTS; slot++) {
-      if (this.IsPlayerSet(slot) && v19[this.GetColor(slot)]! === -1) {
+      if (this.IsPlayerSet(slot) && colorMap[this.GetColor(slot)]! === -1) {
         usedColors++;
-        v19[this.GetColor(slot)] = 0x11111115;
+        colorMap[this.GetColor(slot)] = 0x11111111;
       }
     }
-    const SENTINEL = 0x11111115;
+    const IN_USE = 0x11111111;
     if (teams < usedColors) {
       // round-robin re-assignment onto {0,3,5,6} for 2..4 team maps
       let k = 0;
-      const v20 = [0, 3, 5, 6];
+      const teamColorPool = [0, 3, 5, 6];
       if (teams >= 2 && teams <= 4) {
         for (let slot = 0; slot < MAX_SESSION_SLOTS; slot++) {
           if (!this.IsPlayerSet(slot)) continue;
           const p = slot * 3 + 2;
-          const want = v20[k % teams]!;
+          const want = teamColorPool[k % teams]!;
           this.m_rgSlotState[p] = (this.m_rgSlotState[p]! ^ (want ^ this.m_rgSlotState[p]!)) & SLOTSTATE_COLOR_MASK;
           k++;
           const sp = new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8);
@@ -3711,70 +3715,70 @@ export class CGameSession {
     } else {
       switch (teams) {
         case 2:
-          if (v19[0] === SENTINEL) v19[0] = 0;
-          if (v19[3] === SENTINEL) v19[3] = 3;
+          if (colorMap[0] === IN_USE) colorMap[0] = 0;
+          if (colorMap[3] === IN_USE) colorMap[3] = 3;
           for (let i = 0; i < MAX_SESSION_SLOTS; i++) {
-            if (v19[i] === SENTINEL) {
-              if (v19[0] !== 0) {
-                v19[i] = 0;
-                v19[0] = 0;
-              } else if (v19[3] !== 3) {
-                v19[i] = 3;
-                v19[3] = 3;
+            if (colorMap[i] === IN_USE) {
+              if (colorMap[0] !== 0) {
+                colorMap[i] = 0;
+                colorMap[0] = 0;
+              } else if (colorMap[3] !== 3) {
+                colorMap[i] = 3;
+                colorMap[3] = 3;
               }
             }
           }
           break;
         case 3:
-          if (v19[0] === SENTINEL) v19[0] = 0;
-          if (v19[3] === SENTINEL) v19[3] = 3;
-          if (v19[5] === SENTINEL) v19[5] = 5;
+          if (colorMap[0] === IN_USE) colorMap[0] = 0;
+          if (colorMap[3] === IN_USE) colorMap[3] = 3;
+          if (colorMap[5] === IN_USE) colorMap[5] = 5;
           for (let j = 0; j < MAX_SESSION_SLOTS; j++) {
-            if (v19[j] === SENTINEL) {
-              if (v19[0] !== 0) {
-                v19[j] = 0;
-                v19[0] = 0;
-              } else if (v19[3] === 3) {
-                if (v19[5] !== 5) {
-                  v19[j] = 5;
-                  v19[5] = 5;
+            if (colorMap[j] === IN_USE) {
+              if (colorMap[0] !== 0) {
+                colorMap[j] = 0;
+                colorMap[0] = 0;
+              } else if (colorMap[3] === 3) {
+                if (colorMap[5] !== 5) {
+                  colorMap[j] = 5;
+                  colorMap[5] = 5;
                 }
               } else {
-                v19[j] = 3;
-                v19[3] = 3;
+                colorMap[j] = 3;
+                colorMap[3] = 3;
               }
             }
           }
           break;
         case 4:
-          if (v19[0] === SENTINEL) v19[0] = 0;
-          if (v19[3] === SENTINEL) v19[3] = 3;
-          if (v19[5] === SENTINEL) v19[5] = 5;
-          if (v19[6] === SENTINEL) v19[6] = 6;
+          if (colorMap[0] === IN_USE) colorMap[0] = 0;
+          if (colorMap[3] === IN_USE) colorMap[3] = 3;
+          if (colorMap[5] === IN_USE) colorMap[5] = 5;
+          if (colorMap[6] === IN_USE) colorMap[6] = 6;
           for (let m = 0; m < MAX_SESSION_SLOTS; m++) {
-            if (v19[m] === SENTINEL) {
-              if (v19[0] !== 0) {
-                v19[m] = 0;
-                v19[0] = 0;
-              } else if (v19[3] === 3) {
-                if (v19[5] === 5) {
-                  if (v19[6] !== 6) {
-                    v19[m] = 6;
-                    v19[6] = 6;
+            if (colorMap[m] === IN_USE) {
+              if (colorMap[0] !== 0) {
+                colorMap[m] = 0;
+                colorMap[0] = 0;
+              } else if (colorMap[3] === 3) {
+                if (colorMap[5] === 5) {
+                  if (colorMap[6] !== 6) {
+                    colorMap[m] = 6;
+                    colorMap[6] = 6;
                   }
                 } else {
-                  v19[m] = 5;
-                  v19[5] = 5;
+                  colorMap[m] = 5;
+                  colorMap[5] = 5;
                 }
               } else {
-                v19[m] = 3;
-                v19[3] = 3;
+                colorMap[m] = 3;
+                colorMap[3] = 3;
               }
             }
           }
           break;
         case 8:
-          for (let k = 0; k < MAX_SESSION_SLOTS; k++) v19[k] = k;
+          for (let k = 0; k < MAX_SESSION_SLOTS; k++) colorMap[k] = k;
           break;
         default:
           break;
@@ -3782,7 +3786,7 @@ export class CGameSession {
       for (let slot = 0; slot < MAX_SESSION_SLOTS; slot++) {
         if (!this.IsPlayerSet(slot)) continue;
         const p = slot * 3 + 2;
-        const want = v19[this.GetColor(slot)]! & 0xff;
+        const want = colorMap[this.GetColor(slot)]! & 0xff;
         this.m_rgSlotState[p] = (this.m_rgSlotState[p]! ^ (want ^ this.m_rgSlotState[p]!)) & SLOTSTATE_COLOR_MASK;
         const sp = new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8);
         this.MakeSetSlotStatePacket(slot, sp);
@@ -4200,7 +4204,7 @@ export class CGameSession {
   // ---- starting the game (106 → 115/116) ----
 
   /** CGameSession::CanStartGame (FxServer.exe.c:41C805) — 0 = go. */
-  CanStartGame(a2: number): number {
+  CanStartGame(fNeedMap: number): number {
     const counts = new Int32Array(8);
     let players = 0;
     let teams = 0;
@@ -4243,7 +4247,7 @@ export class CGameSession {
       } else {
         return 0;
       }
-    } else if (a2 !== 0) {
+    } else if (fNeedMap !== 0) {
       return 0;
     }
     return 1;
@@ -4428,30 +4432,32 @@ export class CGameSession {
       return;
     }
     if (this.m_fPlaying !== 0) return;
-    // fold the sub colors (1,2,4,7) onto the main ones (0,3,5,6)
-    const v22 = new Int32Array(8).fill(-1);
+    // fold the sub colors (1,2,4,7) onto the main ones (0,3,5,6):
+    // color -> target map, -1 = untouched (:37490); in-use colors are marked
+    // with themselves, a claimed main is consumed by writing 0 into its slot
+    const colorMap = new Int32Array(8).fill(-1);
     for (let slot = 0; slot < MAX_SESSION_SLOTS; slot++) {
-      if (this.IsPlayerSet(slot) && v22[this.GetColor(slot)] === -1) v22[this.GetColor(slot)] = this.GetColor(slot);
+      if (this.IsPlayerSet(slot) && colorMap[this.GetColor(slot)] === -1) colorMap[this.GetColor(slot)] = this.GetColor(slot);
     }
-    const claim = (idx: number): void => {
-      if (v22[0] === -1) {
-        v22[idx] = 0;
-        v22[0] = 0;
-      } else if (v22[3] === -1) {
-        v22[idx] = 3;
-        v22[3] = 0;
-      } else if (v22[5] === -1) {
-        v22[idx] = 5;
-        v22[5] = 0;
-      } else if (v22[6] === -1) {
-        v22[idx] = 6;
-        v22[6] = 0;
+    const claimMain = (idx: number): void => {
+      if (colorMap[0] === -1) {
+        colorMap[idx] = 0;
+        colorMap[0] = 0;
+      } else if (colorMap[3] === -1) {
+        colorMap[idx] = 3;
+        colorMap[3] = 0;
+      } else if (colorMap[5] === -1) {
+        colorMap[idx] = 5;
+        colorMap[5] = 0;
+      } else if (colorMap[6] === -1) {
+        colorMap[idx] = 6;
+        colorMap[6] = 0;
       }
     };
-    if (v22[1] !== -1) claim(1);
-    if (v22[2] !== -1) claim(2);
-    if (v22[4] !== -1) claim(4);
-    if (v22[7] !== -1) claim(7);
+    if (colorMap[1] !== -1) claimMain(1);
+    if (colorMap[2] !== -1) claimMain(2);
+    if (colorMap[4] !== -1) claimMain(4);
+    if (colorMap[7] !== -1) claimMain(7);
     this.SetMapIdxPlayingByLevel(chiefUser.dyn.exp, CClientSocket.HasAuthority(23), chiefUser.m_fPremiumTicket);
     const can = this.CanStartGame(0);
     const res = new CSendPacket(GS_ClientSend.OnStartGameRes, CipherDegree.kPacketEncryptedCRC8);
@@ -4463,7 +4469,7 @@ export class CGameSession {
       const packet = new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8);
       for (let slot = 0; slot < MAX_SESSION_SLOTS; slot++) {
         if (!this.IsPlayerSet(slot)) continue;
-        const want = v22[this.GetColor(slot)]!;
+        const want = colorMap[this.GetColor(slot)]!;
         if (this.GetColor(slot) !== want) {
           const p = slot * 3 + 2;
           this.m_rgSlotState[p] = (this.m_rgSlotState[p]! ^ (want ^ this.m_rgSlotState[p]!)) & SLOTSTATE_COLOR_MASK;
@@ -5489,7 +5495,7 @@ export class CGameSessionTable {
   }
 
   /** CGameSessionTable::DestroyPlayer — vtbl+48, on socket close/leave. */
-  DestroyPlayer(socket: CClientSocket, a3: number): void {
+  DestroyPlayer(socket: CClientSocket, fSendReset: number): void {
     if (!socket) return;
     if (!socket.GetUser(0)) return;
     const idx = socket.m_nSessionIdx;
@@ -5504,7 +5510,7 @@ export class CGameSessionTable {
       }
     }
     const session = this.m_apGameSession[idx]!;
-    if (session && session.fValid !== 0 && session.m_nSerialNo === serial && session.DestroyPlayer(socket, a3) !== 0 && session.IsEmpty() && this.CloseSession(idx, serial) !== 0) {
+    if (session && session.fValid !== 0 && session.m_nSerialNo === serial && session.DestroyPlayer(socket, fSendReset) !== 0 && session.IsEmpty() && this.CloseSession(idx, serial) !== 0) {
       if ((this.m_acTableFlags[idx]! & 1) !== 0) this.m_acTableFlags[idx] = 0;
       else this.m_acTableFlags[idx]! |= 4;
     }
@@ -5776,8 +5782,8 @@ export class CGameSessionTable {
 
 /** CChatPool — the chat handlers (CChannelPool's base). */
 export class CChatPool extends CUserPool {
-  /** CChatPool::SendAll — a3 selects the lobby-stage sockets only. */
-  SendAll(packet: CSendPacket, a3: number): void {
+  /** CChatPool::SendAll — fLobbyOnly selects the lobby-stage sockets only. */
+  SendAll(packet: CSendPacket, fLobbyOnly: number): void {
     for (const socket of [...this.m_setSocket]) {
       if (!socket.m_bConnected) {
         console.error(`[GS] CChatPool::FlushAll:: Not connected socket. Post Close Packet.`);
@@ -5785,7 +5791,7 @@ export class CChatPool extends CUserPool {
         this.m_setSocket.delete(socket);
         continue;
       }
-      if (a3 !== 0 && socket.m_nPoolType !== 1) continue;
+      if (fLobbyOnly !== 0 && socket.m_nPoolType !== 1) continue;
       socket.SendPacket(packet);
     }
   }
@@ -6493,7 +6499,7 @@ export class CMainSystem {
   }
 
   /** CMainSystem::OnConnEstablished — the connect-time packet 0
-   *  (CSendPacket(&v3, 0, 0) — plain on every server). */
+   *  a default-constructed (plain) CSendPacket on every server). */
   OnConnEstablished(socket: CClientSocket): void {
     const packet = new CSendPacket(GS_ClientSend.OnConnect, CipherDegree.kPacketRaw);
     packet.Encode2(CENTER_VERSION);

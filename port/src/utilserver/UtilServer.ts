@@ -65,8 +65,8 @@ export class CUser {
   }
 
   /** CUser::SetGlobalSerialNo (+276). */
-  SetGlobalSerialNo(a2: number): void {
-    this.m_dwGlobalSerialNo = a2 >>> 0;
+  SetGlobalSerialNo(serial: number): void {
+    this.m_dwGlobalSerialNo = serial >>> 0;
   }
 
   GetSocket(): CClientSocket {
@@ -94,7 +94,7 @@ export class CClientSocket extends CPacketSocket {
     this.m_szLogTag = "FXUS";
     this.m_fClientLink = true;
     // dword_49F968: the header type comes from the counter's PRE-increment
-    // value (v5 = counter; counter = v5 + 1; SetHeaderType(v5 % 16)) — the
+    // value (read the counter, THEN increment; SetHeaderType(counter % 16)) — the
     // first client connection gets header type 0.
     this.SetHeaderType(CClientSocket.ms_nHeaderTypeCounter % 16);
     CClientSocket.ms_nHeaderTypeCounter++;
@@ -104,19 +104,19 @@ export class CClientSocket extends CPacketSocket {
   }
 
   /** CClientSocket::AddNewUsers — n fresh users REPLACE the old array. */
-  AddNewUsers(a2: number): void {
-    if (a2 <= 0) {
-      this.m_nUserCount = a2;
+  AddNewUsers(count: number): void {
+    if (count <= 0) {
+      this.m_nUserCount = count;
       return;
     }
     this.m_apUser = [];
-    for (let i = 0; i < a2; i++) this.m_apUser.push(new CUser(this));
-    this.m_nUserCount = a2;
+    for (let i = 0; i < count; i++) this.m_apUser.push(new CUser(this));
+    this.m_nUserCount = count;
   }
 
   /** CClientSocket::GetUser(socket, i). */
-  GetUser(a2: number): CUser | null {
-    return this.m_apUser[a2] ?? null;
+  GetUser(i: number): CUser | null {
+    return this.m_apUser[i] ?? null;
   }
 
   GetUserCount(): number {
@@ -157,8 +157,8 @@ export class CLocalUserTable {
   }
 
   /** CLocalUserTable::FindUserFromGlobalSerialNo. */
-  FindUserFromGlobalSerialNo(a2: number): CUser | null {
-    return this.m_mapSerial.get(a2 >>> 0) ?? null;
+  FindUserFromGlobalSerialNo(serial: number): CUser | null {
+    return this.m_mapSerial.get(serial >>> 0) ?? null;
   }
 
   FindUserFromId(id: string): CUser | null {
@@ -214,8 +214,8 @@ export class CMainPool {
   /** CUserPool::DelSocket — drop the socket from the pool.  (The original's
    *  OnClose path never removes CLocalUserTable rows; stale rows stay until
    *  the same name logs in again, exactly as shipped.) */
-  DelSocket(a2: CClientSocket): void {
-    this.m_setSocket.delete(a2);
+  DelSocket(socket: CClientSocket): void {
+    this.m_setSocket.delete(socket);
   }
 
   /** CUserPool::SendAll — every connected tool. */
@@ -224,32 +224,32 @@ export class CMainPool {
   }
 
   /** CMainPool::OnPacket (CxUtil.exe.c:21528) — the relay dispatch. */
-  OnPacket(n: CReceivedPacket, a3: CClientSocket): void {
+  OnPacket(n: CReceivedPacket, socket: CClientSocket): void {
     switch (n.Decode1()) {
       case UTIL_ClientPacket.OnConnEstablished:
-        this.OnConnEstablished(n, a3);
+        this.OnConnEstablished(n, socket);
         break;
       case UTIL_ClientPacket.OnAdminNotifyMsg:
-        this.OnAdminNotifyMsg(n, a3);
+        this.OnAdminNotifyMsg(n, socket);
         break;
       case UTIL_ClientPacket.OnAdminNotifyGameServerMsg:
-        this.OnAdminNotifyGameServerMsg(n, a3);
+        this.OnAdminNotifyGameServerMsg(n, socket);
         break;
       case UTIL_ClientPacket.OnSystemMsg:
-        this.OnSystemMsg(n, a3);
+        this.OnSystemMsg(n, socket);
         break;
       case UTIL_ClientPacket.OnKickoffUser:
-        this.OnKickoffUser(n, a3);
+        this.OnKickoffUser(n, socket);
         break;
       case UTIL_ClientPacket.OnReqUserInfo:
-        this.OnReqUserInfo(n, a3);
+        this.OnReqUserInfo(n, socket);
         break;
       case UTIL_ClientPacket.OnUpdateItem:
-        this.OnUpdateItem(n, a3);
+        this.OnUpdateItem(n, socket);
         break;
       default:
         n.m_uOffset = 0;
-        this.OnEstimateRTT(n, a3); // CUserPool::OnPacket: only 20 answers
+        this.OnEstimateRTT(n, socket); // CUserPool::OnPacket: only 20 answers
         break;
     }
   }
@@ -315,10 +315,10 @@ export class CMainPool {
   }
 
   /** CMainPool::OnReqUserInfo (64) — CSendPacket(7) [E4 serial][EStr account]. */
-  OnReqUserInfo(n: CReceivedPacket, a3: CClientSocket): void {
+  OnReqUserInfo(n: CReceivedPacket, socket: CClientSocket): void {
     const str = n.DecodeStr();
     const packet = new CSendPacket(MC_ReceivedPacket.OnRequestUserChannel);
-    const User = a3.GetUser(0);
+    const User = socket.GetUser(0);
     console.error("OnReqUserInfo called");
     packet.Encode4(User ? User.m_dwGlobalSerialNo : 0);
     packet.EncodeStr(str);
@@ -335,24 +335,24 @@ export class CMainPool {
   }
 
   /** CUserPool::OnEstimateRTT (20) — echo the [E4] back under id 20. */
-  OnEstimateRTT(n: CReceivedPacket, a3: CClientSocket): void {
+  OnEstimateRTT(n: CReceivedPacket, socket: CClientSocket): void {
     if (n.Decode1() !== UTIL_ClientPacket.OnEstimateRTT) return;
     const t = n.Decode4();
     const packet = new CSendPacket(UTIL_ClientSend.OnEstimateRTTRes);
     packet.Encode4(t);
-    a3.SendPacket(packet);
+    socket.SendPacket(packet);
   }
 
   /**
    * CMainPool::SendUserDetailInfo (static) — the CM 10 answer as packet 64
-   * [E1 n][E4 n2] to the tool that owns the serial.
+   * [E1 userType][E4 sessionIdx] to the tool that owns the serial.
    */
-  static SendUserDetailInfo(User: CUser, _p_str: string, n: number, a4: number): void {
+  static SendUserDetailInfo(User: CUser, _p_str: string, userType: number, sessionIdx: number): void {
     const socket = User.GetSocket();
     if (!socket.m_bConnected) return;
     const packet = new CSendPacket(UTIL_ClientSend.OnUserDetailInfo);
-    packet.Encode1(n);
-    packet.Encode4(a4);
+    packet.Encode1(userType);
+    packet.Encode4(sessionIdx);
     socket.SendPacket(packet);
   }
 }
@@ -394,16 +394,16 @@ export class CCenterProcess {
   }
 
   /** CCenterProcess::OnPacket — 8 broadcast, 10 user result, 12 FXAttr. */
-  OnPacket(a2: CReceivedPacket): void {
-    switch (a2.Decode1()) {
+  OnPacket(n: CReceivedPacket): void {
+    switch (n.Decode1()) {
       case CM_ReceivedPacket.OnAdminNotifyMsg:
-        this.OnAdminNotifyMsg(a2);
+        this.OnAdminNotifyMsg(n);
         break;
       case CM_ReceivedPacket.OnUserChannelResult:
-        this.OnUserChannelResult(a2);
+        this.OnUserChannelResult(n);
         break;
       case CM_ReceivedPacket.OnInitialSvrAttr:
-        CMainSystem.ms_pInstance?.OnInitialSvrAttr(a2);
+        CMainSystem.ms_pInstance?.OnInitialSvrAttr(n);
         break;
       default:
         return;
@@ -414,8 +414,8 @@ export class CCenterProcess {
    * CCenterProcess::OnAdminNotifyMsg (CM 8) — [EStr] rebroadcast to every
    * tool under id 26.
    */
-  OnAdminNotifyMsg(a2: CReceivedPacket): void {
-    const str = a2.DecodeStr();
+  OnAdminNotifyMsg(n: CReceivedPacket): void {
+    const str = n.DecodeStr();
     const packet = new CSendPacket(UTIL_ClientSend.OnAdminNotifyMsg);
     packet.EncodeStr(str);
     CMainPool.ms_pInstance?.SendAll(packet);
@@ -425,13 +425,13 @@ export class CCenterProcess {
    * CCenterProcess::OnUserChannelResult (CM 10) — [E4 serial][EStr][E1][E4];
    * the answer rides packet 64 to the tool that asked.
    */
-  OnUserChannelResult(a2: CReceivedPacket): void {
-    const serial = a2.Decode4();
-    const str = a2.DecodeStr();
-    const n = a2.Decode1();
-    const n2 = a2.Decode4();
+  OnUserChannelResult(n: CReceivedPacket): void {
+    const serial = n.Decode4();
+    const str = n.DecodeStr();
+    const userType = n.Decode1();
+    const sessionIdx = n.Decode4();
     const User = CLocalUserTable.ms_pInstance?.FindUserFromGlobalSerialNo(serial);
-    if (User) CMainPool.SendUserDetailInfo(User, str, n, n2);
+    if (User) CMainPool.SendUserDetailInfo(User, str, userType, sessionIdx);
   }
 }
 

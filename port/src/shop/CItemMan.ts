@@ -195,12 +195,12 @@ export class CItemMan {
 
   /** CItemMan::AddBonusCartItem — when the billing total crosses a bonus
    *  Price, the bonus StockSN is appended to the user's cart (1 ×). */
-  AddBonusCartItem(total: number, user: { m_anCart: { stockSN: number; cnt: number }[] }, a4: number): number {
+  AddBonusCartItem(total: number, user: { m_anCart: { stockSN: number; cnt: number }[] }, cartSlot: number): number {
     let added = 0;
     for (const row of this.m_vtBonusMap) {
       if (total >= row.Price) {
         added = 1;
-        user.m_anCart[a4] = { stockSN: row.StockSN, cnt: 1 };
+        user.m_anCart[cartSlot] = { stockSN: row.StockSN, cnt: 1 };
       }
     }
     return added;
