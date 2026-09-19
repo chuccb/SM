@@ -43,7 +43,7 @@ export class CUser {
   strName: string;
   nServerClass: number;
   nSvrIdx: number;
-  nSN: number; // +28 (v16[7]): the DB SN forwarded from the login server
+  nSID: number; // +80 — CUser::GetSID: the account SID the login server sent in MC 0
   nAuthencode = 0; // CUser::GetAuthencode / SetAuthenCode
   nLocalSerialNo: number; // the LS socket's local serial (p0 tail)
   nConnStamp: number; // p0 head (the LS socket's address stamp)
@@ -68,7 +68,7 @@ export class CUser {
     this.strName = strName;
     this.nServerClass = nServerClass;
     this.nSvrIdx = nSvrIdx;
-    this.nSN = nSN;
+    this.nSID = nSN;
     this.nLocalSerialNo = nLocalSerialNo;
     this.nConnStamp = nConnStamp;
     this.nChannel = nServerClass; // CUser::SetSvrIdx at construction
@@ -399,7 +399,7 @@ export class CxCenter {
   DeleteAllUserOnSvr(nServerClass: number, nSvrIdx: number): void {
     for (const [name, u] of [...this.userTable]) {
       if (u.nServerClass === nServerClass && u.nSvrIdx === nSvrIdx) {
-        this.serialTable.delete(u.nSN);
+        this.serialTable.delete(u.nSID);
         this.userTable.delete(name);
       }
     }
@@ -599,7 +599,7 @@ export class CxCenter {
     packet.Encode1(users.length);
     for (const u of users) {
       if (fAllAdded) {
-        packet.Encode4(u.nSN);
+        packet.Encode4(u.nSID);
         packet.Encode1(u.GetAuthencode());
       } else {
         packet.Encode4(0);
@@ -609,7 +609,7 @@ export class CxCenter {
     if (!fAllAdded) {
       for (const u of users) {
         if (this.userTable.get(u.strName) === u) this.userTable.delete(u.strName);
-        if (this.serialTable.get(u.nSN) === u) this.serialTable.delete(u.nSN);
+        if (this.serialTable.get(u.nSID) === u) this.serialTable.delete(u.nSID);
       }
     }
     void fAllSimpleInfo;
@@ -674,24 +674,34 @@ export class CxCenter {
    * CLocalServer::OnConnEstablished (center side) — class dependent.  The
    * generic servers (CxCenter.exe.c:10365) decode
    * [E1 n][n×(EStr, E4 serial)] and answer [E1 n][n×(E4 serial, E1 auth)][E1
-   * result]; the shop class (CShopServer::OnConnEstablished 00414B80) carries
-   * one extra E4 flag per user inbound and echoes it back as an extra E1 per
-   * user outbound (LOBYTE(entry[2]) — the billing flag FXSS stores at
-   * user+3116 and later rides inside client 18).
+   * result]; the shop class (CShopServer::OnConnEstablished 00414B80) reads one
+   * extra E4 per user inbound — the shop's CUser::GetSID (+3108, always -1) —
+   * matches it against the SID the login server registered (MC 0's per-user E4,
+   * stored at CUser+80; SID==1 skips the match) and answers an extra E1 per
+   * user: the 0/1 match flag (FXSS's billingFlags — it triggers
+   * RequestRemainCashTw and rides inside client 18).
    */
   OnConnEstablished(owner: CLocalServer, n: CReceivedPacket): void {
     const count = n.Decode1();
     const names: string[] = [];
     const serials: number[] = [];
-    const flags: number[] = [];
+    const sids: number[] = [];
     const fShop = owner.nServerClass === SVRCLASS_SHOP;
     for (let i = 0; i < count; i++) {
       names.push(n.DecodeStr());
       serials.push(n.Decode4());
-      if (fShop) flags.push(n.Decode4());
+      if (fShop) sids.push(n.Decode4());
     }
     let result = 0;
     const users: (CUser | undefined)[] = names.map((nm) => this.userTable.get(nm));
+    // the per-user match flags (CShopServer::OnConnEstablished's entry[2])
+    const flags: number[] = users.map(() => 0);
+    if (fShop) {
+      for (let i = 0; i < count; i++) {
+        const u = users[i];
+        if (u !== undefined && sids[i] !== 1 && sids[i] === u.nSID) flags[i] = 1;
+      }
+    }
     if (users.every((u, i) => u !== undefined && u.strName === names[i] && u.nSvrIdx === owner.nSvrIdx)) {
       result = 1;
       for (const u of users) {
@@ -711,7 +721,7 @@ export class CxCenter {
     for (let i = 0; i < count; i++) {
       packet.Encode4(serials[i]!);
       packet.Encode1(users[i]?.GetAuthencode() ?? 0);
-      if (fShop) packet.Encode1(flags[i] ?? 0);
+      if (fShop) packet.Encode1(flags[i]!);
     }
     packet.Encode1(result);
     owner.socket?.SendPacket(packet);
@@ -737,7 +747,7 @@ export class CxCenter {
   DeleteConnectionTimeoutUser(): void {
     for (const u of [...this.userTable.values()]) {
       if (u.DeferDisconnectTimeout(this)) {
-        this.serialTable.delete(u.nSN);
+        this.serialTable.delete(u.nSID);
         this.userTable.delete(u.strName);
       }
     }

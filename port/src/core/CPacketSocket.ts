@@ -243,7 +243,6 @@ export abstract class CPacketSocket {
       this.PostClosePacket();
       return;
     }
-    if (process.env.TC_DEBUG) console.error(`[TCDBG] onReceive deg=${this.m_nCipherDegree} len=${data.length} head=${Array.from(data.slice(0, 10)).map((x) => x.toString(16).padStart(2, "0")).join(" ")}`);
     this.m_mbRcvBuffer.set(data, this.m_nRcvCnt);
     this.m_nRcvCnt += data.length;
     this.OnReceiveCompletionPacket();
@@ -259,10 +258,8 @@ export abstract class CPacketSocket {
         continue;
       }
       if (err === enSocket.kioNotReady) {
-        if (process.env.TC_DEBUG) console.error(`[TCDBG] notReady deg=${this.m_nCipherDegree} rcvCnt=${this.m_nRcvCnt} head=${Array.from(this.m_mbRcvBuffer.slice(0, Math.min(12, this.m_nRcvCnt))).map((x) => x.toString(16).padStart(2, "0")).join(" ")}`);
         return;
       }
-      if (process.env.TC_DEBUG) console.error(`[TCDBG] getPacket err=${err} deg=${this.m_nCipherDegree}`);
       // 3 (invalid), 5 (too long), 6 (sequencing), 7 (decoding) and others all close.
       this.PostClosePacket();
       return;
@@ -271,7 +268,6 @@ export abstract class CPacketSocket {
 
   /** CServerSocket::PostClosePacket — schedule this socket for disconnection. */
   PostClosePacket(): void {
-    if (process.env.TC_DEBUG) console.error(`[TCDBG] postClose deg=${this.m_nCipherDegree}`, new Error("trace").stack?.split("\n").slice(2, 5).join(" | "));
     if (this.bunSocket) {
       try {
         this.bunSocket.end();

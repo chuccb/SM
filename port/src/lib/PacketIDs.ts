@@ -189,11 +189,18 @@ export const SC_SendPacket = {
 
 // The shop ↔ digicell billing link (CBillingSocketTw).  Request ids encode the
 // Tw flow (…01 = request, …2 = response); the dispatch decodes an E4 type.
+/** Shop → billing server (CBillingProcess senders; FxShop.exe.c).  The ctor's
+ *  degree-4 arg clamps to 0, so every billing send is plain with an E1 type. */
 export const BILLING_SendPacket = {
-  RequestRemainCashTw: 301,
-  RequestGift: 7, // CBillingProcess::RequestGift
-  RequestCheckCoupon: 331, // CBillingProcess::RequestCheckCoupon
-  RequestDigiQAuthorization: 341, // CBillingProcess::RequestDigiQAuthorization
+  RequestCheckCoupon: 0, // CBillingProcess::RequestCheckCoupon (1844)
+  RequestUseCoupon: 1, // CBillingProcess::RequestUseCoupon (1905)
+  RequestGift: 7, // CBillingProcess::RequestGift (1751)
+  RequestRemainCashTw: 301, // CBillingProcess::RequestRemainCashTw (00402690)
+  RequestPurchaseTw: 311, // CBillingProcess::RequestPurchaseTw (00402860)
+  PurchaseConfirmTw: 321, // sent by CBillingProcess::OnPurchaseOKTw (00403C80)
+  OnConnEstablished: 331, // CBillingProcess::ConnectToSvr hello (004015F0)
+  RequestDigiQAuthorization: 341, // CBillingProcess::RequestDigiQAuthorization (00401DF0)
+  TwRequestRTT: 351, // CBillingProcess::TwRequestRTT (00401030)
 } as const;
 
 export const BILLING_ReceivedPacket = {

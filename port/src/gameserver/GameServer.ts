@@ -131,7 +131,7 @@ export const GS_ClientSend = {
   OnSetBombTimerRes: 152, // CGameSession::Update tick [E1 n][n×(E2 bombId)(E1 kick)]
   OnReturnPrepareStage: 164, // CGameSession::DoReturnPrepareStage [E1 0]
   OnGameResult: 163, // CGameSession::SendGameResult (the results unit)
-  OnNeedStartGame: 121, // CGameSession::DeferBanChief [E1 0/1/2/3][E4 seconds]
+  OnNeedStartGame: 121, // CGameSession::DeferBanChief [E1 0/1/2/3][E2 seconds]
   OnUdpLossBan: 195, // asm-only site in Update: empty body + stage=4 (UDP-loss kick)
   OnAirplaneItemProb: 173, // CGameSession::SendAirplaneItemProb [E1 prob]
   OnHackingKick: 196, // CGameSession::OnHackingSuspected [E1 slot]
@@ -1605,10 +1605,10 @@ export class CBanChief {
   m_nCanStart = 0; // +8 (SetCanStart)
   m_nOddSlot = 0; // +12 (SetOddSlot)
   m_dwOddSlotTime = 0; // +16 (SetOddSlot)
-  m_nWarnedBan = 0; // +20 (SetWarnedBan)
-  m_dwWarnedBanTime = 0; // +24 (SetWarnedBan)
-  m_nWarnedBanOdd = 0; // +28 (SetWarnedBanOddSlot)
-  m_dwWarnedBanOddTime = 0; // +32 (SetWarnedBanOddSlot)
+  m_nWarnedBan = 0; // +14 (SetWarnedBan)
+  m_dwWarnedBanTime = 0; // +18 (SetWarnedBan)
+  m_nWarnedBanOdd = 0; // +1C (SetWarnedBanOddSlot)
+  m_dwWarnedBanOddTime = 0; // +20 (SetWarnedBanOddSlot)
 
   /** CBanChief::Init (401101) — SetOddSlot(0) then SetCanStart(0). */
   Init(): void {
@@ -2817,7 +2817,7 @@ export class CGameSession {
   AddPlayerList(socket: CClientSocket, selects: number[]): number {
     if (this.m_fPlaying !== 0) return 0;
     if (this.AddPlayer(socket, selects) === 0) return 0;
-    if (CClientSocket.HasAuthority(24) !== 0) {
+    if (CClientSocket.HasAuthority(1) !== 0) { // CGameSession::AddPlayer: HasAuthority(1)
       this.SetNewChief(this.GetSlotidx(socket.GetUser(0)));
     }
     return 1;
@@ -3325,7 +3325,7 @@ export class CGameSession {
       // [+34C] plain rooms: only 2+-player ones are gated
       if (this.m_nMaxPlayerNum > 1) {
         this.m_BanChief.SetOddSlot(0); // 41C202
-      } else if (CClientSocket.HasAuthority(25) !== 0) {
+      } else if (CClientSocket.HasAuthority(22) !== 0) { // CUser::HasAuthority(22)
         this.m_BanChief.SetOddSlot(0); // 41C1F5 → 41C202 (CUser::HasAuthority)
       } else {
         oddGate = true;
@@ -3334,7 +3334,7 @@ export class CGameSession {
       // event rooms: odd player counts are gated
       if (this.m_nMaxPlayerNum % 2 === 0) {
         this.m_BanChief.SetOddSlot(0); // 41C1E4 even → 41C202
-      } else if (CClientSocket.HasAuthority(25) !== 0) {
+      } else if (CClientSocket.HasAuthority(22) !== 0) { // CUser::HasAuthority(22)
         this.m_BanChief.SetOddSlot(0); // 41C1F5 → 41C202
       } else {
         oddGate = true;
@@ -3350,12 +3350,12 @@ export class CGameSession {
           bc.SetWarnedBanOdd(1);
           const p = new CSendPacket(GS_ClientSend.OnNeedStartGame, 2);
           p.Encode1(1);
-          p.Encode4(Math.trunc(bc.GetWarningDelay(now) / 1000));
+          p.Encode2(Math.trunc(bc.GetWarningDelay(now) / 1000));
           this.SendPacket(p);
         } else if (now - bc.m_dwWarnedBanOddTime > bc.GetWarningDelay(now)) {
           const p = new CSendPacket(GS_ClientSend.OnNeedStartGame, 2);
           p.Encode1(3);
-          p.Encode4(Math.trunc(bc.GetWarningDelay(now) / 1000));
+          p.Encode2(Math.trunc(bc.GetWarningDelay(now) / 1000));
           user.m_pSocket.SendPacket(p); // vtbl+68 — the chief only
           // CBaseSessionTable vtbl+48 (the DestroyPlayer override) then +468 = 4
           CGameSessionTable.ms_pInstance!.DestroyPlayer(user.m_pSocket, 0);
@@ -3375,21 +3375,21 @@ export class CGameSession {
       return;
     }
     // 41C35B — the idle-game gate
-    if (CClientSocket.HasAuthority(25) !== 0) return;
+    if (CClientSocket.HasAuthority(22) !== 0) return; // CUser::HasAuthority(22)
     const flag = this.m_nMaxPlayerNum - this.m_nCurPlayerNum < 0 ? 1 : 0;
     if (!this.m_BanChief.IsBanChief(flag, this.m_nGameType, superChief)) return;
     if (this.m_BanChief.m_nWarnedBan === 0) {
       this.m_BanChief.SetWarnedBan(1);
       const p = new CSendPacket(GS_ClientSend.OnNeedStartGame, 2);
       p.Encode1(0);
-      p.Encode4(Math.trunc(this.m_BanChief.GetWarningDelay(now) / 1000));
+      p.Encode2(Math.trunc(this.m_BanChief.GetWarningDelay(now) / 1000));
       this.SendPacket(p);
       return;
     }
     if (now - this.m_BanChief.m_dwWarnedBanTime <= this.m_BanChief.GetWarningDelay(now)) return;
     const p2 = new CSendPacket(GS_ClientSend.OnNeedStartGame, 2);
     p2.Encode1(2);
-    p2.Encode4(Math.trunc(this.m_BanChief.GetWarningDelay(now) / 1000));
+    p2.Encode2(Math.trunc(this.m_BanChief.GetWarningDelay(now) / 1000));
     user.m_pSocket.SendPacket(p2); // vtbl+68 — the chief only
     CGameSessionTable.ms_pInstance!.DestroyPlayer(user.m_pSocket, 0); // vtbl+48 (+468 = 4 in the tail)
     this.m_BanChief.SetCanStart(0); // 41C46C
@@ -6498,7 +6498,7 @@ export class CMainSystem {
   /** CMainSystem::OnConnEstablished — the connect-time packet 0
    *  (CSendPacket(&v3, 0, 0) — plain on every server). */
   OnConnEstablished(socket: CClientSocket): void {
-    const packet = new CSendPacket(0, 0);
+    const packet = new CSendPacket(GS_ClientSend.OnConnect, 0);
     packet.Encode2(3);
     packet.Encode2(7);
     packet.Encode4(socket.m_nHeaderType);

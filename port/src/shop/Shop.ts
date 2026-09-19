@@ -130,7 +130,13 @@ export class CUser {
   m_pSocket: CClientSocket | null = null; // +3092
   m_fConnEstablished = 0; // +20 — set once CM 2 confirms the user
   m_nAuthenCode = 0; // +3116 (byte) — the CM 2 authencode (1 → [E1 1][E1 101])
-  m_nBillingFlag = 0; // +3108 — the per-user billing flag (MC 3 third column)
+  m_nSID = -1; // +3108 — CUser::GetSID/SetSID (the account SID); the shop never
+  // writes it (CUser::SetSID has no callers in FxShop), so MC 3 always carries -1
+  m_nBID = -1; // +3112 — CUser::GetBID/SetBID (the SID pair's second dword)
+  m_strCoupon = ""; // +3008 — the client 219 coupon (CMainPool::OnRequestUseCoupon)
+  m_strCouponId = ""; // +3032 — the client 219 registered id
+  m_strTranxInfo = ""; // +2900 — the per-user transaction string (ResetTranxInfo clears it)
+  m_nUserAccountHiword = 0; // +152 = _USERACCOUNT+128 — the billing tail E2 (HIWORD)
   m_nCash = 0; // +128 — the cached FxUserDynamic.Money
   m_nSelectedUserIdx = 0; // socket-side selection
   m_nLevel = 0; // +3100 — CUser::SetLevel (CDynInfoCalculator::GetLevel(Exp))
@@ -478,14 +484,14 @@ export class CMainPool extends CUserPool {
       return;
     }
     socket.m_nSelectedUserIdx = n.Decode1();
-    // → center MC 3 with the shop's extra per-user flag column (user+3108)
+    // → center MC 3 with the shop's extra per-user SID column (user+3108)
     const p = new CSendPacket(MC_ReceivedPacket.OnConnEstablished);
     p.Encode1(count);
     for (let j = 0; j < count; j++) {
       const u = socket.GetUser(j)!;
       p.EncodeStr(u.GetName());
       p.Encode4(u.GetGlobalSerialNo());
-      p.Encode4(u.m_nBillingFlag);
+      p.Encode4(u.m_nSID); // CUser::GetSID — always -1 in the shop
     }
     CCenterProcess.ms_pInstance?.SendPacket(p);
   }
@@ -767,7 +773,6 @@ export class CMainPool extends CUserPool {
     }
 
     // MoneyType != 0 = the cash path against the cached user+124 cash
-    if (process.env.TC_DEBUG) console.error(`[TCDBG] purch price=${shopItem.Price} cash=${user.m_nCash}`);
     if (shopItem.Price > user.m_nCash) {
       this.PurchaseError(user, 1, ERR_PURCHASE);
       return;
@@ -780,7 +785,6 @@ export class CMainPool extends CUserPool {
     } else {
       ok = this.db.prAddInventoryShop(id, shopItem.ItemSN, shopItem.SN, shopItem.Unit, shopItem.ValidityPeriod, user.m_nLevel);
     }
-    if (process.env.TC_DEBUG) console.error(`[TCDBG] purch ok=${ok}`);
     if (ok === 0) {
       this.PurchaseError(user, 1, ERR_PURCHASE);
       return;
@@ -860,7 +864,7 @@ export class CMainPool extends CUserPool {
   /** CMainPool::OnRequestPresent — client 218 [E2 stockSN][EStr targetId]:
    *  ConfirmRegisteredId, then the billing gift request. */
   OnRequestPresent(n: CReceivedPacket, socket: CClientSocket): void {
-    n.Decode2(); // stockSN
+    const stockSN = n.Decode2();
     const targetId = n.DecodeStr();
     const user = socket.GetUser(socket.m_nSelectedUserIdx);
     if (!user) return;
@@ -878,7 +882,8 @@ export class CMainPool extends CUserPool {
       socket.SendPacket(p);
       return;
     }
-    CBillingProcess.ms_pInstance.RequestGift(user, targetId);
+    const item = CItemMan.ms_pInstance!.GetShopItem(stockSN);
+    CBillingProcess.ms_pInstance.RequestGift(user, targetId, stockSN, item?.Price ?? 0);
   }
 
   /** CMainPool::OnRequestUseCoupon — client 219 [EStr coupon][EStr id]. */
@@ -888,7 +893,10 @@ export class CMainPool extends CUserPool {
     const user = socket.GetUser(socket.m_nSelectedUserIdx);
     if (!user) return;
     if (id.length === 0 || this.db.prConfirmUnregisteredId(id) !== 0) {
-      CBillingProcess.ms_pInstance?.RequestCheckCoupon(user, coupon, id);
+      // CMainPool::OnRequestUseCoupon stores the pair on the user (+3008/+3032)
+      user.m_strCoupon = coupon;
+      user.m_strCouponId = id;
+      CBillingProcess.ms_pInstance?.RequestCheckCoupon(user);
       return;
     }
     const p = new CSendPacket(SC_SendPacket.OnUseCouponRes, 2);
@@ -977,7 +985,8 @@ export class CMainPool extends CUserPool {
     const b = n.DecodeStr();
     const user = socket.GetUser(socket.m_nSelectedUserIdx);
     if (!user) return;
-    CBillingProcess.ms_pInstance?.RequestDigiQAuthorization(user, a, b);
+    // the third buffer is the user's own name (FxShop.exe.c 19824-19832)
+    CBillingProcess.ms_pInstance?.RequestDigiQAuthorization(user, a, b, user.GetName());
   }
 
   /** CMainPool::OnRequestTranxData — client 225 [E2][E2][E2][E4] → CTranxCtrl
@@ -1209,6 +1218,11 @@ export class CBillingProcess {
         socket.bunSocket = conn;
         this.m_pSocket = socket;
         this.m_fConnected = 1;
+        // CBillingProcess::ConnectToSvr — the 331 hello: [E4 4][E4 GetWorld()]
+        const hello = new CSendPacket(BILLING_SendPacket.OnConnEstablished, 4);
+        hello.Encode4(4);
+        hello.Encode4(this.m_nSvrTag);
+        this.Send(hello);
         return 1;
       } catch {
         continue;
@@ -1223,12 +1237,14 @@ export class CBillingProcess {
     if ((await this.ConnectToSvr()) !== 0) this.m_fConnected = 1;
   }
 
-  /** the Proc-loop retry: `if (++count % 0x28 == 0 && !connected) ConnectToSvr()`. */
+  /** CBillingProcess::OnTimer — `++tick % 0x28 == 0 && !connected →
+   *  ConnectToSvr()`; `% 0x5DC == 0 → TwRequestRTT()`. */
   async OnTimer(): Promise<void> {
     this.m_nRetryCount++;
     if (this.m_nRetryCount % 0x28 === 0 && this.m_fConnected === 0) {
       if ((await this.ConnectToSvr()) !== 0) this.m_fConnected = 1;
     }
+    if (this.m_nRetryCount % 0x5dc === 0) this.TwRequestRTT();
   }
 
   IsConnected(): number {
@@ -1260,7 +1276,7 @@ export class CBillingProcess {
   }
 
   /** CBillingProcess::RequestRemainCashTw — billing 301 (cipher degree 4):
-   *  [E4 +2328][E4 +2332][E4 4][E4 this+260][E1 len][name][E4 +2320]
+   *  [E4 SID][E4 BID][E4 4][E4 GetWorld()][E1 len][name][E4 serial]
    *  [E1 len][client ip].  Requires the billing link (this+324) and the
    *  user's socket. */
   RequestRemainCashTw(user: CUser): void {
@@ -1269,10 +1285,10 @@ export class CBillingProcess {
     const ip = user.m_pSocket.m_strPeerAddress;
     const name = user.GetName();
     const p = new CSendPacket(BILLING_SendPacket.RequestRemainCashTw, 4);
-    p.Encode4(user.m_nTranxSerial);
-    p.Encode4(0);
+    p.Encode4(user.m_nSID);
+    p.Encode4(user.m_nBID);
     p.Encode4(4);
-    p.Encode4(this.m_nSvrTag); // this+260
+    p.Encode4(this.m_nSvrTag); // GetWorld()
     p.Encode1(name.length);
     p.EncodeBuffer(Buffer.from(name, "latin1"));
     p.Encode4(user.GetGlobalSerialNo());
@@ -1281,41 +1297,92 @@ export class CBillingProcess {
     this.Send(p);
   }
 
-  m_nSvrTag = 0; // this+260 — the billing session tag
+  m_nSvrTag = 0; // this+260 = CBillingSocketTw+252 — CBillingSocketTw::GetWorld()
+  // (the ctor seeds it from CServerConfig::GetServerIdx()); set by CxShop.Init
 
-  /** CBillingProcess::RequestGift — billing 7. */
-  RequestGift(user: CUser, targetId: string): void {
+  /** CBillingProcess::RequestGift — billing 7:
+   *  [E4 serial][E4 0][E4 0][E4 stockSN][E4 price][EStr clubId][EStr name]
+   *  [E1 domain][E2 UA+128 HIWORD][EStr +2904 tranx string]. */
+  RequestGift(user: CUser, targetId: string, stockSN: number, price: number): void {
     const p = new CSendPacket(BILLING_SendPacket.RequestGift);
+    p.Encode4(user.GetGlobalSerialNo());
+    p.Encode4(0);
+    p.Encode4(0);
+    p.Encode4(stockSN);
+    p.Encode4(price);
     p.EncodeStr(user.m_strNexonClubId);
-    p.EncodeStr(targetId);
+    p.EncodeStr(user.GetName());
+    p.Encode1(CxShop.ms_pInstance!.m_nFXAttr & 0xff); // CMainSystem+4 GetDomain
+    p.Encode2(user.m_nUserAccountHiword);
+    p.EncodeStr(user.m_strTranxInfo);
     this.Send(p);
   }
 
-  /** CBillingProcess::RequestCheckCoupon — billing 331. */
-  RequestCheckCoupon(user: CUser, coupon: string, id: string): void {
+  /** RequestCheckCoupon / RequestUseCoupon — billing 0/1, identical shape:
+   *  [E4 serial][EStr +3008 coupon][EStr clubId][EStr name][E1 domain]
+   *  [E2 UA+128 HIWORD]. */
+  RequestCheckCoupon(user: CUser): void {
     const p = new CSendPacket(BILLING_SendPacket.RequestCheckCoupon);
-    p.EncodeStr(user.GetName());
-    p.EncodeStr(coupon);
-    p.EncodeStr(id);
+    this.EncodeCouponBody(p, user);
     this.Send(p);
   }
 
-  /** CBillingProcess::RequestDigiQAuthorization — billing 341. */
-  RequestDigiQAuthorization(user: CUser, a: string, b: string): void {
+  RequestUseCoupon(user: CUser): void {
+    const p = new CSendPacket(BILLING_SendPacket.RequestUseCoupon);
+    this.EncodeCouponBody(p, user);
+    this.Send(p);
+  }
+
+  private EncodeCouponBody(p: CSendPacket, user: CUser): void {
+    p.Encode4(user.GetGlobalSerialNo());
+    p.EncodeStr(user.m_strCoupon);
+    p.EncodeStr(user.m_strNexonClubId);
+    p.EncodeStr(user.GetName());
+    p.Encode1(CxShop.ms_pInstance!.m_nFXAttr & 0xff); // CMainSystem+4 GetDomain
+    p.Encode2(user.m_nUserAccountHiword);
+  }
+
+  /** CBillingProcess::RequestDigiQAuthorization — billing 341:
+   *  [E1 len][Ebuf]×3 (three length-prefixed ANSI strings). */
+  RequestDigiQAuthorization(_user: CUser, a: string, b: string, c: string): void {
     const p = new CSendPacket(BILLING_SendPacket.RequestDigiQAuthorization);
-    p.EncodeStr(user.GetName());
-    p.EncodeStr(a);
-    p.EncodeStr(b);
+    for (const s of [a, b, c]) {
+      const buf = Buffer.from(s, "latin1");
+      p.Encode1(buf.length);
+      p.EncodeBuffer(buf);
+    }
     this.Send(p);
   }
 
-  /** CBillingProcess::RequestPurchaseTw — billing 311. */
+  /** CBillingProcess::RequestPurchaseTw — billing 311:
+   *  [E4 SID][E4 BID][E4 4][E4 GetWorld()][E1 len][name][E4 price][E4 1]
+   *  [E4 BID][E4 stockSN][E4 1][E1 len][client ip]. */
   RequestPurchaseTw(user: CUser, item: ShopItem): void {
-    void user;
-    void item;
-    // the digicell purchase request — unreachable with an empty BillingSvr
-    // table; the encoded payload follows the Tw spec and needs a live billing
-    // server to be exercised.
+    if (!user.m_pSocket) return;
+    const ip = user.m_pSocket.m_strPeerAddress;
+    const name = user.GetName();
+    const p = new CSendPacket(BILLING_SendPacket.RequestPurchaseTw, 4);
+    p.Encode4(user.m_nSID);
+    p.Encode4(user.m_nBID);
+    p.Encode4(4);
+    p.Encode4(this.m_nSvrTag); // GetWorld()
+    p.Encode1(name.length);
+    p.EncodeBuffer(Buffer.from(name, "latin1"));
+    p.Encode4(item.Price);
+    p.Encode4(1);
+    p.Encode4(user.m_nBID);
+    p.Encode4(item.SN);
+    p.Encode4(1);
+    p.Encode1(ip.length);
+    p.EncodeBuffer(Buffer.from(ip, "latin1"));
+    this.Send(p);
+  }
+
+  /** CBillingProcess::TwRequestRTT — billing 351: [E1 123]. */
+  TwRequestRTT(): void {
+    const p = new CSendPacket(BILLING_SendPacket.TwRequestRTT, 4);
+    p.Encode1(123);
+    this.Send(p);
   }
 
   /** CBillingProcess::OnRemainCashTw — billing 302:
@@ -1604,7 +1671,9 @@ export class CxShop {
     await this.center.Init(this.cfg);
 
     // CBillingProcess::Init
-    if (!process.env.TC_NO_BILLING) await this.billing.Init();
+    // CBillingSocketTw ctor seeds GetWorld() (+252) from CServerConfig::GetServerIdx()
+    this.billing.m_nSvrTag = this.cfg.GetNumAttribute("ServerIndex") || 0;
+    await this.billing.Init();
 
     // InitChargeUrl / InitAuthUrl — ConfigDB prGetStringAttr @ChargeUrl/@AuthUrl
     this.m_strChargeUrl = this.db.prGetStringAttr("ChargeUrl").strVal;
@@ -1619,7 +1688,6 @@ export class CxShop {
       socket: {
         open: (t) => {
           try {
-            if (process.env.TC_DEBUG) console.error("[TCDBG] shop open hook enter");
             const socket = new CClientSocket();
             clientSockets.set(t, socket);
             socket.bunSocket = t as Bun.Socket<any>;
@@ -1628,13 +1696,11 @@ export class CxShop {
             // CListenThread::Proc — the accept packet, then SetCipherDegree(2) before Read
             this.mainSystem.OnConnEstablished(socket);
             socket.SetCipherDegree(2);
-            if (process.env.TC_DEBUG) console.error("[TCDBG] shop open hook done");
           } catch (e) {
-            console.error("[TCDBG] shop open hook THREW", e);
+            console.error("[Shop] client accept failed", e);
           }
         },
         data: (t, data) => {
-          if (process.env.TC_DEBUG) console.error(`[TCDBG] shop data hook len=${data.length} hasSocket=${clientSockets.has(t)}`);
           const s = clientSockets.get(t);
           if (s) {
             s.m_dwIdleTime = Date.now();
