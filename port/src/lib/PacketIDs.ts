@@ -156,6 +156,7 @@ export const GS_ClientSend = {
   OnRequestUserSimpleInfoRes: 70, // CChannelPool::PutUserSimpleInfoPacket
   OnCreateSessionRes: 80, // [E1 result][E2 idx][E4 serial][E1 gameType]
   OnJoinSessionRes: 81, // [E1 result]
+  OnJoinFreeSessionRes: 82, // JoinFreeSession [E1 2] — the +1316 candidate list is never filled in FXGS
   OnSessionSimpleInfo: 83, // CListSession::MakeSimpleInfoPacket (room list)
   OnSessionCreated: 85, // CListSession::MakeCreatedPacket
   OnSessionModified: 86, // CListSession::MakeModifiedPacket

@@ -656,9 +656,15 @@ export class CClientSocket extends CPacketSocket {
     return this.m_anBeforeJoinSession.includes(idx);
   }
 
-  /** CClientSocket::AddBeforeJoinSession */
+  /**
+   * CClientSocket::AddBeforeJoinSession (FxServer.exe.c:8908) — remember a
+   * session idx this socket left, in the fixed 5-entry array at +476 with the
+   * count at +496: once full, entry 0 falls off ([119]<=[120]<=[121]<=
+   * [122]<=[123]=idx).
+   */
   AddBeforeJoinSession(idx: number): void {
     if (this.CheckInBeforeJoinSession(idx)) return;
+    if (this.m_anBeforeJoinSession.length >= 5) this.m_anBeforeJoinSession.shift();
     this.m_anBeforeJoinSession.push(idx);
   }
 
@@ -5710,24 +5716,28 @@ export class CGameSessionTable {
     CGameSessionTable.UnlockBaseSessions(idx);
   }
 
-  /** CGameSessionTable::JoinFreeSession — packet 82 body (DoJoinFreeSession). */
+  /**
+   * CGameSessionTable::JoinFreeSession (42331B) — packet 82, the auto-join.
+   * DoJoinFreeSession (422A05) picks its candidate from the session list at
+   * +1316, which nothing in FXGS ever inserts into (only ctor/dtor/this read
+   * touch +524h), so the reply is always the [E1 2] failure; the decoded
+   * selects (each % (CBomberAttr total + 1)) are discarded.
+   */
   JoinFreeSession(n: CReceivedPacket, socket: CClientSocket): void {
     const count = n.Decode1();
-    const selects: number[] = [];
-    for (let i = 0; i < count; i++) selects.push(n.Decode1());
     if (count !== socket.GetUserCount()) {
       console.error("[GS] CCChannelPool::OnRequestAutoJoinSession, player count not matched!");
       socket.PostClosePacket();
       return;
     }
-    // DoJoinFreeSession: the first open, non-playing room wins.
-    for (const session of this.m_apGameSession) {
-      if (!session || session.fValid === 0 || session.m_fPlaying !== 0) continue;
-      if (session.GetEmptySlotCount() < socket.GetUserCount()) continue;
-      this.DoJoinSession(socket, session.m_nIdx, session.m_nSerialNo, session.m_szPassword, selects);
-      return;
+    const mod = (CBomberAttr.ms_pInstance?.m_nTotalCount ?? 0) + 1;
+    for (let i = 0; i < count; i++) void (n.Decode1() % mod);
+    if (this.KickImp(socket) !== 0) return; // the revenge kick already destroyed the socket
+    for (let i = 0; i < socket.GetUserCount(); i++) {
+      // every user must still be outside a session (GetSessionIdx == 0xFFFF)
+      if (socket.GetUser(i)!.GetSessionIdx() !== SESSION_IDX_NONE) return;
     }
-    const res = new CSendPacket(GS_ClientSend.OnJoinSessionRes, CipherDegree.kPacketEncryptedCRC8);
+    const res = new CSendPacket(GS_ClientSend.OnJoinFreeSessionRes, CipherDegree.kPacketEncryptedCRC8);
     res.Encode1(2);
     socket.SendPacket(res);
   }
