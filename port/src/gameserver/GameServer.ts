@@ -1279,16 +1279,18 @@ export class CItemAttr {
 
 /** CBomberAttr (Attr/BomberAttr) — 296 bytes per bomber, FxServer.exe.c:54336. */
 export interface BomberAttrEntry {
-  strName: string; // +0
-  nAttr1: number; // +256
-  nAttr2: number; // +260
+  strName: string; // +0 (Load also builds the +64 "_Display", +128 "_Portrait"
+  // and +192 "_Emotion" copies; FXGS itself only reads the +192 one through
+  // the never-called GetEmotionTmplName :54457)
+  nAttr1: number; // +256 — != 0 marks a hidden bomber (Load bumps m_nHiddenCount)
+  nCurrentSpeed: number; // +260 — the 109 "currentspeed" wire compare
   nAttr3: number; // +264
-  nAttr4: number; // +268
-  nDefSpeed: number; // +272 (clamped to 10)
-  nAttr6: number; // +276
-  nDefBombCount: number; // +280
+  nBombCount: number; // +268 — the 109 "bombcount" wire compare
+  nAttr5Clamped: number; // +272 — clamped to 10 at load; no reader in FXGS
+  nBombPower: number; // +276 — the 109 "bombpower" wire compare
+  nAttr7: number; // +280
   nAttr8: number; // +284
-  nDefBombPower: number; // +288
+  nAttr9: number; // +288
   nAttr10: number; // +292
 }
 
@@ -1320,14 +1322,14 @@ export class CBomberAttr {
       const attr: BomberAttrEntry = {
         strName: name,
         nAttr1: dv.getUint32(at, true),
-        nAttr2: dv.getUint32(at + 4, true),
+        nCurrentSpeed: dv.getUint32(at + 4, true),
         nAttr3: dv.getUint32(at + 8, true),
-        nAttr4: dv.getUint32(at + 12, true),
-        nDefSpeed: Math.min(dv.getUint32(at + 16, true), 10),
-        nAttr6: dv.getUint32(at + 20, true),
-        nDefBombCount: dv.getUint32(at + 24, true),
+        nBombCount: dv.getUint32(at + 12, true),
+        nAttr5Clamped: Math.min(dv.getUint32(at + 16, true), 10), // the load-time clamp (FxServer.exe.c:54407)
+        nBombPower: dv.getUint32(at + 20, true),
+        nAttr7: dv.getUint32(at + 24, true),
         nAttr8: dv.getUint32(at + 28, true),
-        nDefBombPower: dv.getUint32(at + 32, true),
+        nAttr9: dv.getUint32(at + 32, true),
         nAttr10: dv.getUint32(at + 36, true),
       };
       at += 40;
@@ -1354,16 +1356,21 @@ export class CBomberAttr {
     return (idx >= 0 && idx < this.GetNormalCount()) || idx === this.m_nTotalCount;
   }
 
-  GetDefSpeed(idx: number): number {
-    return this.m_vtAttr[idx]?.nDefSpeed ?? 0;
+  /**
+   * The three attr reads of OnReadyForImmediateStart (:34441, v10 =
+   * ms_pInstance + 296*idx, i.e. the record payload minus 12): the wire
+   * bytes compare against record dwords 1 / 3 / 5 (+260/+268/+276).
+   */
+  GetCurrentSpeed(idx: number): number {
+    return this.m_vtAttr[idx]?.nCurrentSpeed ?? 0;
   }
 
-  GetDefBombCount(idx: number): number {
-    return this.m_vtAttr[idx]?.nDefBombCount ?? 0;
+  GetBombCount(idx: number): number {
+    return this.m_vtAttr[idx]?.nBombCount ?? 0;
   }
 
-  GetDefBombPower(idx: number): number {
-    return this.m_vtAttr[idx]?.nDefBombPower ?? 0;
+  GetBombPower(idx: number): number {
+    return this.m_vtAttr[idx]?.nBombPower ?? 0;
   }
 }
 
