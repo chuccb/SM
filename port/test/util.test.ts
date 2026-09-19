@@ -17,6 +17,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CxCenter, CUser } from "../src/center/Center.ts";
 import { CServerConfig } from "../src/core/Config.ts";
+import { GetUserHashNo } from "../src/db/DBMan.ts";
 import { CLocalSocket } from "../src/lib/CenterLink.ts";
 import { SVRCLASS_GAME, SVRCLASS_UTIL } from "../src/lib/S2S.ts";
 import {
@@ -135,7 +136,7 @@ describe("util server (CxUtil)", () => {
   test("packet 7 tool login, then 64 → center MC 7 → CM 10 → tool 64", async () => {
     // the center-side user the lookup resolves against (as the LS flow
     // would have registered it: on game server 0, session 4242)
-    const cu = new CUser("op1", SVRCLASS_GAME, 0, 5001);
+    const cu = new CUser("op1", SVRCLASS_GAME, 0, 5001, 0, 0, center);
     cu.nSessionIdx = 4242;
     center.userTable.set("op1", cu);
     center.serialTable.set(5001, cu);
@@ -187,7 +188,7 @@ describe("util server (CxUtil)", () => {
   });
 
   test("32 → CM 1 name-keyed → CM 11 [E4 SN] to the user's server", async () => {
-    const cu = new CUser("op2", SVRCLASS_GAME, 0, 5002);
+    const cu = new CUser("op2", SVRCLASS_GAME, 0, 5002, 0, 0, center);
     center.userTable.set("op2", cu);
     center.serialTable.set(5002, cu);
 
@@ -235,5 +236,41 @@ describe("util server (CxUtil)", () => {
     // the 4 tools above: CMainSystem+32 counted every accept
     expect(CMainSystem.ms_pInstance!.m_nConnNo).toBeGreaterThanOrEqual(5);
     expect(CClientSocket.ms_nLocalSerialNo).toBeGreaterThanOrEqual(6);
+  });
+});
+
+describe("center timer machinery (CTimerThread)", () => {
+  test("the %2 tick broadcasts CM 4 [E4 gsCount][E4 connNo] to the LS+GS links", async () => {
+    center.StartTimer();
+    // drain whatever the periodic broadcast already pushed
+    const before = linkInbox.filter((p) => p.id === 4).length;
+    linkInbox.length = 0;
+    void before;
+    // the ctor's SetSvrIdx carries the conn counters (CxCenter 21590)
+    const svr = center.GetSvr(SVRCLASS_GAME, 0)!;
+    const connBefore = svr.nConnNo;
+    const cu = new CUser("timerop", SVRCLASS_GAME, 0, 7003, 0, 0, center);
+    center.userTable.set("timerop", cu);
+    center.serialTable.set(7003, cu);
+    expect(svr.nConnNo).toBe(connBefore + 1); // the ctor's IncConn
+    cu.SetConnectingToSvr(SVRCLASS_GAME, 0, center);
+    expect(svr.nConnNo).toBe(connBefore + 1); // the same-server move nets zero
+    const cm4 = await waitLink(4, 2500);
+    expect(cm4.Decode4()).toBe(1); // FXGSNumber
+    expect(cm4.Decode4()).toBe(svr.nConnNo); // the live conn count
+  });
+
+  test("the timeout sweep processes one %6 shard per call (0x445C stamp)", async () => {
+    const cu = center.userTable.get("timerop")!;
+    const connBefore = center.GetSvr(SVRCLASS_GAME, 0)!.nConnNo;
+    cu.nConnectStamp = (Date.now() & 0x7fffffff) - 0x5000; // 20 s > 0x445C → overdue
+    // six calls cover every shard exactly once
+    for (let i = 0; i < 6; i++) center.DeleteConnectionTimeoutUser();
+    expect(center.userTable.has("timerop")).toBe(false);
+    expect(center.serialTable.has(7003)).toBe(false);
+    // SetFree's DecConn undoes exactly the ctor's IncConn
+    expect(center.GetSvr(SVRCLASS_GAME, 0)!.nConnNo).toBe(connBefore - 1);
+    // and the shard placement really is GetUserHashNo
+    expect(GetUserHashNo("timerop")).toBeLessThan(6);
   });
 });

@@ -15,6 +15,7 @@
  * like the original behaves when the billing service is absent.
  */
 import { CServerConfig } from "../core/Config.ts";
+import { GetUserHashNo } from "../db/DBMan.ts";
 import { CPacketSocket } from "../core/CPacketSocket.ts";
 import { CReceivedPacket, CSendPacket } from "../core/Packet.ts";
 import {
@@ -49,7 +50,7 @@ export class CUser {
   nConnStamp: number; // p0 head (the LS socket's address stamp)
   fSimpleInfoModified = 0; // +56: premium-ticket flag from the LS
   nCommunitySvr = 0; // +76 (byte)
-  nChannel: number; // +60 (byte): the server class the user currently sits on
+  nChannel = 0; // +60 (byte): the server class the user currently sits on
   nSessionIdx = 0; // +64: the session slot on that server (0 = none)
   nConnectStamp = 0; // +72 (GetTickCount at SetConnectingToSvr)
   fFree = 0; // +20 (CSafeObject: freed by SetFree)
@@ -64,14 +65,22 @@ export class CUser {
     nSN: number,
     nLocalSerialNo: number,
     nConnStamp: number,
+    man?: CxCenter,
   ) {
     this.strName = strName;
     this.nServerClass = nServerClass;
-    this.nSvrIdx = nSvrIdx;
+    this.nSvrIdx = -0x80000000; // +64 sentinel before the ctor's SetSvrIdx
     this.nSID = nSN;
     this.nLocalSerialNo = nLocalSerialNo;
     this.nConnStamp = nConnStamp;
-    this.nChannel = nServerClass; // CUser::SetSvrIdx at construction
+    // CUser::CUser (CxCenter.exe.c:21590) runs SetSvrIdx — the ctor's move
+    // carries the Inc/DecConn bookkeeping.  (Tests may skip the table move
+    // by omitting the manager.)
+    if (man) this.SetSvrIdx(nServerClass, nSvrIdx, man);
+    else {
+      this.nChannel = nServerClass;
+      this.nSvrIdx = nSvrIdx;
+    }
   }
 
   GetAuthencode(): number {
@@ -97,16 +106,28 @@ export class CUser {
     return 1;
   }
 
-  /** CUser::SetConnectingToSvr (CUser::SetSvrIdx moves the user + the conn counters). */
-  SetConnectingToSvr(nServerType: number, SmallLoadedSvrIdx: number, man: CxCenter): void {
+  /** CUser::SetSvrIdx (CxCenter.exe.c:21164) — move the user and the
+   *  conn counters; no connecting bookkeeping. */
+  SetSvrIdx(nServerType: number, SmallLoadedSvrIdx: number, man: CxCenter): void {
     const oldSvr = man.GetSvr(this.nChannel, this.nSvrIdx);
     if (oldSvr) oldSvr.nConnNo--; // CLocalServer::DecConn
-    this.nConnectingType = nServerType;
-    this.nConnectingIdx = SmallLoadedSvrIdx;
-    this.nChannel = nServerType;
     this.nSvrIdx = SmallLoadedSvrIdx;
+    this.nChannel = nServerType;
     const newSvr = man.GetSvr(nServerType, SmallLoadedSvrIdx);
     if (newSvr) newSvr.nConnNo++; // CLocalServer::IncConn
+  }
+
+  /**
+   * CUser::SetConnectingToSvr (CxCenter.exe.c:415540) — the move plus the
+   * port's connecting bookkeeping (the +68 marker/stamp live in the port's
+   * nConnectingType/Idx/nConnectStamp; the original sets them in
+   * CheckConnectingToSvr — the observable state machine is the same).
+   * InsertConnectingList is covered by the serial table.
+   */
+  SetConnectingToSvr(nServerType: number, SmallLoadedSvrIdx: number, man: CxCenter): void {
+    this.SetSvrIdx(nServerType, SmallLoadedSvrIdx, man);
+    this.nConnectingType = nServerType;
+    this.nConnectingIdx = SmallLoadedSvrIdx;
     this.nConnectStamp = Date.now() & 0x7fffffff;
   }
 
@@ -468,18 +489,33 @@ export class CxCenter {
   }
 
   /** CLocalServerMan::SendLocalSvrStatePacket — packet 4 (CxCenter.exe.c:12304). */
+  /** CLocalServerMan::SendLocalSvrStatePacket (CxCenter.exe.c:12304) —
+   *  [E4 FXGSNumber][per GS: nConnNo or -1].  a2!=0 (the register path)
+   *  broadcasts to every connected LS+GS; a2==0 (CTimerThread::OnTimer)
+   *  sends to at most 10 connected LS+GS per call through a rotating
+   *  cursor (dword_48108C). */
+  m_nStateRotate = 0;
+
   SendLocalSvrStatePacket(a2: number): void {
     const packet = new CSendPacket(CM_ReceivedPacket.OnLocalServerState);
     const gsServers = this.servers.filter((s) => s.nServerClass === SVRCLASS_GAME);
     packet.Encode4(gsServers.length);
     for (const gs of gsServers) packet.Encode4(gs.socket ? gs.nConnNo : -1);
-    if (a2 === 0) {
-      const lsServers = this.servers.filter((s) => s.nServerClass === SVRCLASS_LOGIN);
-      packet.Encode4(gsServers.length + lsServers.length);
-      for (const ls of lsServers) packet.Encode4(ls.socket ? ls.nConnNo : -1);
-      for (const gs of gsServers) packet.Encode4(gs.socket ? gs.nConnNo : -1);
+    if (a2 !== 0) {
+      this.SendPacketToAllLoginAndGameSvr(packet);
+      return;
     }
-    this.SendPacketToAllLoginAndGameSvr(packet);
+    const targets = this.servers.filter(
+      (s) => (s.nServerClass === SVRCLASS_LOGIN || s.nServerClass === SVRCLASS_GAME) && s.socket,
+    );
+    const n = targets.length;
+    if (n === 0) return;
+    let i = this.m_nStateRotate % n;
+    for (let sent = 0; sent < 10 && sent < n; sent++) {
+      targets[i]!.socket!.SendPacket(packet);
+      i = (i + 1) % n;
+    }
+    this.m_nStateRotate = i;
   }
 
   /** CLocalServerMan::SendPacketToAllLoginAndGameSvr */
@@ -667,7 +703,7 @@ export class CxCenter {
       const sn = n.Decode4();
       const fSimpleInfoModified = n.Decode1();
       const communitySvr = n.Decode1();
-      const u = new CUser(name, SVRCLASS_LOGIN, owner.nSvrIdx, sn, 0, nConnStamp);
+      const u = new CUser(name, SVRCLASS_LOGIN, owner.nSvrIdx, sn, 0, nConnStamp, this);
       if (fSimpleInfoModified !== 0) u.fSimpleInfoModified = 1;
       else fAllSimpleInfo = 0;
       u.nCommunitySvr = communitySvr;
@@ -832,9 +868,16 @@ export class CxCenter {
     timer.unref?.();
   }
 
-  /** CGlobalUserTable::DeleteConnectionTimeoutUser — the 0x445C ms sweep. */
+  /** CGlobalUserTable::DeleteConnectionTimeoutUser (CxCenter.exe.c:9415) —
+   *  each call processes ONE shard of the %6 name-hash table (the same
+   *  GetUserHashNo sharding the DB layer uses) and drops the users whose
+   *  connecting stamp is older than 0x445C ms. */
+  m_nSweepCounter = 0;
+
   DeleteConnectionTimeoutUser(): void {
+    const shard = this.m_nSweepCounter++ % 6;
     for (const u of [...this.userTable.values()]) {
+      if (GetUserHashNo(u.strName) !== shard) continue;
       if (u.DeferDisconnectTimeout(this)) {
         this.serialTable.delete(u.nSID);
         this.userTable.delete(u.strName);
