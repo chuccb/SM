@@ -323,9 +323,10 @@ export class CUser {
     if (this.m_pSocket) this.m_pSocket.m_nSessionIdx = a2;
   }
 
-  /** CUser::GetSessionIdx */
+  /** CUser::GetSessionIdx — unsigned __int16 (FxServer.exe.c:26925; the
+   *  `return -1` there is a u16 0xFFFF). */
   GetSessionIdx(): number {
-    return this.m_pSocket ? this.m_pSocket.m_nSessionIdx : -1;
+    return this.m_pSocket ? this.m_pSocket.m_nSessionIdx & 0xffff : 0xffff;
   }
 
   /** CUser::SetSessionSerialNo — through the owning socket (+504). */
@@ -523,7 +524,8 @@ export class CClientSocket extends CPacketSocket {
 
   m_nLocalSerialNo = 0; // CSerialObject SN
   m_nPoolType = 0; // +468 stage tag (0 connect, 3 channels, 1 lobby, 2 room, 4 playing, 6 practice)
-  m_nSessionIdx = -1; // +500 (u16)
+  m_nSessionIdx = 0xffff; // +500 — a WORD in the original (ctor `mov word -1`,
+  // FxServer.exe.c:9831): 0xFFFF = none/lobby, 0xFFFE (-2) = connecting, else slot
   m_nSessionSerialNo = 0; // +504 (CUser::SetSessionSerialNo)
   m_fImpPoint = 0; // +472 (CClientSocket::SetImpPoint — modified client)
   m_dwLastRTT = 0; // the socket's last RTT reply time
@@ -5435,8 +5437,8 @@ export class CGameSessionTable {
     const idx = socket.m_nSessionIdx;
     if (idx >= 255) {
       if (socket.m_nPoolType !== 4 && n.m_pBlock[n.m_uOffset] !== SESSION_ReceivedPacket.OnHostAskBanPlayer) {
-        if (idx === -1) console.log("[GS] Lobby player sent session packet (OnPacket). Don't Disconnect.");
-        else if (idx === -2) console.error("[GS] Connecting player sent session packet (OnPacket). Don't Disconnect.");
+        if (idx === 0xffff) console.log("[GS] Lobby player sent session packet (OnPacket). Don't Disconnect.");
+        else if (idx === 0xfffe) console.error("[GS] Connecting player sent session packet (OnPacket). Don't Disconnect.");
         else console.error("[GS] Invalid game session slot index (OnPacket). Don't Disconnect.");
       }
       return;
@@ -5814,10 +5816,10 @@ export class CChatPool extends CUserPool {
     }
     const text = `${senders.join(", ")} : ${msg}`;
     const p = new CSendPacket(GS_ClientSend.OnChatMsg, CipherDegree.kPacketEncryptedCRC8);
-    if (socket.GetUser(0)!.GetSessionIdx() === -1 || socket.GetUser(0)!.GetSessionIdx() === 0xffff) p.EncodeStr("//");
+    if (socket.GetUser(0)!.GetSessionIdx() === 0xffff) p.EncodeStr("//");
     p.EncodeStr(text);
     const idx = socket.GetUser(0)!.GetSessionIdx();
-    if (idx === -1 || idx === 0xffff) this.SendAll(p, 1);
+    if (idx === 0xffff) this.SendAll(p, 1);
     else CGameSessionTable.ms_pInstance!.SendPacketIntoSession(idx, socket.GetUser(0)!.GetSessionSerialNo(), p);
   }
 
@@ -5864,7 +5866,7 @@ export class CChatPool extends CUserPool {
     const p = new CSendPacket(GS_ClientSend.OnItemMsg, CipherDegree.kPacketEncryptedCRC8);
     p.EncodeStr(`${user.GetName()} : ${msg}`);
     const idx = socket.GetUser(0)!.GetSessionIdx();
-    if (idx === -1 || idx === 0xffff) {
+    if (idx === 0xffff) {
       console.error("[GS] Invalid item msg: tried to send to all in the session");
       return;
     }
@@ -5876,21 +5878,21 @@ export class CChatPool extends CUserPool {
     const msg = n.DecodeStr();
     const p = new CSendPacket(GS_ClientSend.OnSystemMsg, CipherDegree.kPacketEncryptedCRC8);
     p.EncodeStr(msg);
-    const idx = socket.GetUser(0)?.GetSessionIdx() ?? -1;
-    if (idx === -1 || idx === 0xffff) this.SendAll(p, 1);
+    const idx = socket.GetUser(0)?.GetSessionIdx() ?? 0xffff;
+    if (idx === 0xffff) this.SendAll(p, 1);
     else CGameSessionTable.ms_pInstance!.SendPacketIntoSession(idx, socket.GetUser(0)!.GetSessionSerialNo(), p);
   }
 
   /** CChatPool::OnAdminNotifyMsg — packet 31 from an operator client. */
   OnAdminNotifyMsg(n: CReceivedPacket, socket: CClientSocket): void {
-    if (socket.GetUserCount() === 1 && (socket.GetUser(0)!.GetSessionIdx() === -1 || socket.GetUser(0)!.GetSessionIdx() === 0xffff)) {
+    if (socket.GetUserCount() === 1 && (socket.GetUser(0)!.GetSessionIdx() === 0xffff)) {
       this.SendAdminMsg(n.DecodeStr());
     }
   }
 
   /** CChatPool::OnSystemCmd — packet 71 from an operator client. */
   OnSystemCmd(n: CReceivedPacket, socket: CClientSocket): void {
-    if (socket.GetUserCount() === 1 && (socket.GetUser(0)!.GetSessionIdx() === -1 || socket.GetUser(0)!.GetSessionIdx() === 0xffff)) {
+    if (socket.GetUserCount() === 1 && (socket.GetUser(0)!.GetSessionIdx() === 0xffff)) {
       this.SendSystemCmd(n.DecodeStr());
     }
   }

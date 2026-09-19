@@ -301,9 +301,10 @@ export abstract class CPacketSocket {
       console.error(`Error in client packet sequencing, close connection: [${addr}]`);
     } else if (err === enSocket.kioDecodingError) {
       console.error(`Error in client packet decoding(Maybe CRC Mismatch), close connection: [${addr}]`);
-    } else {
-      console.error(`Error ${err} in packet pump, close connection: [${addr}]`);
     }
+    // other codes (kioNotConnected after a close, …) hit the original's
+    // `default: break` — FxServer.exe.c:9504 returns silently, so the port
+    // must not invent an extra "Error N in packet pump" line here.
     console.error(
       "    +- header type=%d, base=%d(r)/%d(s), modif=%d, seq=%d(r)/%d(s), deltaseq=%d(r), %d(s), header code=%d(r)/%d(s)",
       this.m_nHeaderType,
