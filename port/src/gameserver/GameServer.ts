@@ -6848,7 +6848,12 @@ export async function main(cfgFile: string, dbDir: string): Promise<void> {
         clientSockets.set(t, socket);
         socket.bunSocket = t as Bun.Socket<any>;
         socket.m_bConnected = true;
+        // CListenThread::Proc (FxServer.exe.c:18963-18966) — the accept packet
+        // 0, then vtbl SetCipherDegree(2), then IssueReceive.  The client's
+        // very first frame is already degree-2 (SES3 + CRC8), so the degree
+        // must be armed before the first receive — exactly like the LS.
         mainSystem.OnConnEstablished(socket);
+        socket.SetCipherDegree(CipherDegree.kPacketEncryptedCRC8);
       },
       data: (t, data) => {
         const s = clientSockets.get(t);

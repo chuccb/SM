@@ -446,7 +446,9 @@ describe("game server entry flow (FXGS)", () => {
   const gs = entryGsClient;
 
   test("connect pushes packet 0 [E2 3][E2 7][E4 headerType]", async () => {
-    await gs.connect(14848, { rcvDeg: CipherDegree.kPacketEncryptedCRC8 });
+    // the GS arms degree 2 in its accept path (FxServer.exe.c:18965) before the
+    // first receive, so the client's own frames are SES3+CRC8 from the start
+    await gs.connect(14848, { sndDeg: CipherDegree.kPacketEncryptedCRC8, rcvDeg: CipherDegree.kPacketEncryptedCRC8 });
     const p0 = await gs.recv(0);
     expect(r2(p0)).toBe(3); // the center protocol version
     expect(r2(p0)).toBe(7);
@@ -665,7 +667,9 @@ async function enterGame(name: string): Promise<{ ls: TestClient; gs: TestClient
   r4(p6); // ip
   expect(r2(p6)).toBe(14848);
   const gs = new TestClient();
-  await gs.connect(14848, { rcvDeg: CipherDegree.kPacketEncryptedCRC8 });
+  // the GS arms degree 2 in its accept path (FxServer.exe.c:18965) before the
+    // first receive, so the client's own frames are SES3+CRC8 from the start
+    await gs.connect(14848, { sndDeg: CipherDegree.kPacketEncryptedCRC8, rcvDeg: CipherDegree.kPacketEncryptedCRC8 });
   await gs.recv(0);
   gs.send(7, (e) => {
     e.u8(1);
