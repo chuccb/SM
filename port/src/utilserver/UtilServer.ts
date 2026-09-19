@@ -15,6 +15,7 @@
  * CSockRcvMultiplexer → CCenterProcess → CTimerThread → CListenThread.
  */
 import { CServerConfig } from "../core/Config.ts";
+import { PacketLog } from "../core/PacketLog.ts";
 import { CPacketSocket } from "../core/CPacketSocket.ts";
 import { CipherDegree, CReceivedPacket, CSendPacket } from "../core/Packet.ts";
 import {
@@ -30,7 +31,7 @@ import {
   SVRCLASS_UTIL,
 } from "../lib/S2S.ts";
 import { CLocalSocket } from "../lib/CenterLink.ts";
-import { UTIL_ClientPacket, UTIL_ClientSend } from "../lib/PacketIDs.ts";
+import { US_ReceivedPacket, UTIL_ClientPacket, UTIL_ClientSend } from "../lib/PacketIDs.ts";
 
 /** CMainSystem::OnConnEstablished — the tool hello's patch URL. */
 const SERVER_URL = "ftp://patch.nexon.co.kr/ca";
@@ -87,6 +88,7 @@ export class CClientSocket extends CPacketSocket {
       // the vtable routes completed packets into CMainPool::OnPacket
       onPacket: (_sock, packet) => CMainPool.ms_pInstance?.OnPacket(packet, this),
     });
+    this.m_szLogTag = "FXUS";
     // dword_49F968: the header type comes from the counter's PRE-increment
     // value (v5 = counter; counter = v5 + 1; SetHeaderType(v5 % 16)) — the
     // first client connection gets header type 0.
@@ -437,6 +439,10 @@ export async function main(cfgFile: string): Promise<void> {
   const cfg = new CServerConfig();
   cfg.Init(cfgFile);
   CServerConfig.ms_pInstance = cfg;
+
+  PacketLog.Configure("FXUS");
+  PacketLog.Register("FXUS", "recv", US_ReceivedPacket);
+  PacketLog.Register("FXUS", "send", UTIL_ClientSend);
 
   CMainSystem.ms_pInstance = new CMainSystem();
   CLocalUserTable.ms_pInstance = new CLocalUserTable();

@@ -32,6 +32,7 @@
  * (83/85/86/87) and join (80/81) packets expose.
  */
 import { CServerConfig } from "../core/Config.ts";
+import { PacketLog } from "../core/PacketLog.ts";
 import { CPacketSocket } from "../core/CPacketSocket.ts";
 import { CipherDegree, CReceivedPacket, CSendPacket } from "../core/Packet.ts";
 import { CDBMan } from "../db/DBMan.ts";
@@ -614,6 +615,7 @@ export class CClientSocket extends CPacketSocket {
     super(CPacketSocket.dwRcvBufferSize, CPacketSocket.dwSndBufferSize, {
       onPacket: (_sock, packet) => CMainSystem.ms_pInstance?.DispatchClient(packet, this),
     });
+    this.m_szLogTag = "GS";
     this.m_nLocalSerialNo = CClientSocket.ms_tblSN2Obj.size + 1;
     const nHeaderType = CClientSocket.ms_nHeaderTypeCounter % 16;
     CClientSocket.ms_nHeaderTypeCounter++;
@@ -6859,6 +6861,9 @@ export async function main(cfgFile: string, dbDir: string): Promise<void> {
   cfg.Init(cfgFile);
   CServerConfig.ms_pInstance = cfg;
 
+  PacketLog.Configure("GS");
+  PacketLog.Register("GS", "recv", GS_ReceivedPacket, SESSION_ReceivedPacket);
+
   // CBomberAttr / CItemAttr / CGameMapTmplList load from the IDF package
   // (FxServer.idd/.idx, CIDFMan::CIDFMan hardcodes the "FxServer" base —
   // FxServer.exe.c:13436 loads them right after CUserItemMan).  The package
@@ -6918,11 +6923,13 @@ export async function main(cfgFile: string, dbDir: string): Promise<void> {
   // MTUDPBase::StartupBase (42E828) — the UDP peer socket on ServerPort +
   // MTUDP_UDP_PORT_OFFSET, and CUDPPacketDispatcher::Proc (41678B) —
   // frame-split each datagram and route the launch-handshake check packets.
+  const udpLogTag = PacketLog.tag; // snapshotted: the handler outlives main()
   const udpServer = Bun.udpSocket({
     hostname: "0.0.0.0",
     port: port + MTUDP_UDP_PORT_OFFSET,
     socket: {
       data: (_socket, data, port, address) => {
+        if (PacketLog.Enabled()) PacketLog.Datagram("recv", new Uint8Array(data as Buffer), udpLogTag);
         // network order: BE Encode4 puts a.b.c.d back on the wire
         const host: HOSTHANDLE = {
           ip: String(address)

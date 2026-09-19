@@ -29,6 +29,7 @@
  */
 import { BuildFrame, HOSTHANDLE, MTUDP_UDP_PORT_OFFSET, SplitDatagram } from "../gameserver/MTUDP.ts";
 import { CServerConfig } from "../core/Config.ts";
+import { PacketLog } from "../core/PacketLog.ts";
 import type { CUser } from "./Login.ts";
 
 /** MTUDPBase::GetUnreliableData's drain buffer size (CUDPPacketDispatcher::Proc). */
@@ -163,7 +164,11 @@ export class MTUDPServer {
   /** MTUDPBase::ProcessIncomingData (27821) — find-or-create the cHost and
    *  chain every CRC-valid frame into its in-queue.  A CRC failure discards
    *  the rest of the datagram, exactly like the original. */
+  /** PacketLog server tag — snapshotted at construction (single-process mode). */
+  m_szLogTag = PacketLog.tag;
+
   ProcessIncomingData(pSrc: Uint8Array, host: HOSTHANDLE): void {
+    if (PacketLog.Enabled()) PacketLog.Datagram("recv", pSrc, this.m_szLogTag);
     let pHost = this.m_mpHost.get(ipPortKey(host.ip, host.port));
     if (pHost === undefined) {
       const pCreated = this.HostCreate(host.ip, host.port);
@@ -212,6 +217,7 @@ export class MTUDPServer {
     const frame = BuildFrame(a2.subarray(0, a3));
     const fSent = this.m_nSocket!.send(frame, a5, u32ToAddress(a4));
     this.m_nBytesSend += frame.length;
+    if (PacketLog.Enabled()) PacketLog.Datagram("send", a2.subarray(0, a3), this.m_szLogTag);
     if (!fSent) {
       console.error(`MTUDPBase::ResendData() - Sent 0 of ${frame.length} bytes.`);
     }

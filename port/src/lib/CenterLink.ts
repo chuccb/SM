@@ -10,17 +10,26 @@ import { CipherDegree,
   type enSocket as EnSocket,
 } from "../core/Packet.ts";
 import {
+  CM_ReceivedPacket,
   CENTER_VERSION,
   LOCALSOCKET_HEADER_CODE_MODIFIER,
   LOCALSOCKET_HEADER_CODE_RCV,
   LOCALSOCKET_HEADER_CODE_SND,
   LOCALSOCKET_SEQ,
   LOCALSOCKET_SEQ_DELTA,
+  MC_ReceivedPacket,
 } from "./S2S.ts";
+import { PacketLog } from "../core/PacketLog.ts";
+
+// the S2S link namespaces: a local server receives CM_* (center → local) and
+// sends MC_* (local → center) — the mirror image of CxCenter's own tables.
+PacketLog.Register("S2S", "recv", CM_ReceivedPacket);
+PacketLog.Register("S2S", "send", MC_ReceivedPacket);
 
 export class CLocalSocket extends CPacketSocket {
   constructor(hooks: Partial<IPacketSocketHooks>) {
     super(CPacketSocket.dwRcvBufferSize, CPacketSocket.dwSndBufferSize, hooks);
+    this.m_szLogTable = "S2S";
     this.SetHeaderCode(
       LOCALSOCKET_HEADER_CODE_RCV,
       LOCALSOCKET_HEADER_CODE_SND,

@@ -18,6 +18,7 @@
  * six-server suite; the paths that would defer to it answer immediately.
  */
 import { CServerConfig } from "../core/Config.ts";
+import { PacketLog } from "../core/PacketLog.ts";
 import { CPacketSocket } from "../core/CPacketSocket.ts";
 import { CipherDegree, CReceivedPacket, CSendPacket } from "../core/Packet.ts";
 import { CDBMan, EncodePassword } from "../db/DBMan.ts";
@@ -164,6 +165,7 @@ export class CClientSocket extends CPacketSocket {
       // the original's vtable routes completed packets into CLoginPool::OnPacket
       onPacket: (_sock, packet) => CLoginPool.ms_pInstance?.OnPacket(packet, this),
     });
+    this.m_szLogTag = "LS";
     // dword_49F968: the header type comes from the counter's PRE-increment
     // value (v5 = counter; counter = v5 + 1; SetHeaderType(v5 % 16)) — the
     // first client connection gets header type 0.
@@ -1245,6 +1247,10 @@ export async function main(cfgFile: string, dbDir: string): Promise<void> {
   const cfg = new CServerConfig();
   cfg.Init(cfgFile);
   CServerConfig.ms_pInstance = cfg;
+
+  PacketLog.Configure("LS");
+  PacketLog.Register("LS", "recv", LS_ReceivedPacket);
+  PacketLog.Register("LS", "send", LS_SendPacket, LS_ClientSend);
 
   const db = new CDBMan(dbDir);
   const multiServer = new CMultiServer();

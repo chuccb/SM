@@ -10,6 +10,7 @@
  * CWebSocket — first packet is the OnVerifyKey charge handshake).
  */
 import { CServerConfig } from "../core/Config.ts";
+import { PacketLog } from "../core/PacketLog.ts";
 import { CDBMan } from "../db/DBMan.ts";
 import { CipherDegree, CReceivedPacket, CSendPacket, enSocket } from "../core/Packet.ts";
 import { CPacketSocket, type IPacketSocketHooks } from "../core/CPacketSocket.ts";
@@ -213,6 +214,7 @@ export class CClientSocket extends CPacketSocket {
       onPacket: (_sock, packet) => CMainPool.ms_pInstance?.OnPacket(packet, this),
       onClose: () => this.Close(),
     });
+    this.m_szLogTag = "Shop";
     this.m_nLocalSerialNo = CClientSocket.ms_tblSN2Obj.size + 1;
     this.SetHeaderType(CClientSocket.ms_nHeaderTypeCounter % 16);
     CClientSocket.ms_nHeaderTypeCounter++;
@@ -1090,6 +1092,7 @@ export class CWebSocket extends CPacketSocket {
       },
       onClose: () => this.Close(),
     });
+    this.m_szLogTag = "Shop";
     // CWebSocket::CWebSocket (30541) — the same header/sequence set as the
     // client sockets; the (Web) accept path does NOT raise the cipher degree.
     this.SetHeaderCode(192, 102, 231);
@@ -1158,6 +1161,7 @@ export class CBillingSocketTw extends CPacketSocket {
     super(CPacketSocket.dwRcvBufferSize, CPacketSocket.dwSndBufferSize, {
       onPacket: (_sock, packet) => CBillingProcess.ms_pInstance?.OnPacket(packet),
     });
+    this.m_szLogTag = "Shop";
     this.SetHeaderCode(41, 41, 0);
   }
 }
@@ -1733,6 +1737,13 @@ export async function main(cfgPath: string, dbDir: string): Promise<void> {
   const cfg = new CServerConfig();
   cfg.Init(cfgPath);
   CServerConfig.ms_pInstance = cfg;
+
+  PacketLog.Configure("Shop");
+  PacketLog.Register("Shop", "recv", SS_ReceivedPacket);
+  PacketLog.Register("Shop", "send", SC_SendPacket);
+  PacketLog.Register("BILL", "recv", BILLING_ReceivedPacket);
+  PacketLog.Register("BILL", "send", BILLING_SendPacket);
+
   const shop = new CxShop(cfg, dbDir);
   await shop.Init();
 }

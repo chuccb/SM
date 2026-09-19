@@ -14,6 +14,7 @@ import { CipherDegree,
   kPacketRaw,
   type enSocket as EnSocket,
 } from "./Packet.ts";
+import { PacketLog } from "./PacketLog.ts";
 
 /** CA_CIPHER_LIBERAL=1 — deliver checksum-failing packets with a loud log.
  *  Diagnostic probe only; the original always rejects, and with the correct
@@ -49,6 +50,23 @@ export abstract class CPacketSocket {
 
   m_bConnected = false;
   hooks: IPacketSocketHooks;
+
+  /** PacketLog name-table key override (e.g. "MON", "BILL", "S2S"); null =
+   *  this socket's server tag (m_szLogTag). */
+  m_szLogTable: string | null = null;
+
+  /** PacketLog server tag — snapshotted at construction (single-process mode
+   *  runs every server's main() sequentially, so the global tag alone would
+   *  mislabel everyone after the first boot). Client-socket classes pin their
+   *  own tag in their constructors, since accept-time construction happens
+   *  long after the owning main() returned. */
+  m_szLogTag = PacketLog.tag;
+
+  /** PacketLog peer label — the official class name (CClientSocket,
+   *  CLocalSocket, MonitorSocket, …) distinguishes client links from S2S. */
+  get LogPeer(): string {
+    return this.constructor.name;
+  }
 
   /** Bun socket handle (set by subclasses). */
   bunSocket: Bun.Socket<any> | null = null;
@@ -192,6 +210,9 @@ export abstract class CPacketSocket {
     buf.copyWithin(0, incoming, this.m_nRcvCnt);
     this.m_nRcvCnt = rest;
     this.m_nPacketRcvSeq = (this.m_nPacketRcvSeq + this.m_nPacketRcvSeqDelta) & 0xffffffff;
+    if (PacketLog.Enabled()) {
+      PacketLog.Packet(this.LogPeer, this.m_szLogTag, "recv", packet.m_nPacketType, packet.m_nCipherDegree, packet.m_pBlock.subarray(0, packet.m_uLength), this.m_szLogTable);
+    }
     return enSocket.kioOk;
   }
 
@@ -216,6 +237,9 @@ export abstract class CPacketSocket {
     this.MarkCheckCode(this.m_mbSndBuffer, this.m_nSndCnt);
     this.m_nPacketSndSeq = (this.m_nPacketSndSeq + this.m_nPacketSndSeqDelta) & 0xffffffff;
     this.m_nSndCnt += outgoing;
+    if (PacketLog.Enabled()) {
+      PacketLog.Packet(this.LogPeer, this.m_szLogTag, "send", packet.m_nPacketType, packet.m_nCipherDegree, packet.m_pBlock.subarray(0, packet.m_uOffset), this.m_szLogTable);
+    }
     return enSocket.kioOk;
   }
 

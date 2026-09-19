@@ -15,6 +15,7 @@
  * like the original behaves when the billing service is absent.
  */
 import { CServerConfig } from "../core/Config.ts";
+import { PacketLog } from "../core/PacketLog.ts";
 import { GetUserHashNo } from "../db/DBMan.ts";
 import { CPacketSocket } from "../core/CPacketSocket.ts";
 import { CReceivedPacket, CSendPacket } from "../core/Packet.ts";
@@ -215,6 +216,7 @@ export class CenterClientSocket extends CPacketSocket {
       onPacket: (sock, packet) => center.OnLocalPacket(sock as CenterClientSocket, packet),
       onClose: (sock) => center.OnLocalDisconnect(sock as CenterClientSocket),
     });
+    this.m_szLogTag = "Center";
     // CServerSocket on the center side (CxCenter.exe.c:14833): mirrors CLocalSocket.
     this.SetHeaderType(ms_nLocalSocketHeaderTypeCounter++ & 0x8000000f);
     this.SetHeaderCode(189, 96, 231);
@@ -281,6 +283,10 @@ export class CxCenter {
 
   constructor(cfg: CServerConfig) {
     this.cfg = cfg;
+    PacketLog.Configure("Center");
+    PacketLog.Register("Center", "recv", MC_ReceivedPacket);
+    PacketLog.Register("Center", "send", CM_ReceivedPacket);
+    PacketLog.Register("MON", "recv", MONITOR_ReceivedPacket);
   }
 
   GetSvrNo(nServerClass: number): number {
@@ -985,6 +991,8 @@ export class MonitorSocket extends CPacketSocket {
     super(1024, 1024, {
       onPacket: (_sock, packet) => this.OnPacket(packet),
     });
+    this.m_szLogTag = "Center";
+    this.m_szLogTable = "MON";
     this.SetHeaderCode(102, 102, 231);
     this.SetSequence(0, 0, 0, 0);
   }

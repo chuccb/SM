@@ -25,6 +25,7 @@
  * Report/ReportError strings are kept verbatim.
  */
 import { CServerConfig } from "../core/Config.ts";
+import { PacketLog } from "../core/PacketLog.ts";
 import { UpdateCRC8 } from "../gameserver/MTUDP.ts";
 
 /** HOSTHANDLEEX — the MTUDPServer host table value (32 bytes in the original). */
@@ -74,6 +75,9 @@ function ReportError(msg: string): void {
  * queue feeding CUDPPacketDispatcher (FxServer.lst 402A20..403130).
  */
 export class MTUDPServer {
+  /** PacketLog server tag — snapshotted at construction (single-process mode). */
+  m_szLogTag = PacketLog.tag;
+
   /** TSingleton<MTUDPServer>::ms_pInstance */
   static ms_pInstance: MTUDPServer | null = null;
 
@@ -251,6 +255,7 @@ export class MTUDPServer {
 
   /** The Bun socket callback — one datagram. */
   private OnDatagram(_socket: unknown, data: Uint8Array, fromPort: number, fromAddr: string): void {
+    if (PacketLog.Enabled()) PacketLog.Datagram("recv", data, this.m_szLogTag);
     const ip = ipToDword(fromAddr);
     this.ProcessIncomingData(data, data.byteLength, ip, fromPort, Date.now() & 0xffffffff);
   }
@@ -310,6 +315,7 @@ export class MTUDPServer {
     buf[n2] = UpdateCRC8(0, buf, n2);
     this.m_dwBytesSend = (this.m_dwBytesSend + n2 + 1) >>> 0;
     this.m_hSocket?.send(buf, hostshort, dwordToIp(hostlong));
+    if (PacketLog.Enabled()) PacketLog.Datagram("send", src, this.m_szLogTag);
     return 0;
   }
 
@@ -375,6 +381,7 @@ export async function main(cfgFile: string): Promise<void> {
   const cfg = new CServerConfig();
   cfg.Init(cfgFile);
   CServerConfig.ms_pInstance = cfg;
+  PacketLog.Configure("Relay");
 
   const server = new MTUDPServer();
   await server.Startup(cfg); // CCxRelayApp::SetUp — MTUDPServer vtbl+24 (Startup)
