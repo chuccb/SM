@@ -28,6 +28,9 @@ describe("CAConfigBak", () => {
       { SN: 1, IP: "211.20.189.170", Port: 3838, Flag: 1 },
       { SN: 2, IP: "211.20.177.140", Port: 3838, Flag: 1 },
     ]);
+    expect(rows.CAString).toEqual([
+      { sn: 1, type: 0, value: "ChargeUrl", strAttr: "http://www.digicell.com.tw/opencard/money.aspx" },
+    ]);
   });
 });
 
@@ -43,6 +46,9 @@ describe("CDBMan seeding + auto-registration", () => {
     expect(db.GetLoginServers()).toEqual([
       { SN: 1, IP: CA_CONFIG_SEED_IP, Port: 3838, Flag: 1 },
       { SN: 2, IP: CA_CONFIG_SEED_IP, Port: 3838, Flag: 1 },
+    ]);
+    expect(db.GetMultiServerNotices()).toEqual([
+      { sn: 1, type: 0, value: "ChargeUrl", strAttr: "http://www.digicell.com.tw/opencard/money.aspx" },
     ]);
   });
 

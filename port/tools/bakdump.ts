@@ -15,3 +15,4 @@ const rows = ParseCAConfigBak(new Uint8Array(await Bun.file(path).arrayBuffer())
 console.log(path);
 console.log("CAMultiSvr:", JSON.stringify(rows.CAMultiSvr, null, 2));
 console.log("CALoginSvr:", JSON.stringify(rows.CALoginSvr, null, 2));
+console.log("CAString:", JSON.stringify(rows.CAString, null, 2));

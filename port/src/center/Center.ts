@@ -30,13 +30,17 @@ import {
 import { MONITOR_ReceivedPacket } from "../lib/PacketIDs.ts";
 
 export function IpToU32(ip: string): number {
+  // the Windows inet_addr convention (the value whose little-endian memory
+  // image is the network-order in_addr): 127.0.0.1 → 0x0100007F. The client
+  // stores the decoded dword and uses it as in_addr, so every IP dword on
+  // the wire must follow this — same as inet_addr() in login/MultiServer.ts.
   const parts = ip.split(".").map((x) => Number.parseInt(x, 10) & 0xff);
   if (parts.length !== 4 || parts.some((p) => Number.isNaN(p))) return 0;
-  return ((parts[0]! << 24) | (parts[1]! << 16) | (parts[2]! << 8) | parts[3]!) >>> 0;
+  return ((parts[3]! << 24) | (parts[2]! << 16) | (parts[1]! << 8) | parts[0]!) >>> 0;
 }
 
 export function U32ToIp(v: number): string {
-  return `${(v >>> 24) & 0xff}.${(v >>> 16) & 0xff}.${(v >>> 8) & 0xff}.${v & 0xff}`;
+  return `${v & 0xff}.${(v >>> 8) & 0xff}.${(v >>> 16) & 0xff}.${(v >>> 24) & 0xff}`;
 }
 
 /** CGlobalUserTable entry (CUser of CxCenter, 0x74 bytes). */

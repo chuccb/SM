@@ -36,8 +36,14 @@ import * as Path from "node:path";
 
 /** the record tag every row-image log record starts with */
 const LOG_RECORD_TAG = 0x0030;
-/** the opcode of the live row images (the deleted/stale images are 0x000C) */
+/** the opcode of the live row images */
 const LOG_RECORD_INSERT = 0x0010;
+/** the opcode of the older row images. CAMultiSvr/CALoginSvr carry live
+ *  0x0010 images that supersede their 0x000C ones, but the backup's only
+ *  CAString row (ChargeUrl) exists solely as a 0x000C image — and the
+ *  original server's AskMultiServer notice stream demonstrably carries it —
+ *  so CAString accepts both. */
+const LOG_RECORD_OLD = 0x000c;
 
 /** the bind address every IP-bearing row seeded from the .bak is rewritten
  *  to (the backup's IPs belong to the original site) */
@@ -58,9 +64,20 @@ export interface ICALoginSvrRow {
   Flag: number;
 }
 
+export interface ICAStringRow {
+  sn: number;
+  type: number;
+  value: string;
+  strAttr: string;
+}
+
 export interface ICAConfigBakRows {
   CAMultiSvr: ICAMultiSvrRow[];
   CALoginSvr: ICALoginSvrRow[];
+  /** the CRSMultiServerNotice rows ("CAString", filter "type = 0 or type = 1",
+   *  CxLogin.exe.c:29957-29960; OnReceiveRow binds sn/type long + value/strAttr
+   *  text — CxLogin.exe.lst:411F90) that feed the AskMultiServer notice stream */
+  CAString: ICAStringRow[];
 }
 
 function ReadCString(buf: Uint8Array, off: number, end: number): string {
@@ -71,14 +88,14 @@ function ReadCString(buf: Uint8Array, off: number, end: number): string {
 
 /** ParseCAConfigBak — extract the CAMultiSvr / CALoginSvr rows. */
 export function ParseCAConfigBak(buf: Uint8Array): ICAConfigBakRows {
-  const out: ICAConfigBakRows = { CAMultiSvr: [], CALoginSvr: [] };
+  const out: ICAConfigBakRows = { CAMultiSvr: [], CALoginSvr: [], CAString: [] };
   const u16 = (o: number) => buf[o]! | (buf[o + 1]! << 8);
   const u32 = (o: number) => (u16(o) | (u16(o + 2) << 16)) >>> 0;
 
   for (let h = 0; h + 24 <= buf.length; h++) {
     if (u16(h) !== LOG_RECORD_TAG) continue;
     const op = u16(h + 2);
-    if (op !== LOG_RECORD_INSERT) continue;
+    if (op !== LOG_RECORD_INSERT && op !== LOG_RECORD_OLD) continue;
     for (let strCount = 1; strCount <= 2; strCount++) {
       for (let nValues = strCount + 1; nValues <= 8; nValues++) {
         const fixed = nValues - strCount;
@@ -105,9 +122,16 @@ export function ParseCAConfigBak(buf: Uint8Array): ICAConfigBakRows {
           const s1 = ReadCString(buf, strsAt, strsAt + (str2off - str1off));
           const s2 = ReadCString(buf, strsAt + (str2off - str1off), strsAt + strLen);
           if (![s1, s2].every((s) => [...s].every((c) => c >= " " && c < "\x7f"))) continue;
-          // CAMultiSvr: fixed (SN, Param, Current) + Name, IP
           if (fixedv.length === 3 && fixedv[0]! < 0x10000) {
-            out.CAMultiSvr.push({ SN: fixedv[0]!, Name: s1, IP: s2, Param: fixedv[1]!, Current: fixedv[2]! });
+            if (op === LOG_RECORD_INSERT) {
+              // CAMultiSvr: fixed (SN, Param, Current) + Name, IP — only the
+              // live image; the 0x000C ones are the rows it replaced
+              out.CAMultiSvr.push({ SN: fixedv[0]!, Name: s1, IP: s2, Param: fixedv[1]!, Current: fixedv[2]! });
+              h = strsAt + strLen - 1;
+            }
+          } else if (fixedv.length === 2 && fixedv[0]! < 0x10000 && fixedv[1]! < 0x10000) {
+            // CAString: fixed (sn, type) + value, strAttr
+            out.CAString.push({ sn: fixedv[0]!, type: fixedv[1]!, value: s1, strAttr: s2 });
             h = strsAt + strLen - 1;
           }
         } else {
@@ -116,6 +140,7 @@ export function ParseCAConfigBak(buf: Uint8Array): ICAConfigBakRows {
           // CALoginSvr: fixed (SN, Port, Flag) + IP — the sanity gates also
           // exclude the float-first FxUserOptions rows (0x3F800000).
           if (
+            op === LOG_RECORD_INSERT &&
             fixedv.length === 3 &&
             fixedv[0]! < 0x10000 &&
             fixedv[1]! > 0 &&

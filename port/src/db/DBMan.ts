@@ -324,6 +324,13 @@ export class CDBMan {
           .run(r.SN, CA_CONFIG_SEED_IP, r.Port, r.Flag);
       if (rows.CALoginSvr.length) console.log(`CALoginSvr: seeded ${rows.CALoginSvr.length} row(s) from ${bakPath}`);
     }
+    if (Count("CAString") === 0) {
+      for (const r of rows.CAString)
+        this.config
+          .query("INSERT INTO CAString (sn, type, value, strAttr) VALUES (?,?,?,?)")
+          .run(r.sn, r.type, r.value, r.strAttr);
+      if (rows.CAString.length) console.log(`CAString: seeded ${rows.CAString.length} row(s) from ${bakPath}`);
+    }
   }
 
   private open(path: string, schema: string): Database {

@@ -6,6 +6,7 @@ import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { CServerConfig } from "../src/core/Config.ts";
 import { CxCenter } from "../src/center/Center.ts";
 import { main as loginMain } from "../src/login/Login.ts";
+import { inet_addr } from "../src/login/MultiServer.ts";
 import { CRC32, main as gameMain } from "../src/gameserver/GameServer.ts";
 import { CLocalSocket } from "../src/lib/CenterLink.ts";
 import { SVRCLASS_UTIL, MC_ReceivedPacket } from "../src/lib/S2S.ts";
@@ -176,7 +177,8 @@ describe("login flow", () => {
     expect(r4s()).toBe(0); // param
     expect(r2s()).toBe(2); // lCount
     for (const port of [3838, 3838]) {
-      expect(r4s()).toBe(((127 << 24) | 1) >>> 0); // inet_addr("127.0.0.1")
+      expect(r4s()).toBe(0x0100007f); // inet_addr("127.0.0.1") — network-order
+      // packed, so the LE Encode4 emits 7F 00 00 01 like the original server
       expect(r2s()).toBe(port);
       expect(r1s()).toBe(1); // flag
     }
@@ -185,7 +187,21 @@ describe("login flow", () => {
     const flag = r1(p);
     expect(flag).toBe(1); // notice follows
     const notice = rOS(p);
-    expect(notice.length).toBe(1); // E1 0
+    // E1 count(1), n×(E1 type, EStr value, EStr strAttr) — the .bak's
+    // CAString row (CxLogin.exe.c:29957 "type = 0 or type = 1")
+    expect(notice[0]!).toBe(1); // count
+    expect(notice[1]!).toBe(0); // type
+    const nstr = () => {
+      const len = notice[o2!]! | (notice[o2! + 1]! << 8) | (notice[o2! + 2]! << 16) | (notice[o2! + 3]! << 24);
+      o2! += 4;
+      let t = "";
+      for (let i = 0; i < len; i++) t += String.fromCharCode(notice[o2++!]!);
+      return t;
+    };
+    let o2 = 2;
+    expect(nstr()).toBe("ChargeUrl");
+    expect(nstr()).toBe("http://www.digicell.com.tw/opencard/money.aspx");
+    expect(o2).toBe(notice.length);
   });
 
   test("AskFirstInfo returns the nexonclub URLs", async () => {
@@ -554,10 +570,6 @@ function rOS(n: CReceived): Uint8Array {
   return inner.slice(1);
 }
 
-function inet_addr(ip: string): number {
-  const p = ip.split(".").map((x) => Number.parseInt(x, 10));
-  return ((p[0]! << 24) | (p[1]! << 16) | (p[2]! << 8) | p[3]!) >>> 0;
-}
 
 /** EncodeEncryptedStr: [u16 len][SimpleStreamEncrypt3(bytes, key)] */
 function encStrInto(e: Encoder, s: string, key: number): void {

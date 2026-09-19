@@ -48,9 +48,14 @@ export interface _MULTISERVERNOTICE {
 }
 
 export function inet_addr(cp: string): number {
+  // the Windows inet_addr: the dotted octets packed in NETWORK byte order —
+  // on little-endian x86 the returned u32 VALUE is (b3<<24)|(b2<<16)|(b1<<8)|b0,
+  // so the stream's little-endian Encode4 puts the octets on the wire in their
+  // written order (the original server's AskMultiServer stream carries
+  // 127.0.0.1 as 7F 00 00 01).
   const parts = cp.split(".").map((x) => Number.parseInt(x, 10) & 0xff);
   if (parts.length !== 4 || parts.some((p) => Number.isNaN(p))) return 0;
-  return ((parts[0]! << 24) | (parts[1]! << 16) | (parts[2]! << 8) | parts[3]!) >>> 0;
+  return ((parts[3]! << 24) | (parts[2]! << 16) | (parts[1]! << 8) | parts[0]!) >>> 0;
 }
 
 export class CMultiServer {
