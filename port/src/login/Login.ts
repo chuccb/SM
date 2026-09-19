@@ -1275,6 +1275,9 @@ export async function main(cfgFile: string, dbDir: string): Promise<void> {
         clientSockets.set(t, socket);
         socket.bunSocket = t as Bun.Socket<any>;
         socket.m_bConnected = true;
+        // CListenThread::Proc sets TCP_NODELAY on every accepted client socket
+        // (CxLogin.exe.c:12018, optval 1) before the identification exchange.
+        (t as Bun.Socket<any>).setNoDelay?.(true);
         // CListenThread::Proc (CxLogin.exe.c:12021-12025) — the accept packet,
         // then SetCipherDegree(2), then the receive loop starts.
         mainSystem.OnConnEstablished(socket);
@@ -1282,6 +1285,10 @@ export async function main(cfgFile: string, dbDir: string): Promise<void> {
         loginPool.AddSocket(socket);
       },
       data: (t, data) => {
+        if (process.env.LS_DEBUG) {
+          const b = new Uint8Array(data as Buffer);
+          console.error(`[LS_DEBUG] recv ${b.length}B: ${Array.from(b.subarray(0, 64)).map((x) => x.toString(16).padStart(2, "0")).join(" ")}`);
+        }
         clientSockets.get(t)?.OnReceive(new Uint8Array(data as Buffer));
       },
       close: (t) => {

@@ -242,6 +242,42 @@ export abstract class CPacketSocket {
     this.OnReceiveCompletionPacket();
   }
 
+  /** CClientSocket::GetPacket's error reports (CxLogin.exe.c:9484) — the
+   *  original logs the exact failure and the full cipher state before
+   *  closing; the port reproduces those lines verbatim. */
+  protected ReportGetPacketError(err: EnSocket, packet: CReceivedPacket): void {
+    const addr = this.bunSocket?.remoteAddress ?? "";
+    if (err === enSocket.kioInvalidPacket) {
+      console.error(`Invalid( = NULL ) packet received, close connection: [${addr}]`);
+    } else if (err === enSocket.kioTooLongPacket) {
+      console.error(`Too long packet length read, close connection: [${addr}], packet id[${packet.Decode1()}]`);
+    } else if (err === enSocket.kioSequencingError) {
+      console.error(`Error in client packet sequencing, close connection: [${addr}]`);
+    } else if (err === enSocket.kioDecodingError) {
+      console.error(`Error decoding packet, close connection: [${addr}]`);
+    } else {
+      console.error(`Error ${err} in packet pump, close connection: [${addr}]`);
+    }
+    console.error(
+      "    +- header type=%d, base=%d(r)/%d(s), modif=%d, seq=%d(r)/%d(s), deltaseq=%d(r), %d(s), header code=%d(r)/%d(s)",
+      this.m_nHeaderType,
+      this.m_nHeaderCodeRcvBase,
+      this.m_nHeaderCodeSndBase,
+      this.m_nHeaderCodeModifier,
+      this.m_nPacketRcvSeq,
+      this.m_nPacketSndSeq,
+      this.m_nPacketRcvSeqDelta,
+      this.m_nPacketSndSeqDelta,
+      this.GetRcvHeaderCode(),
+      this.GetSndHeaderCode(),
+    );
+    if (process.env.LS_DEBUG) {
+      console.error(
+        `    +- rcv buffer (${this.m_nRcvCnt}B): ${Array.from(this.m_mbRcvBuffer.subarray(0, Math.min(this.m_nRcvCnt, 48))).map((x) => x.toString(16).padStart(2, "0")).join(" ")}`,
+      );
+    }
+  }
+
   /** CServerSocket::OnReceiveCompletionPacket — drain every complete packet. */
   OnReceiveCompletionPacket(): void {
     const packet = new CReceivedPacket();
@@ -252,9 +288,15 @@ export abstract class CPacketSocket {
         continue;
       }
       if (err === enSocket.kioNotReady) {
+        if (process.env.LS_DEBUG && this.m_nRcvCnt > 0) {
+          console.error(
+            `[LS_DEBUG] partial frame pending (${this.m_nRcvCnt}B): ${Array.from(this.m_mbRcvBuffer.subarray(0, Math.min(this.m_nRcvCnt, 64))).map((x) => x.toString(16).padStart(2, "0")).join(" ")}`,
+          );
+        }
         return;
       }
       // 3 (invalid), 5 (too long), 6 (sequencing), 7 (decoding) and others all close.
+      this.ReportGetPacketError(err, packet);
       this.PostClosePacket();
       return;
     }
