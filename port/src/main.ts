@@ -7,7 +7,7 @@
  */
 import { CServerConfig } from "./core/Config.ts";
 import { mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { CxCenter } from "./center/Center.ts";
 import { main as loginMain } from "./login/Login.ts";
 import { main as gameMain } from "./gameserver/GameServer.ts";
@@ -18,6 +18,13 @@ import { main as utilMain } from "./utilserver/UtilServer.ts";
 const only = process.argv.includes("--only") ? process.argv[process.argv.indexOf("--only") + 1] : null;
 const dbDir = join(import.meta.dir, "..", "db");
 mkdirSync(dbDir, { recursive: true });
+
+/** Resolve a --cfg value: absolute paths pass through (also on Windows,
+ *  where "C:\\..." does not start with "/"), relative ones anchor at the
+ *  port directory. */
+function resolveCfg(cfgFile: string): string {
+  return isAbsolute(cfgFile) ? cfgFile : join(import.meta.dir, "..", cfgFile);
+}
 
 if (!only || only === "center") {
   const cfg = new CServerConfig();
@@ -34,7 +41,7 @@ if (!only || only === "relay") {
   const cfgFile = process.argv.includes("--cfg")
     ? process.argv[process.argv.indexOf("--cfg") + 1]!
     : join(import.meta.dir, "..", "..", "Relay", "Relay_000.cfg");
-  await relayMain(cfgFile.startsWith("/") ? cfgFile : join(import.meta.dir, "..", cfgFile));
+  await relayMain(resolveCfg(cfgFile));
 }
 
 if (!only || only === "game") {
@@ -43,10 +50,7 @@ if (!only || only === "game") {
   const idx = process.argv.includes("--idx") ? Number(process.argv[process.argv.indexOf("--idx") + 1]) : 0;
   const cfgFile =
     process.argv.includes("--cfg") ? process.argv[process.argv.indexOf("--cfg") + 1] : `test/game${idx}.cfg`;
-  await gameMain(
-    cfgFile.startsWith("/") ? cfgFile : join(import.meta.dir, "..", cfgFile),
-    dbDir,
-  );
+  await gameMain(resolveCfg(cfgFile), dbDir);
 }
 
 if (!only || only === "shop") {
@@ -54,10 +58,7 @@ if (!only || only === "shop") {
   const idx = process.argv.includes("--idx") ? Number(process.argv[process.argv.indexOf("--idx") + 1]) : 0;
   const cfgFile =
     process.argv.includes("--cfg") ? process.argv[process.argv.indexOf("--cfg") + 1] : `test/shop${idx}.cfg`;
-  await shopMain(
-    cfgFile.startsWith("/") ? cfgFile : join(import.meta.dir, "..", cfgFile),
-    dbDir,
-  );
+  await shopMain(resolveCfg(cfgFile), dbDir);
 }
 
 if (!only || only === "util") {
@@ -66,7 +67,7 @@ if (!only || only === "util") {
   const cfgFile = process.argv.includes("--cfg")
     ? process.argv[process.argv.indexOf("--cfg") + 1]!
     : join(import.meta.dir, "..", "..", "FXUS", "FXUS_000.cfg");
-  await utilMain(cfgFile.startsWith("/") ? cfgFile : join(import.meta.dir, "..", cfgFile));
+  await utilMain(resolveCfg(cfgFile));
 }
 
 if (!only || only === "login") {
