@@ -564,6 +564,11 @@ describe("game server entry flow (FXGS)", () => {
     const serial = r4(p);
     expect(serial).toBeGreaterThan(0);
     expect(r1(p)).toBe(0); // game type
+    // the creator's roster burst (SendSessionInfoPacket): 105 + 107×7 + 112×2
+    await gs.recv(105);
+    for (let i = 0; i < 7; i++) await gs.recv(107);
+    await gs.recv(112);
+    await gs.recv(112);
     // the room list the leaver asked for on the way out (PutAllSessionInfo)
     // leaves with the room destroyed (the only member left)
     gs.send(83, (e) => {});
@@ -821,15 +826,18 @@ describe("game server room flow (FXGS)", () => {
     expect(r2(p112)).toBe(0xffff);
     const p112dup = await gs.recv(112); // the double PutPacket, same as create
     expect(r2(p112dup)).toBe(0xffff);
-    // SendJoinPacket — the self 105 again
-    const p105c = await gs.recv(105);
-    expect(r1(p105c)).toBe(1); // slot
-    r4(p105c); // serial
-    expect(r1(p105c)).toBe(1); // self
-    // SendGameType — normal (93)
+    // SendGameType — normal (93).  No second self 105: SendJoinPacket is an
+    // exclude-the-joiner broadcast (CBaseSession::PutPacket skips a3)
     await gs.recv(93);
-    // the chief also received the join's 105/107/112 broadcast; drop it
-    roomChief!.pending.length = 0;
+    // …and the chief is exactly who receives it: the joiner's 105 (fSelf=1)
+    const p105c = await roomChief!.recv(105);
+    expect(r1(p105c)).toBe(1); // the joiner's slot
+    expect(r4(p105c)).toBe(sn); // the joiner's global serial
+    expect(r1(p105c)).toBe(1); // fSelf=1 in the broadcast variant
+    r1(p105c); // community
+    r1(p105c); // the category-4 deco (fSelf=1 → present)
+    rbuf(p105c, 3); // slot state
+    expect(rstr(p105c)).toBe("tester03");
   });
 
   test("ready (96) from the member → 107 with the ready bit", async () => {

@@ -2504,10 +2504,20 @@ export class CGameSession {
     socket.FlushPendingPackets();
   }
 
-  /** CBaseSession::SendJoinPacket — the newcomer's self 105s. */
+  /** CBaseSession::SendJoinPacket — build the newcomer's self-view 105
+   *  (fSelf=1, so the category-4 deco byte rides along) and PutPacket it to
+   *  every room socket EXCEPT the joiner (CBaseSession::PutPacket skips a3,
+   *  FxServer.exe.c:30670-30686) — this is how the seated players see the
+   *  joiner.  The joiner got the full roster from SendSessionInfoPacket
+   *  (vtbl+80) already.  FlushPacket drains the whole room either way
+   *  (FxServer.exe.c:30926 LABEL_4). */
   SendJoinPacket(socket: CClientSocket): void {
     const packet = new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8);
     const n = socket.GetUserCount();
+    if (n <= 0) {
+      this.FlushPacket();
+      return;
+    }
     for (let i = 0; i < n; i++) {
       const user = socket.GetUser(i);
       if (!this.CheckValidPlayer(user)) {
@@ -2516,9 +2526,9 @@ export class CGameSession {
         return;
       }
       this.MakeSetPlayerPacket(this.GetSlotidx(user), 1, packet);
-      socket.QueuePacket(packet);
+      this.PutPacket(packet, socket);
     }
-    socket.FlushPendingPackets();
+    this.FlushPacket();
   }
 
   /** CBaseSession::SendResetPlayer — 106 for the leaver's users. */
