@@ -459,7 +459,10 @@ export class CUser {
   AppendSimpleInfoPacket(packet: CSendPacket): void {
     packet.EncodeStr(this.strName);
     packet.Encode1(this.account.Gender);
-    packet.Encode4(this.GetLookLevel());
+    // CUser::AppendSimpleInfoPacket (FxServer.exe.c:27122) — the look level
+    // rides through vtbl+24 = Encode2 (CSendPacketBase vtable 0x492198:
+    // +20 E1 / +24 E2 / +28 E4 / +32 EStr), NOT Encode4.
+    packet.Encode2(this.GetLookLevel());
     if (this.m_nPremiumSvrId !== 0) packet.Encode4(this.m_nPremiumSvrIdx);
     else packet.Encode4(0);
     packet.Encode4(this.m_nGuildSN);
@@ -2477,12 +2480,25 @@ export class CGameSession {
     }
   }
 
-  /** CBaseSession::SendSessionInfoPacket / CGameSession override — 105s + 112. */
+  /** CBaseSession::SendSessionInfoPacket / CGameSession override
+   *  (FxServer.exe.c:41AF87) — 105s + 112 + the strategy's SendSessionInfo +
+   *  a second PutPacket of the same buffer.  The base strategy's
+   *  SendSessionInfo is a bare `retn 4` (FxServer.exe.lst:4216EF), so on a
+   *  normal channel the buffer still holds the 112 and the second PutPacket
+   *  sends it AGAIN — the original client receives two consecutive 112s.
+   *  The type-77 guild strategy rewrites the buffer as packet 88
+   *  (EncodeGuildSessionInfo) and broadcasts it; the guild-channel session
+   *  state is not modeled yet. */
   SendSessionInfoPacket(socket: CClientSocket): void {
     this.MakeSessionInfoPacket(socket);
     const packet = new CSendPacket(GS_ClientSend.OnSessionMapIdx, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode2(this.m_nMapIdx & 0xffff);
     socket.QueuePacket(packet);
+    if (CMainSystem.ms_pInstance!.m_nChannelType === 77) {
+      console.error("[GS] CGuildSessionStrategy::SendSessionInfo (packet 88) is not implemented");
+    } else {
+      socket.QueuePacket(packet); // the original's second PutPacket — 112 twice
+    }
     socket.FlushPendingPackets();
   }
 

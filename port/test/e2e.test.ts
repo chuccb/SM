@@ -485,7 +485,7 @@ describe("game server entry flow (FXGS)", () => {
     expect(r1(p70)).toBe(1); // the joiner is already in the rank list
     expect(rstr(p70)).toBe("tester01");
     r1(p70); // gender
-    expect(r4(p70)).toBe(1); // look level
+    expect(r2(p70)).toBe(1); // look level (Encode2 — FxServer.exe.c:27149 vtbl+24)
     expect(r4(p70)).toBe(0); // premium svr idx
     expect(r4(p70)).toBe(0); // guild sn
     expect(r2(p70)).toBe(0); // guild mark
@@ -742,7 +742,7 @@ describe("game server room flow (FXGS)", () => {
     expect(state[2]).toBe(0); // color 0 (first player, slot%8)
     expect(rstr(p105)).toBe("tester01"); // AppendSimpleInfoPacket
     r1(p105); // gender
-    expect(r4(p105)).toBe(1); // look level
+    expect(r2(p105)).toBe(1); // look level (Encode2 — FxServer.exe.c:27149 vtbl+24)
     expect(r4(p105)).toBe(0); // premium svr idx
     expect(r4(p105)).toBe(0); // guild sn
     expect(r2(p105)).toBe(0); // guild mark revision
@@ -756,6 +756,10 @@ describe("game server room flow (FXGS)", () => {
     }
     const p112 = await chief.recv(112);
     expect(r2(p112)).toBe(0xffff); // m_nMapIdx = -1
+    // SendSessionInfoPacket PutPackets the buffer twice (the base strategy's
+    // SendSessionInfo is a no-op retn 4) — the original sends 112 twice
+    const p112dup = await chief.recv(112);
+    expect(r2(p112dup)).toBe(0xffff);
     // the 400 ms timer turns the table's created-flag into an 85 for the lobby
     const p85 = await roomLobby!.recv(85, 3000);
     expect(r2(p85)).toBe(0);
@@ -815,6 +819,8 @@ describe("game server room flow (FXGS)", () => {
     }
     const p112 = await gs.recv(112);
     expect(r2(p112)).toBe(0xffff);
+    const p112dup = await gs.recv(112); // the double PutPacket, same as create
+    expect(r2(p112dup)).toBe(0xffff);
     // SendJoinPacket — the self 105 again
     const p105c = await gs.recv(105);
     expect(r1(p105c)).toBe(1); // slot
