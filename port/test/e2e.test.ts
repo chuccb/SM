@@ -1028,6 +1028,17 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
     // the member gets the same launch packet (no 115)
     const p116b = await member.recv(116);
     expect(r4(p116b)).toBeGreaterThan(0);
+    // the airplane-item probabilities (173) close the launch; the test map
+    // is no mission map (+108 = 0), so list one of iteminfo.txt flies, and
+    // the test package's ItemAttr is empty → every name resolves to -1
+    const p173 = await chief.recv(173);
+    expect(r4(p173)).toBe(1000); // +12776 ← tmpl+72
+    expect(r4(p173)).toBe(2000); // +12780 ← tmpl+76
+    expect(r1(p173)).toBe(4); // list one: ItemBomb 50, ItemFire 40, Roller 5, MaxPower 5
+    for (const prob of [50, 40, 5, 5]) {
+      expect(r1(p173)).toBe(0xff); // CItemAttr::GetItemidx → -1
+      expect(r1(p173)).toBe(prob);
+    }
   });
 
   test("the MTUDP launch handshake: type 1 (mapCRC+attrs) then type 11 (peer info) → 150 + 120", async () => {

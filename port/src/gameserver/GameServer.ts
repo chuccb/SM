@@ -38,6 +38,7 @@
  * table halves: rooms and practice), CChatPool and CChannelPool (the
  * lobby), CMainSystem and CCenterProcess (the center link) and main().
  */
+import { readFileSync } from "node:fs";
 import { CServerConfig } from "../core/Config.ts";
 import { PacketLog } from "../core/PacketLog.ts";
 import { CPacketSocket } from "../core/CPacketSocket.ts";
@@ -4399,21 +4400,57 @@ export class CGameSession {
     }
   }
 
-  /** CGameSession::SendAirplaneItemProb — 173 (needs iteminfo.txt). */
   /**
-   * CGameSession::SendAirplaneItemProb (FxServer.exe.c:36930) — packet 173.
-   * IsLadderGame (4209A6) is the constant-0 stub, so the >30000 clamp on
-   * dword +12776 is dead code: the body is always the two raw dwords.
+   * CGameSession::SendAirplaneItemProb (FxServer.exe.c:36914) — packet 173.
+   * The head is [E4 +12776][E4 +12780]; the IsLadderGame (vtbl+156) clamp
+   * (over 30000 → 30000) is dead code because IsLadderGame is the
+   * constant-0 stub (FxServer.exe.c:37120).  The body then reads
+   * iteminfo.txt from the working directory at send time — two lists of
+   * "name prob" lines with the names resolved through
+   * CItemAttr::GetItemidx.  MissionInfo[0] (+12748 ← tmpl+108) picking
+   * list two (the mission/kart drops), anything else list one (the
+   * airplane drops).  A missing file sends nothing at all: the whole
+   * SendPacket sits inside the fopen-null check.
    */
   SendAirplaneItemProb(): void {
     const packet = new CSendPacket(GS_ClientSend.OnAirplaneItemProb, CipherDegree.kPacketEncryptedCRC8);
-    packet.Encode4(this.m_dwAirplaneItemProb >>> 0);
+    if (this.IsLadderGame() !== 0 && this.m_dwAirplaneItemProb > 30000) packet.Encode4(30000);
+    else packet.Encode4(this.m_dwAirplaneItemProb >>> 0);
     packet.Encode4(this.m_dwArg76 >>> 0);
+    // fopen("iteminfo.txt", "r") — whitespace-split "%s %d" pairs, two
+    // lists, each headed by its count
+    let text: string;
+    try {
+      text = readFileSync("iteminfo.txt", "latin1");
+    } catch {
+      return; // fopen null — no packet leaves the server
+    }
+    const tokens = text.split(/\s+/).filter((t) => t.length > 0);
+    let pos = 0;
+    const readList = (): { idx: number; prob: number }[] => {
+      const count = parseInt(tokens[pos++]!, 10) | 0;
+      const list: { idx: number; prob: number }[] = [];
+      for (let i = 0; i < count; i++) {
+        const name = tokens[pos++] ?? "";
+        const prob = parseInt(tokens[pos++] ?? "0", 10) | 0;
+        list.push({ idx: CItemAttr.ms_pInstance?.GetItemidx(name) ?? -1, prob });
+      }
+      return list;
+    };
+    const airplane = readList();
+    const mission = readList();
+    const list = this.m_MissionInfo[0] === 1 ? mission : airplane;
+    packet.Encode1(list.length);
+    for (const entry of list) {
+      packet.Encode1(entry.idx & 0xff); // (unsigned __int8) of the idx dword
+      packet.Encode1(entry.prob & 0xff);
+    }
     this.SendPacket(packet);
   }
-  /** CGameSession::IsLadderGame (vtbl+156) — the mission flag stands in. */
+  /** CGameSession::IsLadderGame (vtbl+156, FxServer.exe.c:37120) — the
+   *  constant-0 stub (`xor eax,eax`) in this build. */
   IsLadderGame(): number {
-    return this.m_nChiefSwapCount >= SUPREME_ROOM_SWAP_COUNT ? 1 : 0;
+    return IS_LADDER_GAME;
   }
 
   /** CGameSession::LaunchGameStage — packet 116 (FxServer.exe.c:37254). */
