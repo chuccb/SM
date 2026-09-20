@@ -84,15 +84,41 @@ export class CUserPool {
     socket.m_dwLastRTT = now;
     socket.SendPacket(packet);
     if (last !== 0 && now - last < RTT_MIN_INTERVAL) {
-      const name = socket.GetUser(0)?.GetName() ?? "NULL";
+      const name = socket.GetUser(0)?.GetName() ?? socket.bunSocket?.remoteAddress ?? "";
       console.error(`[GS] Hacking Suspected [${name}] : SpeedHack. Disconnect.`);
       socket.PostClosePacket();
       return;
     }
     if (hash !== RTT_HASH && hash !== RTT_HASH_INV) {
-      const name = socket.GetUser(0)?.GetName() ?? "NULL";
+      const name = socket.GetUser(0)?.GetName() ?? socket.bunSocket?.remoteAddress ?? "";
       console.error(`[GS] Hacking Suspected [${name}] : Memory Modification. Disconnect. Received Hash Value : [${hash.toString(16)}]`);
       socket.PostClosePacket();
+    }
+  }
+
+  /** CUserPool::CreateSocketList (FxServer.exe.c:29563) — snapshot the pool
+   *  into a broadcast list; fLobbyOnly keeps the lobby-stage sockets only. */
+  CreateSocketList(fLobbyOnly: number): CClientSocket[] {
+    const list: CClientSocket[] = [];
+    for (const socket of this.m_setSocket) {
+      if (fLobbyOnly !== 0 && socket.m_nPoolType !== 1) continue;
+      list.push(socket);
+    }
+    return list;
+  }
+
+  /** CUserPool::SendAll (FxServer.exe.c:29361) — the FlushModifiedInfo
+   *  broadcast: walk the pre-built list, and a not-connected zombie only
+   *  leaves the LIST (report + PostClosePacket), never the pool. */
+  static SendAll(packet: CSendPacket, sockets: CClientSocket[]): void {
+    for (const socket of [...sockets]) {
+      if (socket.m_bConnected) {
+        socket.SendPacket(packet);
+        continue;
+      }
+      console.error(`[GS] Not connected socket (${socket.bunSocket?.remoteAddress ?? ""}) in user pool. Post Close Packet.`);
+      socket.PostClosePacket();
+      sockets.splice(sockets.indexOf(socket), 1);
     }
   }
 
@@ -208,9 +234,13 @@ export class CConnectPool extends CUserPool {
     for (let i = 0; i < count; i++) flags.push(n.Decode1());
     const flag = n.Decode1();
 
-    // resolve the users (they must still be in this pool)
+    // resolve the users (they must still be in this pool).  The official
+    // failure tails split (:10536/:10568/:10718): a vanished user or a DB
+    // miss answers the quiet "User[0] [%s]." Report + close; the flag gate
+    // reports "Connection failed from center server(...)".
     const users: (CUser | null)[] = [];
     let ok = true;
+    let fDbFail = false;
     for (let i = 0; i < count; i++) {
       const u = CLocalUserTable.ms_pInstance!.FindUserFromGlobalSerialNo(serials[i]);
       users.push(u);
@@ -227,6 +257,7 @@ export class CConnectPool extends CUserPool {
         const info = this.db.prGetUserInfo(u.GetName());
         if (info.retval !== 0) {
           ok = false;
+          fDbFail = true;
           break;
         }
         u.account.SN = info.SN;
@@ -262,9 +293,9 @@ export class CConnectPool extends CUserPool {
         if (u.GetGuildSerialNo() > 0) {
           const inserted = CGuildTable.ms_pInstance!.Insert(u.GetGuildSerialNo());
           if (inserted === 0 && CMainSystem.ms_pInstance!.m_nChannelType === CHANNEL_TYPE_GUILD) {
+            console.error("[GS] Fatal error: Insert to GuildTable Failed"); // :10610
             const p = new CSendPacket(GS_ClientSend.OnGuildBanRes, CipherDegree.kPacketEncryptedCRC8);
             users[0]!.m_pSocket?.SendPacket(p);
-            for (const u2 of users) if (u2) u2.m_pSocket?.PostClosePacket();
             return;
           }
         }
@@ -273,7 +304,12 @@ export class CConnectPool extends CUserPool {
     if (!ok) {
       const u = users[0];
       if (u) {
-        console.error(`[GS] Connection failed from center server(${u.GetName()}:0x${u.m_nGlobalSerialNo.toString(16)})`);
+        if (flag === 0 && !fDbFail && users.every((x) => x !== null)) {
+          console.error(`[GS] Connection failed from center server(${u.GetName()}:0x${u.m_nGlobalSerialNo.toString(16)})`);
+        } else {
+          // a vanished user or a DB miss — the quiet Report + close tail
+          console.log(`[GS] OnCenterResConnEstablished User[0] [${u.GetName()}].`); // :10722
+        }
         u.m_pSocket?.PostClosePacket();
       }
       return;

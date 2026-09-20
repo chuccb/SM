@@ -6,11 +6,12 @@ import { CReceivedPacket, CSendPacket, CipherDegree, kPacketEncryptedCRC8 } from
 import { HOSTHANDLE } from "./MTUDP.ts";
 import { GS_ClientSend, GS_INPLAY_SendInventory, SESSION_ReceivedPacket } from "../lib/PacketIDs.ts";
 import { CChannelPool } from "./Chat";
+import { CUserPool } from "./Pools";
 import { SESSION_IDX_CONNECTING, SESSION_IDX_MAX, SESSION_IDX_NONE } from "./Defs";
 import { CBomberAttr } from "./GameData";
 import { CPracticeSession } from "./Practice";
 import { CGameSession } from "./Session";
-import { CClientSocket, CUser } from "./User";
+import { CClientSocket, CUser, GetInfoStr } from "./User";
 
 // ============================ CGameSessionTable ============================
 
@@ -132,6 +133,7 @@ export class CGameSessionTable {
         if (idx === 0xffff) console.log("[GS] Lobby player sent session packet (OnPacket). Don't Disconnect.");
         else if (idx === SESSION_IDX_CONNECTING) console.error("[GS] Connecting player sent session packet (OnPacket). Don't Disconnect.");
         else console.error("[GS] Invalid game session slot index (OnPacket). Don't Disconnect.");
+        console.log(`[GS]     Time:${Date.now() & 0x7fffffff}`); // Report("    Time:%d", timeGetTime())
       }
       return;
     }
@@ -141,7 +143,7 @@ export class CGameSessionTable {
         n.m_uOffset = 0;
         practice.OnPacket(n, socket);
       } else {
-        console.error(`[GS] Illegal Practice session (${idx}). Disconnect [${socket.GetUser(0)?.GetName() ?? "NULL"}].`);
+        console.error(`[GS] Illegal Practice session (${idx}). Disconnect [${GetInfoStr(socket)}].`);
         socket.PostClosePacket();
       }
       return;
@@ -152,7 +154,7 @@ export class CGameSessionTable {
       n.m_uOffset = 0;
       session.OnPacket(n, socket);
     } else if (socket.m_nPoolType !== 4) {
-      console.error(`[GS] Illegal game session (${idx}). Disconnect [${socket.GetUser(0)?.GetName() ?? "NULL"}].`);
+      console.error(`[GS] Illegal game session (${idx}). Disconnect [${GetInfoStr(socket)}].`);
       socket.PostClosePacket();
     }
     CGameSessionTable.UnlockBaseSessions(idx);
@@ -470,13 +472,17 @@ export class CGameSessionTable {
     this.m_acTableFlags[n] = 0;
   }
 
-  /** CGameSessionTable::FlushModifiedInfo — the 86 sweep (timer). */
+  /** CGameSessionTable::FlushModifiedInfo (FxServer.exe.c:38719) — the 86
+   *  sweep: build the lobby broadcast list once, then every session whose
+   *  modified flag ships its packet through CUserPool::SendAll. */
   FlushModifiedInfo(): void {
+    const list = CChannelPool.ms_pInstance?.CreateSocketList(1);
+    if (!list) return;
     for (const session of this.m_apGameSession) {
       if (!session || session.fValid === 0) continue;
       const packet = new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8);
       if (session.MakeModifiedPacket(packet) !== 0) {
-        CChannelPool.ms_pInstance?.SendAll(packet, 1);
+        CUserPool.SendAll(packet, list);
       }
     }
   }

@@ -2941,8 +2941,43 @@ export class CGameSession {
     }
   }
 
-  /** CGameSession::DumpLog (vtbl+20, 41E0D5) — the diagnostic dump; state-free. */
-  DumpLog(): void {}
+  /** CGameSession::DumpLog (vtbl+20, 41E0D5) — the room diagnostic: the
+   *  header counters, the phase timing line and the eight seat lines. */
+  DumpLog(): void {
+    console.log(
+      `[GS]     [${String(this.m_nIdx).padStart(3, "0")}]     Valid:${this.fValid}     Player:${this.m_nCurPlayerNum}/${this.m_nMaxPlayerNum}     Playing:${this.m_fPlaying}     Map:${this.m_nGameMapIdx}     Private:${this.m_fHasPassword}     MOD:${this.m_nGameTypeMod}     Chief:${this.m_nChiefSlotidx}`,
+    );
+    if (this.m_fPlaying !== 0) {
+      const now = CGameClock.Now();
+      const start = this.m_GameClock.m_dwStartTime;
+      const end = this.m_GameClock.m_dwEndTime;
+      const launch = this.m_dwLaunchTime;
+      if (this.m_nGamePhase === 2) {
+        console.log(`[GS]               Game Over    Now:${String((now - end) >>> 0).padEnd(8)}   Start:${String((start - launch) | 0).padEnd(8)}    LaunchTime:${launch}`);
+      } else if (this.m_nGamePhase === 1) {
+        console.log(`[GS]               Playing      Now:${String((end - start) | 0).padEnd(8)}   Start:${String((start - launch) | 0).padEnd(8)}    LaunchTime:${launch}`);
+      } else {
+        console.log(`[GS]               Wait for UDP conn...        Now:${String((now - launch) >>> 0).padEnd(8)}      LaunchTime:${launch}`);
+      }
+    }
+    for (let i = 0; i < 8; i++) {
+      const player = this.m_rgPlayer[i];
+      if (!player) {
+        console.log(`[GS]           . slotidx(${i + 1}) : (NULL)`);
+        continue;
+      }
+      const socket = player.m_pSocket;
+      if (!socket) {
+        console.log(`[GS]           . slotidx(${i}) : ${player.GetName()}(invalid socket ptr = 00000000)`);
+        continue;
+      }
+      const b0 = this.m_rgSlotState[3 * i]!;
+      const b2 = this.m_rgSlotState[3 * i + 2]!;
+      console.log(
+        `[GS]           . slotidx(${i + 1}) : ${player.GetName()}[${socket.bunSocket?.remoteAddress ?? ""}] (${socket.GetUserCount()}P)   bomber:color:chief:state=${this.m_aBomberIdx[i]}:${b2 & 0x1f}:${(b0 & 2) !== 0 ? 1 : 0}:${(b0 >> 2) & 7}`,
+      );
+    }
+  }
 
   /** CGameSession::OnRequestDestroyGhost (152, FxServer.exe.c:41B3FF). */
   OnRequestDestroyGhost(n: CReceivedPacket, _socket: CClientSocket): void {

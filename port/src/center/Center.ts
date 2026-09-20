@@ -624,6 +624,7 @@ export class CxCenter {
 
   SendPacketServerType(nServerClass: number, packet: CSendPacket): void {
     for (const s of this.servers) if (s.nServerClass === nServerClass && s.socket) s.socket.SendPacket(packet);
+    console.log(`[Center] sent packet ${packet.m_nPacketType} to ${nServerClass}-type servers.`); // CxCenter.exe.c:12015
   }
 
   // ============================ packet dispatch ============================
@@ -723,6 +724,7 @@ export class CxCenter {
     packet.EncodeStr(str);
     this.SendPacketServerType(type, packet);
   }
+
 
   /** CLocalServer::OnPacket and friends (CxCenter.exe.c:10155+). */
   OnPacket(sock: CenterClientSocket, n: CReceivedPacket): void {
@@ -989,13 +991,28 @@ export class CxCenter {
 
   /**
    * CLocalServerMan::OnAdminNotifyMsg (CxCenter.exe.c:11182) — CM 8 [EStr]
-   * to every connected login, game and shop server.
+   * to every connected login, game and shop server, one count Report per
+   * family (:11227/:11251/:11275).
    */
   OnAdminNotifyMsg(n: CReceivedPacket): void {
     const str = n.DecodeStr();
     const packet = new CSendPacket(CM_ReceivedPacket.OnAdminNotifyMsg);
     packet.EncodeStr(str);
-    this.SendPacketToLoginGameShop(packet);
+    const families: [number, string][] = [
+      [SVRCLASS_LOGIN, "LoginServers"],
+      [SVRCLASS_GAME, "FxGameServers"],
+      [SVRCLASS_SHOP, "FxShopServers"],
+    ];
+    for (const [serverClass, label] of families) {
+      let count = 0;
+      for (const s of this.servers) {
+        if (s.nServerClass === serverClass && s.socket) {
+          s.socket.SendPacket(packet);
+          count++;
+        }
+      }
+      console.log(`[Center] sent kmcAdminNotifyMsg to ${label} - count : ${count}`);
+    }
   }
 
   /**

@@ -17,6 +17,11 @@ export const SVRCLASS_UTIL = 99;
  *  CxUtil.exe.c:15632, CxLogin.exe.c:4928) and CxCenter decodes it back. */
 export const SVRIDX_IDENTIFY_XOR = 0x77;
 
+/** CClientSocket::FlushClientSocketSndBuffer's census gate (FxServer.exe.c
+ *  :9185, FxShop.exe.c:5278) — the socket/user count line prints at most
+ *  every 0x493E0 ms. */
+export const CLIENT_SOCKET_CENSUS_MS = 0x493e0;
+
 /**
  * CLocalSocket::CLocalSocket — SetHeaderCode(rcv=96, snd=189, mod=231)
  * (CxLogin.exe.lst:40C1F3). The original local link runs SetSequence(40, 40,

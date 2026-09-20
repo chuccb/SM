@@ -502,7 +502,14 @@ export class CClientSocket extends CPacketSocket {
   }
 }
 
-/** CClientSocket::GetInfoStr — the "%s:%d" debug tag of the original. */
+/** CClientSocket::GetInfoStr (FxServer.exe.c:10083) — the report tag of the
+ *  original: "addr:%dP" with the seated user count, then each seat's name —
+ *  ":" before the first and "," between, "NULL" for an empty seat. */
 export function GetInfoStr(socket: CClientSocket): string {
-  return socket.GetUser(0)?.GetName() ?? "NULL";
+  const count = socket.GetUserCount();
+  let str = `${socket.bunSocket?.remoteAddress ?? ""}:${count}P`;
+  for (let i = 0; i < count; i++) {
+    str += (i === 0 ? ":" : ",") + (socket.GetUser(i)?.GetName() ?? "NULL");
+  }
+  return str;
 }

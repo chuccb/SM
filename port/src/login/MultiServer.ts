@@ -69,9 +69,18 @@ export class CMultiServer {
   /** the four pre-built packets, indexed [hashMismatch][versionMismatch] */
   m_packet: [CSendPacket[], CSendPacket[]] = [[], []];
 
-  /** CMultiServer::Init */
+  /** CMultiServer::Init — the three recordsets report their own open
+   *  failure lines and the init aborts (CxLogin.exe.c:30142/:30134/:29996 —
+   *  the "mutlserver" typo is the original's). */
   Init(db: CDBMan): void {
-    this.m_vtMultiServer = db.GetMultiServers().map((r) => ({
+    let rowsMulti: ReturnType<CDBMan["GetMultiServers"]>;
+    try {
+      rowsMulti = db.GetMultiServers();
+    } catch {
+      console.error("Fail to open MultiServer recordset");
+      throw new Error("MultiServer init failed"); // the original returns 0 and the app aborts
+    }
+    this.m_vtMultiServer = rowsMulti.map((r) => ({
       SN: r.SN,
       strName: r.Name,
       strIp: r.IP,
@@ -80,14 +89,28 @@ export class CMultiServer {
     }));
     for (const m of this.m_vtMultiServer) if (m.dwCurrent !== 0) this.m_nCurrentServer = m.SN;
 
-    this.m_vtLoginServer = db.GetLoginServers().map((r) => ({
+    let rowsLogin: ReturnType<CDBMan["GetLoginServers"]>;
+    try {
+      rowsLogin = db.GetLoginServers();
+    } catch {
+      console.error("Fail to open LoginServer recordset");
+      throw new Error("MultiServer init failed");
+    }
+    this.m_vtLoginServer = rowsLogin.map((r) => ({
       SN: r.SN,
       strIp: r.IP,
       nPort: r.Port,
       nFlag: r.Flag,
     }));
 
-    this.m_vtNotice = db.GetMultiServerNotices().map((r) => ({
+    let rowsNotice: ReturnType<CDBMan["GetMultiServerNotices"]>;
+    try {
+      rowsNotice = db.GetMultiServerNotices();
+    } catch {
+      console.error("Fail to open mutlserver-notice recordset");
+      throw new Error("MultiServer init failed");
+    }
+    this.m_vtNotice = rowsNotice.map((r) => ({
       sn: r.sn,
       nType: r.type,
       strValue: r.value,

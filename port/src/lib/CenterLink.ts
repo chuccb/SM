@@ -112,32 +112,52 @@ export class CLocalSocket extends CPacketSocket {
             },
           },
         });
-        break;
       } catch {
         await Bun.sleep(CENTER_CONNECT_RETRY_MS);
         console.log("Connection failed. Try again.");
+        continue;
       }
+      // CServerSocket (center side) greets: [u2 version][u2 sd]; we read 4
+      // raw bytes then identify (CLocalSocket::ConnectToCenter).  A drop
+      // inside this window reports and restarts the whole connect
+      // (FxServer.exe.c:3680); a version mismatch reports and terminates
+      // (:3714, CxLogin.exe.c:4922).
+      let greeting: Uint8Array;
+      try {
+        greeting = await this.waitGreeting();
+      } catch {
+        console.error("Center server disconnected while identifying");
+        this.greetingResolve = null;
+        this.greetingBuf = new Uint8Array(0);
+        this.bunSocket?.end();
+        this.m_bConnected = false;
+        continue; // LABEL_4 — back into the connect loop
+      }
+      const version = (greeting[0]! << 8) | greeting[1]!;
+      this.centerVersion = version;
+      this.serverType = (greeting[2]! << 8) | greeting[3]!;
+      if (version !== CENTER_VERSION) {
+        console.error("Version mismatch, terminate process");
+        this.bunSocket?.end();
+        // CMainSystem::TerminateProcess (FxServer.exe.c:20645)
+        console.log("CMainSystem:TerminateProcess() called, ExitProcess();");
+        process.exit(0);
+      }
+      // Identify: [class:1][idx^0x77:u32 LE][gameVersion:u16][clientVersion:u16]
+      const id = new Uint8Array(9);
+      id[0] = nServerClass;
+      const x = (nSvrIdx ^ SVRIDX_IDENTIFY_XOR) >>> 0;
+      id[1] = x & 0xff;
+      id[2] = (x >>> 8) & 0xff;
+      id[3] = (x >>> 16) & 0xff;
+      id[4] = (x >>> 24) & 0xff;
+      id[5] = gameVersion & 0xff;
+      id[6] = (gameVersion >>> 8) & 0xff;
+      id[7] = clientVersion & 0xff;
+      id[8] = (clientVersion >>> 8) & 0xff;
+      this.bunSocket!.write(id);
+      break;
     }
-    // CServerSocket (center side) greets: [u2 version][u2 sd]; we read 4 raw
-    // bytes then identify (CLocalSocket::ConnectToCenter, CxLogin.exe.c).
-    const greeting = await this.waitGreeting();
-    const version = (greeting[0]! << 8) | greeting[1]!;
-    this.centerVersion = version;
-    this.serverType = (greeting[2]! << 8) | greeting[3]!;
-    if (version !== CENTER_VERSION) throw new Error("Version mismatch, terminate process");
-    // Identify: [class:1][idx^0x77:u32 LE][gameVersion:u16][clientVersion:u16]
-    const id = new Uint8Array(9);
-    id[0] = nServerClass;
-    const x = (nSvrIdx ^ SVRIDX_IDENTIFY_XOR) >>> 0;
-    id[1] = x & 0xff;
-    id[2] = (x >>> 8) & 0xff;
-    id[3] = (x >>> 16) & 0xff;
-    id[4] = (x >>> 24) & 0xff;
-    id[5] = gameVersion & 0xff;
-    id[6] = (gameVersion >>> 8) & 0xff;
-    id[7] = clientVersion & 0xff;
-    id[8] = (clientVersion >>> 8) & 0xff;
-    this.bunSocket!.write(id);
   }
 
   private greetingResolve: ((b: Uint8Array) => void) | null = null;

@@ -19,15 +19,13 @@ import { CClientSocket, CUser, GetInfoStr } from "./User";
 
 /** CChatPool — the chat handlers (CChannelPool's base). */
 export class CChatPool extends CUserPool {
-  /** CChatPool::SendAll — fLobbyOnly selects the lobby-stage sockets only. */
+  /** CChatPool::SendAll (FxServer.exe.c:7495) — fLobbyOnly selects the
+   *  lobby-stage (poolType 1) sockets only.  No cleanup here: the official
+   *  PutPackets blind, and a zombie dies through PutPacket's own case-1
+   *  report.  (CChatPool::FlushAll's zombie sweep is the same story — the
+   *  binary only ever calls it with 0, so its a2!=0 branch is dead code.) */
   SendAll(packet: CSendPacket, fLobbyOnly: number): void {
-    for (const socket of [...this.m_setSocket]) {
-      if (!socket.m_bConnected) {
-        console.error(`[GS] CChatPool::FlushAll:: Not connected socket (${GetInfoStr(socket)}). Post Close Packet.`);
-        socket.PostClosePacket();
-        this.m_setSocket.delete(socket);
-        continue;
-      }
+    for (const socket of this.m_setSocket) {
       if (fLobbyOnly !== 0 && socket.m_nPoolType !== 1) continue;
       socket.SendPacket(packet);
     }

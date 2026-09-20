@@ -507,6 +507,7 @@ export async function main(cfgFile: string): Promise<void> {
         socket.m_bConnected = true;
         CMainSystem.ms_pInstance!.OnConnEstablished(socket);
         socket.SetCipherDegree(CipherDegree.kPacketRaw);
+        console.log(`[Util] Connection establish[${t.remoteAddress ?? ""}]`); // CxUtil.exe.c:18554
       },
       data: (t, data) => {
         socketOf.get(t)?.OnReceive(new Uint8Array(data as Buffer));

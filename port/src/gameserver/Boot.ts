@@ -8,6 +8,7 @@ import { PacketLog } from "../core/PacketLog.ts";
 import { CDBMan } from "../db/DBMan.ts";
 import { CIDFMan } from "./CData.ts";
 import { HOSTHANDLE, MTUDP_TYPE_PEER_INFO, MTUDP_TYPE_READY_FOR_IMMEDIATE_START, MTUDP_UDP_PORT_OFFSET, SplitDatagram } from "./MTUDP.ts";
+import { CLIENT_SOCKET_CENSUS_MS } from "../lib/S2S.ts";
 import { PACKET_NAME_TABLES } from "../lib/PacketIDs.ts";
 import { CChannelPool } from "./Chat";
 import { CBomberAttr, CGameMapTmplList, CItemAttr } from "./GameData";
@@ -180,6 +181,7 @@ export async function main(cfgFile: string, dbDir: string): Promise<void> {
   let flushTableCount = 0; // dword_4AF67C
   let flushUserCount = 0; // dword_4AF688
   let flushGuildCount = 0; // dword_4AF68C
+  let censusTime = 0; // the static ::Time of FlushClientSocketSndBuffer
   // NB: the original's other timer thread (CTimerThreadTimeCritical::Proc)
   // additionally runs CheckCPUUsage every 3rd iteration — a host-side PDH
   // monitor logging "Abnormal CPU Usage" at >=80% (FxServer.exe.c:25855).
@@ -197,5 +199,22 @@ export async function main(cfgFile: string, dbDir: string): Promise<void> {
       CGuildTable.ms_pInstance!.ForEach((guild) => guild.DeferFlushModifiedInfo(0)); // every 0x12C ticks = 120 s
     }
     sessionTable.UpdateGameSessions();
+    // CClientSocket::FlushClientSocketSndBuffer (004071A6) — the flush
+    // itself writes through, but the 5-minute census line stays observable
+    const now = Date.now() & 0x7fffffff;
+    if (censusTime === 0) censusTime = now;
+    if (now - censusTime > CLIENT_SOCKET_CENSUS_MS) {
+      let sockets = 0;
+      let users = 0;
+      for (const s of CClientSocket.ms_tblSN2Obj.values()) {
+        const c = s.GetUserCount();
+        if (c !== 0) {
+          sockets++;
+          users += c;
+        }
+      }
+      if (sockets !== 0 && users !== 0) console.log(`[GS] Socket count(${sockets}), UserCount(${users})`);
+      censusTime = now;
+    }
   }, 0x190);
 }

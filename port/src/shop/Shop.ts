@@ -27,7 +27,7 @@ import {
   SS_ReceivedPacket,
   PACKET_NAME_TABLES,
 } from "../lib/PacketIDs.ts";
-import { CM_ReceivedPacket, CENTER_VERSION, CONN_HELLO_VERSION, MC_ReceivedPacket, SVRCLASS_SHOP } from "../lib/S2S.ts";
+import { CM_ReceivedPacket, CENTER_VERSION, CONN_HELLO_VERSION, MC_ReceivedPacket, SVRCLASS_SHOP, CLIENT_SOCKET_CENSUS_MS } from "../lib/S2S.ts";
 import { CDynInfoCalculator_GetLevel } from "../login/LevelTable.ts";
 import { CItemMan, type ShopItem } from "./CItemMan.ts";
 
@@ -1301,8 +1301,15 @@ export class CBillingProcess {
     this.m_aBillingSvr = this.db.GetBillingSvrs();
   }
 
-  /** CBillingProcess::ConnectToSvr — walk the list; 1 on the first connect. */
+  /** CBillingProcess::ConnectToSvr (FxShop.exe.c:505) — rotate the server
+   *  list; every refused attempt reports, 10000 of them terminate. */
+  m_nConnectAttempts = 0; // dword_498040
+
   async ConnectToSvr(): Promise<number> {
+    if (this.m_aBillingSvr.length === 0) {
+      console.log("[Shop] No billing server information!");
+      return 0;
+    }
     for (const svr of this.m_aBillingSvr) {
       const socket = new CBillingSocketTw();
       try {
@@ -1316,6 +1323,7 @@ export class CBillingProcess {
             },
             data: (_t, data) => socket.OnReceive(new Uint8Array(data as Buffer)),
             close: () => {
+              console.error("[Shop] BillingSocket Connected closed... "); // :30937
               socket.m_bConnected = false;
               this.m_fConnected = 0;
             },
@@ -1327,6 +1335,7 @@ export class CBillingProcess {
         socket.bunSocket = conn;
         this.m_pSocket = socket;
         this.m_fConnected = 1;
+        console.log("[Shop] Connection to Billing Server established"); // :521
         // CBillingProcess::ConnectToSvr — the 331 hello: [E4 4][E4 GetWorld()]
         const hello = new CSendPacket(BILLING_SendPacket.OnConnEstablished, 4);
         hello.Encode4(4);
@@ -1334,6 +1343,11 @@ export class CBillingProcess {
         this.Send(hello);
         return 1;
       } catch {
+        console.log("[Shop] Connection to Billing Server failed."); // :513
+        if (++this.m_nConnectAttempts > 10000) {
+          console.error("[Shop] CMainSystem:TerminateProcess() called, ExitProcess();");
+          process.exit(1);
+        }
         continue;
       }
     }
@@ -1808,6 +1822,7 @@ export class CxShop {
     // CListenExThread — the web mall listener (ServerPort+1)
     const webPort = port + 1;
     const webSockets = new WeakMap<object, CWebSocket>();
+    let webAcceptCount = 0; // CListenExThread::Proc's v2
     if (!process.env.TC_NOWEB) Bun.listen({
       hostname: "0.0.0.0",
       port: webPort,
@@ -1817,11 +1832,19 @@ export class CxShop {
           webSockets.set(t, socket);
           socket.bunSocket = t as Bun.Socket<any>;
           socket.m_bConnected = true;
+          console.log(`[Shop] (Web) Connection establish[${t.remoteAddress ?? ""}]`); // FxShop.exe.c:16774
+          if (++webAcceptCount % 100 === 0) console.log(`[Shop] VerifyKey Connection Count:${webAcceptCount}`);
         },
         data: (t, data) => {
           webSockets.get(t)?.OnReceive(new Uint8Array(data as Buffer));
         },
-        close: (t) => webSockets.get(t)?.Close(),
+        close: (t) => {
+          const s = webSockets.get(t);
+          if (s) {
+            console.log(`[Shop] (WebSocket)End of file, close connection(${s.bunSocket?.remoteAddress ?? ""})`); // :30950
+            s.Close();
+          }
+        },
         error: (_t, err) => console.error(`[Shop web] ${String(err)}`),
       },
     });
@@ -1831,9 +1854,27 @@ export class CxShop {
     // every tick (its own mod gates set the cadence), the idle sweep is
     // CUserPool::OnTimer's %0x4B gate.
     let poolOnTimerCount = 0; // dword_498368
+    let censusTime = 0; // the static ::Time of FlushClientSocketSndBuffer
     setInterval(() => {
       this.mainPool.OnTimer(++poolOnTimerCount);
       void this.billing.OnTimer();
+      // CClientSocket::FlushClientSocketSndBuffer — the flush writes
+      // through; the 5-minute census line stays (FxShop.exe.c:5278)
+      const now = Date.now() & 0x7fffffff;
+      if (censusTime === 0) censusTime = now;
+      if (now - censusTime > CLIENT_SOCKET_CENSUS_MS) {
+        let sockets = 0;
+        let users = 0;
+        for (const s of CClientSocket.ms_tblSN2Obj.values()) {
+          const c = s.GetUserCount();
+          if (c !== 0) {
+            sockets++;
+            users += c;
+          }
+        }
+        if (sockets !== 0 && users !== 0) console.log(`[Shop] Socket count(${sockets}), UserCount(${users})`);
+        censusTime = now;
+      }
     }, 0x190);
   }
 }
