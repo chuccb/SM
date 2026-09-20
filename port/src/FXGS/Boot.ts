@@ -143,7 +143,11 @@ export async function main(cfgFile: string, dbDir: string): Promise<void> {
   // MTUDP_UDP_PORT_OFFSET, and CUDPPacketDispatcher::Proc (41678B) —
   // frame-split each datagram and route the launch-handshake check packets.
   const udpLogTag = PacketLog.tag; // snapshotted: the handler outlives main()
-  const udpServer = Bun.udpSocket({
+  // Bun.udpSocket() is async: await the bind so a taken port (a previous
+  // GS instance still holding udp :14849) fails the startup loudly instead
+  // of leaving a TCP-only server that silently never answers the launch
+  // handshake — clients would load into the map and freeze.
+  const udpServer = await Bun.udpSocket({
     hostname: "0.0.0.0",
     port: port + MTUDP_UDP_PORT_OFFSET,
     socket: {
