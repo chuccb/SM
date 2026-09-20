@@ -15,7 +15,7 @@ import { CONN_PATCH_URL, SESSION_LOC_OTHER_SERVER } from "./Defs";
 import { CConnectPool } from "./Pools";
 import { CUserItemMan } from "./CUserItemMan";
 import { CGuildTable, CLocalUserTable } from "./Tables";
-import { CClientSocket } from "./User";
+import { CClientSocket, SendGameSlotInfo } from "./User";
 
 // ============================ CMainSystem ============================
 
@@ -363,9 +363,7 @@ export class CCenterProcess {
         }
         p.Encode4(0);
         p.Encode1(info.CommunitySvr);
-        p.Encode2(0); // SendGameSlotInfo(NULL): 0 slots
-        p.Encode2(0);
-        p.Encode2(0);
+        SendGameSlotInfo(p, null);
       } else {
         p.Encode1(0);
         p.EncodeStr(name);

@@ -94,5 +94,6 @@ ESNext 是 compiler/runtime 提供的語言與標準庫目標，不是另一個�
 - [差異清點一](docs/remaining-work-audit.md)
 - [差異清點二](docs/remaining-work-audit-2.md)
 - [A06：NexonClub ID 與本輪工具鏈驗證](docs/nexonclub-id-compatibility-fix.md)
+- [A20：GS 庫存、功能／外觀狀態與裝飾封包修復](docs/user-inventory-compatibility-fix.md)
 
 保留「未知帳號登入自動註冊」的明確需求。其餘 client 可觀測行為以提供的原生 EXE／PDB／反組譯為依據；未完成的項目仍列在清單，不宣稱整個 server 已完全相容。

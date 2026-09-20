@@ -12,11 +12,13 @@
 [A04 Center 逾時與狀態清理](center-timeout-compatibility-fix.md)、
 [A16 Taiwan billing transport](billing-transport-compatibility-fix.md)、
 [A06 NexonClub ID](nexonclub-id-compatibility-fix.md) 已修復各輪列明差異。
-A02 為保留需求，目前已列 A 待辦剩 **15 組**（不含 B 待全鏈追查工作）；兩份 probe 最新合計
-**38 個觀察／22 GAP／16 MATCH**。全套最新 **506 pass／0 fail**。
+A02 為保留需求，目前已列 A 待辦剩 **14 組**（不含 B 待全鏈追查工作）；兩份 probe 最新合計
+**38 個觀察／19 GAP／19 MATCH**。全套最新 **545 pass／0 fail**。
 另完成 [GS ↔ Shop 轉服修復](shop-transfer-compatibility-fix.md)：回覆 opcode、Shop request 寬度與整組使用者檢查；新增雙向 TCP 回歸。
 另完成 [DigiQ 授權／餘額回覆](digiq-authorization-compatibility-fix.md) 的 224→341/342→209→301/302→203；後續新增[本機 billing](local-billing.md)，已驗證常駐商品／flat package 的原子結算及回 GS 的實際 inventory 回覆。
-本機政策不等於 native backend；A08/A17 其餘 gift/coupon/cart、receipt/reset、外部 settlement 等仍待修，15 組待辦未減。
+本機政策不等於 native backend；A08/A17 其餘 gift/coupon/cart、receipt/reset、外部 settlement 等仍待修，這些工作仍保留待辦。
+另完成 [A20 GS 庫存／道具狀態／裝飾封包](user-inventory-compatibility-fix.md)，含原版道具登入／重入／201／71／105 TCP 回歸，三個 A20 probe 已為 MATCH。
+原版 CAItem 定義資料也已[安全匯入](caitem-catalog.md)；A15 其餘資料／遷移範圍不因此宣稱完成。
 工具鏈已固定為 npm 可用的最新預覽版，所有 src／test／tools 納入同一份 strict typecheck；
 GitHub 更晚的 Bun canary 下載失敗，未宣稱已升級，詳見 [工具鏈說明](../README.md)。
 上段數字與下文發現過程為清點時的歷史紀錄；有效 SQL schema／序號語意等仍列 B 待核實。
@@ -239,6 +241,9 @@ A08 prefix probe 已 MATCH（成功 fixture 移除多餘 tail；strict parser �
   的結論直接套到別的 process，也不能宣稱單一 PRNG 已重現併發結果。
 
 ### A15 · P1（交付完整套件）· 資料初始化只涵蓋部分 config，非完整官方資料還原
+
+**後續部分完成：** 已提供 [CAItem 第一組原版價格還原](caitem-catalog.md)，六表來源／逐欄／封包／原子空庫匯入與 TCP 購買有回歸。
+以下未提供 CAItem 的敘述是發現時的歷史狀態；其餘 config／舊站資料 migration 仍需另行審查，未擅自還原玩家個資。
 
 - `DBMan.SeedConfigFromBak` 只灌入 CAMultiSvr、CALoginSvr、CAString、FxUserOptions。
   `tools/bakdump.ts` 也是 CAConfig 專用；`tools/seed.ts` 是建帳號／改兩張設定表。

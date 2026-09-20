@@ -4,6 +4,7 @@
 
 import { Decode1, Decode4, Encode1, Encode4 } from "../core/BufferManipulator.ts";
 import { CReceivedPacket, CSendPacket, CipherDegree, kPacketEncryptedCRC8 } from "../core/Packet.ts";
+import { INVENTORY_SLOT_NONE, ItemCategory, USER_INVENTORY_LOAD_LIMIT } from "../lib/Item.ts";
 import { CDBMan } from "../db/DBMan.ts";
 import { GS_ClientSend, GS_ReceivedPacket } from "../lib/PacketIDs.ts";
 import { timeGetTime } from "../core/timeGetTime.ts";
@@ -229,7 +230,7 @@ export class CConnectPool extends CUserPool {
 
   /**
    * CConnectPool::OnCenterResConnEstablished — center packet 2:
-   * [E1 n][n×(E4 gSN, E1 authencode)][E1 flag].  On success the users get
+   * [E1 n][n×E4 gSN][n×E1 authencode][E1 flag].  On success the users get
    * their DB rows, 210/202(/207)/201 go out and the socket joins the lobby.
    */
   OnCenterResConnEstablished(n: CReceivedPacket): void {
@@ -290,7 +291,7 @@ export class CConnectPool extends CUserPool {
         u.dyn.draw = info.draw;
         u.dyn.lose = info.lose;
         u.SetLevel();
-        u.m_nPremiumSvrId = flags[i];
+        u.SetAuthenCode(flags[i]); // native user+2004; NOT the equipped level-icon flag
         if ((CMainSystem.ms_pInstance!.m_fInventoryDB & 1) !== 0 && !this.InitUserInventory(u)) {
           console.error("[GS] Fatal error: InitUserInventory failed from DB");
           ok = false;
@@ -361,40 +362,54 @@ export class CConnectPool extends CUserPool {
   private InitUserInventory(user: CUser): boolean {
     if (!this.InitPreInventory(user)) return false;
     const id = user.GetName();
-    const rows = this.db.GetUserInventoryRows(id);
-    const now = Date.now();
+    let rows: ReturnType<CDBMan["GetUserInventoryRows"]>;
+    try { rows = this.db.GetUserInventoryRows(id); }
+    catch (error) {
+      console.error("[GS] InitUserInventory: failed to open inventory rowset", error);
+      return false;
+    }
+    // Native 0040B09D/0040B192: unknown definitions consume the budget,
+    // expired rows do not. A SQL LIMIT or a vector-size limit is not equivalent.
+    let counted = 0;
     for (const row of rows) {
+      if (counted >= USER_INVENTORY_LOAD_LIMIT) break;
       const item = CUserItemMan.ms_pInstance!.GetUserItem(row.ItemSN);
       if (!item) {
         console.error("[GS] Mismatch: Shop Item Data");
-        return false;
+        counted++;
+        continue;
       }
-      const expired =
-        user.m_nLevel >= row.LevelCreated || !row.DateCreated || Number.isNaN(Date.parse(row.DateCreated)) || Date.parse(row.DateCreated) < now;
+      // CRSUserInventory reads a signed SHORT and a BYTE, not JS-wide numbers.
+      const levelCreated = (row.LevelCreated << 16) >> 16;
+      const dateCreated = row.DateCreated ? new Date(row.DateCreated) : null;
+      const expired = user.m_nLevel >= levelCreated || !dateCreated ||
+        Number.isNaN(dateCreated.getTime()) || dateCreated.getTime() < Date.now();
       if (expired) {
-        this.db.prDeleteInventory(id, row.ItemSN);
+        // The native loader ignores DeleteInventory's failure result and keeps
+        // walking. A SQLite exception must not disconnect an otherwise valid login.
+        try { this.db.prDeleteInventory(id, row.ItemSN); }
+        catch (error) { console.error("[GS] DeleteInventory failed", error); }
         continue;
       }
       const inv = new UserInventory();
       inv.ItemSN = row.ItemSN;
       inv.StockSn = row.StockSN;
       inv.Type = item.Type;
-      inv.strName = item.strName;
       inv.strAttr = item.strAttr;
       inv.nAttr1 = item.nAttr1;
       inv.nAttr2 = item.nAttr2;
       inv.nAttr3 = item.nAttr3;
-      inv.SlotByte = row.Slot;
+      inv.SlotByte = row.Slot & 0xff;
       inv.Amount = row.Amount;
       inv.Verbose = row.Verbose;
-      inv.DateCreated = row.DateCreated ? new Date(row.DateCreated) : null;
-      inv.LevelCreated = row.LevelCreated;
+      inv.DateCreated = dateCreated;
+      inv.LevelCreated = levelCreated;
       user.AddInventory(inv);
-      if (item.Type === 5 && inv.SlotByte !== 0xff) {
-        user.m_fPremiumTicket = 1;
-        user.m_nPremiumSvrIdx = row.ItemSN;
+      counted++;
+      if (item.Type === ItemCategory.LevelIcon && inv.SlotByte !== INVENTORY_SLOT_NONE) {
+        user.SetLevelIcon(1, row.ItemSN);
       }
-      if (item.Type === 6 && inv.SlotByte !== 0xff) user.m_nPremiumSvrId = inv.nAttr1;
+      if (item.Type === ItemCategory.LevelChanger && inv.SlotByte !== INVENTORY_SLOT_NONE) user.SetFakeLevel(inv.nAttr1);
     }
     return true;
   }

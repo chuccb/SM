@@ -164,7 +164,7 @@ function detail(n: CReceivedPacket) {
   const reveal = n.Decode1(); const personal = reveal ? Array.from({ length: 4 }, () => n.DecodeStr()) : [];
   const premium = n.Decode4(), community = n.Decode1();
   // These fixtures have no decorations or category-3 inventory.
-  expect([n.Decode2(), n.Decode2(), n.Decode2()]).toEqual([0, 0, 0]);
+  expect([n.Decode1(), n.Decode2(), n.Decode2()]).toEqual([0, 0, 0]);
   expect(n.m_uOffset).toBe(n.m_uLength);
   return { id, name, guild, gender, stats, location, reveal, personal, premium, community };
 }
@@ -276,7 +276,7 @@ describe("CUser dynamic state and flush", () => {
     user.dyn.exp = 0x7fffffff; user.SetLevel();
     expect(user.IncDecExp(1)).toBe(-1); expect(user.dyn.exp).toBe(0); expect(user.m_nLevel).toBe(1);
     for (const [bonus, look] of [[-10, 1], [0, 1], [10, 11], [500, 450], [0x7fffffff, 1]]) {
-      user.m_nBonusLevel = bonus!; expect(user.GetLookLevel()).toBe(look!);
+      user.SetFakeLevel(bonus!); expect(user.GetLookLevel()).toBe(look!);
     }
   });
 });

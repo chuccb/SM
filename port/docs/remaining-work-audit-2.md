@@ -8,14 +8,16 @@
 另有 [A04 Center 逾時與狀態清理](center-timeout-compatibility-fix.md)、
 [A16 Taiwan billing transport](billing-transport-compatibility-fix.md)、
 [A06 NexonClub ID](nexonclub-id-compatibility-fix.md) 已完成報告列明差異。
-目前已列 A 待辦 **15 組**、兩輪 probes 合計 **22 GAP／16 MATCH**；全套 **506 pass／0 fail**。
+目前已列 A 待辦 **14 組**、兩輪 probes 合計 **19 GAP／19 MATCH**；全套 **545 pass／0 fail**。
 另完成 [GS ↔ Shop 轉服修復](shop-transfer-compatibility-fix.md)：回覆 opcode、Shop request 寬度與整組使用者檢查；新增雙向 TCP 回歸。
 另完成 [DigiQ 授權／餘額回覆](digiq-authorization-compatibility-fix.md) 的 224→341/342→209→301/302→203；後續新增[本機 billing](local-billing.md)，已驗證常駐商品／flat package 的原子結算及回 GS 的實際 inventory 回覆。
-本機政策不等於 native backend；A08/A17 其餘 gift/coupon/cart、receipt/reset、外部 settlement 等仍待修，15 組待辦未減。
+本機政策不等於 native backend；A08/A17 其餘 gift/coupon/cart、receipt/reset、外部 settlement 等仍待修，這些工作仍保留待辦。
+另完成 [A20 GS 庫存／道具狀態／裝飾封包](user-inventory-compatibility-fix.md)，含原版道具登入／重入／201／71／105 TCP 回歸，三個 A20 probe 已為 MATCH。
+原版 CAItem 定義資料也已[安全匯入](caitem-catalog.md)；A15 其餘資料／遷移範圍不因此宣稱完成。
 工具鏈統一與尚未取得的 GitHub Bun canary 限制見 [port README](../README.md)。
 Center 全域 serial／SID、其餘建立回報與位置查詢另列第一輪 B，不含於上述完成範圍。
-以下除已修項目的註記外，保留第二輪清點當時的結果。A16–A23 中 A16 transport 與 A21 個人資料範圍完成；
-不能因此把 billing 業務 handler、商城、庫存載入或公會結算視為已修復。
+以下除已修項目的註記外，保留第二輪清點當時的結果。A16–A23 中 A16 transport、A20 live-row／裝飾鏈與 A21 個人資料範圍完成；
+不能因此把 billing 業務 handler、商城、其餘庫存生命週期或公會結算視為已修復。
 
 ## 範圍、需求與結果
 
@@ -126,7 +128,11 @@ E2E 啟用 `FXAttrShop=1`，實測回 GS 的 201 及 DB 存留，不靠關閉 lo
   0 預設、恰好等於門檻、跨日、疊加既有物品、DB 失敗與 premium 權限不得憑空成功。
   與 A13 本地日曆／variant time 一起處理，不能以「一律 UTC」替代官方 wire 日曆語意。
 
-## A20 · P1 · GS 庫存 loader 的缺項策略、400 上限、裝飾欄位別名
+## A20 · 已修復（原 P1）· GS 庫存 loader 的缺項策略、400 上限、裝飾欄位別名
+
+**2026-09-21 後續修復：** 已完成本組 live-row 載入／狀態／裝飾封包範圍，並額外修復功能名稱、假等級／圖示／auth 狀態混用、71 count／圖樣／fakeLevel 及遠端空尾端。
+混合 400 邊界、9／5 種裝飾、DB failure、原版道具重入與 TCP 封包均有回歸；見[修復紀錄](user-inventory-compatibility-fix.md)。
+A19 上游與 A13 日期仍開放；以下保留修復前證據。
 
 - 官方 `InitUserInventory` `0040AF55` 找不到 UserItem definition 時 ReportError 後**繼續**；
   TS 立即回 false，中止後續載入。**重現**：未知501後接合法502，TS `{ok:false,loaded:[]}`，
@@ -201,7 +207,7 @@ E2E 啟用 `FXAttrShop=1`，實測回 GS 的 201 及 DB 存留，不靠關閉 lo
 ## 保留的未完成核對與排除項
 
 1. **302錯誤／成功wire與cache**清點當時只有靜態確認，後續已補回歸並修復（見 A17 更新）；
-   A19的zero/default、Addable／return10、A20混合400邊界也未各自執行。沒有灌水成probe數。
+   A19 的 zero/default、Addable／return10 仍待完成；A20 混合 400 邊界後續已補測，見修復紀錄。沒有灌水成 probe 數。
 2. 購物車的未完成handler仍歸A08/A09；普通遊戲金錢套裝的實際給物問題歸A18，
    framing歸A16。這是分層定位，不是把同一個錯誤重新編號。
 3. 原生 Shop `MakePreInventoryPacket` `0041EBD0` 是 `retn 4`，不能因GS版本有內容，

@@ -3,6 +3,7 @@
 
 import { Encode1, Encode2, Encode4 } from "../core/BufferManipulator.ts";
 import { CSendPacket } from "../core/Packet.ts";
+import { INVENTORY_SLOT_NONE } from "../lib/Item.ts";
 import { CDBMan } from "../db/DBMan.ts";
 
 /** CTime::GetVariantTime — the OLE automation date double. */
@@ -134,13 +135,11 @@ export class UserInventory {
   ItemSN = 0; // +0
   StockSn = 0; // +4
   Type = 0; // +8 (the FxItem category)
-  strName = ""; // +12
-  strAttr = "";
-  nAttr1 = 0;
-  nAttr2 = 0;
-  nAttr3 = 0;
-  Slot = -1; // +28 (i32 view; equipped decoration slot)
-  SlotByte = 0xff; // +36 (the DB Slot byte; 0xFF = not equipped)
+  strAttr = ""; // +12: FxItem.strAttr (resource/functional name), NOT strName
+  nAttr1 = 0; // +24
+  nAttr2 = 0; // +28: also the decoration-kind index; one source of truth
+  nAttr3 = 0; // +32
+  SlotByte = INVENTORY_SLOT_NONE; // +36: DB Slot byte; not the kind index
   Amount = 0; // +40
   Verbose = ""; // +44
   DateCreated: Date | null = null; // +56

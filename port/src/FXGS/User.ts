@@ -7,6 +7,7 @@ import { CSendPacket, enSocket, type enSocket as EnSocket } from "../core/Packet
 import { CDBMan, type _USERDYNINFO } from "../db/DBMan.ts";
 import { CLIENTSOCKET_HEADER_CODE_MODIFIER, CLIENTSOCKET_HEADER_CODE_RCV, CLIENTSOCKET_HEADER_CODE_SND, CLIENTSOCKET_SEQ, CLIENTSOCKET_SEQ_DELTA } from "../lib/PacketIDs.ts";
 import { CDynInfoCalculator_GetLevel, kLevelTableSize } from "../lib/LevelTable.ts";
+import { INVENTORY_SLOT_NONE, ItemCategory, SLOT_DECORATION_COUNT } from "../lib/Item.ts";
 import { timeGetTime } from "../core/timeGetTime.ts";
 import { CChannelPool } from "./Chat";
 import { CHANNEL_TYPE_GUILD, DYN_FLUSH_BURST, SESSION_IDX_NONE, USER_MONEY_MAX } from "./Defs";
@@ -15,6 +16,11 @@ import { CUserItemMan, GetVariantTime, PreInventory, UserInventory, _USERACCOUNT
 import { CGameSessionTable } from "./SessionTable";
 import { CCenterProcess, CMainSystem } from "./System";
 import { CGuildTable, CLocalUserTable } from "./Tables";
+
+/** _mbscmp equality on ANSI byte carriers: case-sensitive, NUL-terminated. */
+function sameItemName(left: string, right: string): boolean {
+  return left.split("\0", 1)[0] === right.split("\0", 1)[0];
+}
 
 // ============================ CUser ============================
 
@@ -32,9 +38,9 @@ export class CUser {
   m_fDynInfoModified = 0; // +1976: money/exp/win/draw/lose, not just money
   m_fLevelModified = 0; // +1980: level changed, not every exp change
   m_nLevel = 0; // byte +1984
-  m_nBonusLevel = 0; // byte +1988
-  m_nPremiumSvrId = 0; // byte +1992
-  m_nPremiumSvrIdx = 0; // byte +1996
+  private m_nFakeLevel = 0; // +1988: Get/SetFakeLevel (not real level or authorization)
+  private m_fLevelIcon = 0; // +1992: SetLevelIcon display flag
+  private m_nLevelIconSn = 0; // +1996: GetLevelIconSn
   private m_nGame = 0; // +2000: unsigned IncGame/GetGame counter
   m_fPremiumTicket = 0; // +2004 byte
   private m_fClientInitialized = 0; // +2008: IsClientInitialized, independent of games
@@ -128,11 +134,27 @@ export class CUser {
     this.m_nLevel = CDynInfoCalculator_GetLevel(this.dyn.exp);
   }
 
+  /** Native GetFakeLevel / SetFakeLevel (00403134 / 00408DF1). */
+  GetFakeLevel(): number { return this.m_nFakeLevel; }
+  SetFakeLevel(level: number): void { this.m_nFakeLevel = level | 0; }
+
+  /** Native GetLevelIconSn / SetLevelIcon (0040313B / 00408DFE). */
+  GetLevelIconSn(): number { return this.m_nLevelIconSn; }
+  SetLevelIcon(enabled: number, sn: number): void {
+    this.m_fLevelIcon = enabled | 0;
+    this.m_nLevelIconSn = sn | 0;
+  }
+
+  /** Native GetAuthencode / SetAuthenCode (00408E22 / 00408148).
+   * The asymmetrical spelling is from the supplied symbols. */
+  GetAuthencode(): number { return this.m_fPremiumTicket & 0xff; }
+  SetAuthenCode(code: number): void { this.m_fPremiumTicket = code & 0xff; }
+
   /** CUser::GetLookLevel — level + bonus clamped to 1..kLevelTableSize.
    *  The official compares directly against the same 450 the level table
    *  is sized by (FxServer.exe.c:26980, `if (n450 > 450) return 450;`). */
   GetLookLevel(): number {
-    const n = (this.m_nLevel + this.m_nBonusLevel) | 0;
+    const n = (this.m_nLevel + this.m_nFakeLevel) | 0;
     if (n < 1) return 1;
     if (n > kLevelTableSize) return kLevelTableSize;
     return n;
@@ -221,29 +243,29 @@ export class CUser {
     return this.m_vtInventory.find((i) => i.ItemSN === ItemSN) ?? null;
   }
 
-  /** CUser::GetUserInventoryFromAll — by item id string. */
+  /** CUser::GetUserInventoryFromAll — exact resource-name comparison (_mbscmp), not the display name. */
   GetUserInventoryFromAll(name: string): UserInventory | null {
-    return this.m_vtInventory.find((i) => i.strName === name) ?? null;
+    return this.m_vtInventory.find((i) => sameItemName(i.strAttr, name)) ?? null;
   }
 
   /** CUser::HasFunctionalItem (category 2). */
   HasFunctionalItem(name: string): boolean {
-    return this.m_vtInventory.some((i) => i.Type === 2 && i.strName === name);
+    return this.m_vtInventory.some((i) => i.Type === ItemCategory.Functional && sameItemName(i.strAttr, name));
   }
 
   /** CUser::GetInventoryLoaded — equipped (SlotByte != 0xFF) of a category. */
   GetInventoryLoaded(n: number): UserInventory | null {
-    return this.m_vtInventory.find((i) => i.Type === n && i.SlotByte !== 0xff) ?? null;
+    return this.m_vtInventory.find((i) => i.Type === n && i.SlotByte !== INVENTORY_SLOT_NONE) ?? null;
   }
 
   /** CUser::GetSlotDecorationLoaded (category 10). */
   GetSlotDecorationLoaded(i: number): UserInventory | null {
-    return this.m_vtInventory.find((x) => x.Type === 10 && x.Slot === i && x.SlotByte !== 0xff) ?? null;
+    return this.m_vtInventory.find((x) => x.Type === ItemCategory.SlotDecoration && x.nAttr2 === i && x.SlotByte !== INVENTORY_SLOT_NONE) ?? null;
   }
 
   /** CUser::GetCharDecoLoaded (category 12). */
   GetCharDecoLoaded(i: number): UserInventory | null {
-    return this.m_vtInventory.find((x) => x.Type === 12 && x.Slot === i && x.SlotByte !== 0xff) ?? null;
+    return this.m_vtInventory.find((x) => x.Type === ItemCategory.CharDeco && x.nAttr2 === i && x.SlotByte !== INVENTORY_SLOT_NONE) ?? null;
   }
 
   /** CUser::AppendSimpleInfoPacket — the shared rank/guild/list entry. */
@@ -254,7 +276,7 @@ export class CUser {
     // rides through vtbl+24 = Encode2 (CSendPacketBase vtable 0x492198:
     // +20 E1 / +24 E2 / +28 E4 / +32 EStr), NOT Encode4.
     packet.Encode2(this.GetLookLevel());
-    if (this.m_nPremiumSvrId !== 0) packet.Encode4(this.m_nPremiumSvrIdx);
+    if (this.m_fLevelIcon !== 0) packet.Encode4(this.m_nLevelIconSn);
     else packet.Encode4(0);
     packet.Encode4(this.m_nGuildSN);
     if (CMainSystem.ms_pInstance!.m_nChannelType === CHANNEL_TYPE_GUILD) {
@@ -303,6 +325,25 @@ export class CUser {
     packet.Encode2(list.length);
     for (const inv of list) packet.Encode2(inv.ItemSN);
   }
+}
+
+/** Native free function SendGameSlotInfo (0040335B), shared by local and
+ * DB-backed remote detail. Category-10 pictures use nAttr1, not ItemSN.
+ * The count is E1; the bonus-level tail and category-3 item IDs are E2. */
+export function SendGameSlotInfo(packet: CSendPacket, user: CUser | null): void {
+  if (!user) {
+    packet.Encode1(0);
+    packet.Encode2(0);
+    packet.Encode2(0);
+    return;
+  }
+  const decorations = Array.from({ length: SLOT_DECORATION_COUNT }, (_, slot) => user.GetSlotDecorationLoaded(slot));
+  packet.Encode1(decorations.filter(Boolean).length);
+  decorations.forEach((item, slot) => {
+    if (item) { packet.Encode1(slot); packet.Encode2(item.nAttr1); }
+  });
+  packet.Encode2(user.GetFakeLevel());
+  user.MakeInventoryPacket(packet, ItemCategory.Emotion);
 }
 
 // ============================ CClientSocket ============================

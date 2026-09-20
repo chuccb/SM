@@ -1,9 +1,11 @@
 /** Local replacement policy, NOT recovered DigiQ server internals. */
+import { USER_INVENTORY_LOAD_LIMIT } from "../lib/Item.ts";
+
 export const LOCAL_BILLING_MODE_KEY = "LocalBillingMode";
 export const LOCAL_BILLING_MODE = "inventory-v1";
 export const BILLING_GAME = 4;
 // Conservative local cap from GS InitUserInventory 0040AF55; all DB rows count.
-export const MAX_LOCAL_INVENTORY_ROWS = 400;
+export const MAX_LOCAL_INVENTORY_ROWS = USER_INVENTORY_LOAD_LIMIT;
 export const MAX_CASH = 0x7fffffff;
 export const RESERVATION_MS = 120_000;
 export const AUTHORIZATION_MS = 60 * 60_000;

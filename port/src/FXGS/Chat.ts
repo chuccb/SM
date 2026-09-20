@@ -14,7 +14,7 @@ import { CUserItemMan } from "./CUserItemMan";
 import { CGameSessionTable } from "./SessionTable";
 import { CCenterProcess, CMainSystem } from "./System";
 import { CGuildTable, CLocalUserTable } from "./Tables";
-import { CClientSocket, CUser, GetInfoStr } from "./User";
+import { CClientSocket, CUser, GetInfoStr, SendGameSlotInfo } from "./User";
 
 // ============================ CChatPool ============================
 
@@ -683,21 +683,9 @@ export class CChannelPool extends CChatPool {
       packet.EncodeStr(user.account.Profile);
       packet.EncodeStr(user.account.Birthday);
     }
-    packet.Encode4(user.m_nPremiumSvrIdx);
+    packet.Encode4(user.GetLevelIconSn());
     packet.Encode1(user.account.CommunitySvr);
-    // SendGameSlotInfo (the 9 decoration slots)
-    let slots = 0;
-    for (let i = 0; i < 9; i++) if (user.GetSlotDecorationLoaded(i)) slots++;
-    packet.Encode2(slots);
-    for (let i = 0; i < 9; i++) {
-      const deco = user.GetSlotDecorationLoaded(i);
-      if (deco) {
-        packet.Encode1(i);
-        packet.Encode2(deco.ItemSN);
-      }
-    }
-    packet.Encode2(0);
-    user.MakeInventoryPacket(packet, 3);
+    SendGameSlotInfo(packet, user);
     socket.SendPacket(packet);
   }
 

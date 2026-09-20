@@ -535,7 +535,7 @@ describe("game server entry flow (FXGS)", () => {
     expect(rstr(p70)).toBe("tester01");
     r1(p70); // gender
     expect(r2(p70)).toBe(1); // look level (Encode2 — FxServer.exe.c:27149 vtbl+24)
-    expect(r4(p70)).toBe(0); // premium svr idx
+    expect(r4(p70)).toBe(0); // level-icon SN
     expect(r4(p70)).toBe(0); // guild sn
     expect(r2(p70)).toBe(0); // guild mark
   });
@@ -589,10 +589,10 @@ describe("game server entry flow (FXGS)", () => {
     expect(r4(p)).toBe(0); // ServerIndex
     expect(r2(p)).toBe(65535); // session idx (-1)
     expect(r1(p)).toBe(0); // reveal
-    expect(r4(p)).toBe(0); // premium svr idx
+    expect(r4(p)).toBe(0); // level-icon SN
     r1(p); // community svr
-    expect(r2(p)).toBe(0); // no decorations
-    expect(r2(p)).toBe(0); // (slot tail)
+    expect(r1(p)).toBe(0); // native SendGameSlotInfo E1 count
+    expect(r2(p)).toBe(0); // fake-level tail
     expect(r2(p)).toBe(0); // category-3 items: none
   });
 
@@ -681,7 +681,7 @@ function encStrInto(e: Encoder, s: string, key: number): void {
  *  existingAccount skips registration when exercising a real re-login. */
 async function enterGame(
   name: string,
-  opts: { gsIdx?: number; gsPort?: number; guildSn?: number; existingAccount?: boolean; mid?: () => void | Promise<void> } = {},
+  opts: { gsIdx?: number; gsPort?: number; guildSn?: number; existingAccount?: boolean; onInventory?: (p: CReceived) => void; mid?: () => void | Promise<void> } = {},
 ): Promise<{ ls: TestClient; gs: TestClient; sn: number }> {
   const ls = new TestClient();
   await ls.connect(13838, { sndDeg: CipherDegree.kPacketEncryptedCRC8, rcvDeg: CipherDegree.kPacketEncryptedCRC8 });
@@ -746,7 +746,8 @@ async function enterGame(
   });
   await gs.recv(210);
   await gs.recv(202);
-  await gs.recv(201);
+  const inventory = await gs.recv(201);
+  opts.onInventory?.(inventory);
   await gs.recv(15);
   await gs.recv(70);
   return { ls, gs, sn };
@@ -808,7 +809,7 @@ describe("game server room flow (FXGS)", () => {
     expect(rstr(p105)).toBe("tester01"); // AppendSimpleInfoPacket
     r1(p105); // gender
     expect(r2(p105)).toBe(1); // look level (Encode2 — FxServer.exe.c:27149 vtbl+24)
-    expect(r4(p105)).toBe(0); // premium svr idx
+    expect(r4(p105)).toBe(0); // level-icon SN
     expect(r4(p105)).toBe(0); // guild sn
     expect(r2(p105)).toBe(0); // guild mark revision
     expect(r1(p105)).toBe(0); // slot accessory: no slot decos
@@ -1822,7 +1823,7 @@ describe("guild channel end to end (T77, the game3.cfg subprocess)", () => {
     expect(rstr(p105)).toBe("tester77");
     r1(p105); // gender
     r2(p105); // look level
-    r4(p105); // premium svr idx
+    r4(p105); // level-icon SN
     expect(r4(p105)).toBe(7777); // guild sn (prGetUserInfo read the stamped row)
     expect(r2(p105)).toBe(3); // the seeded mark revision
     for (let i = 0; i < 7; i++) await gs.recv(107);
@@ -2115,4 +2116,66 @@ test("GS -> Shop -> original CAItem auto-import, catalog and billing purchase ->
     shopProc.kill(); await shopProc.exited;
     billingServer.close(); billingDB.Close();
   }
+}, 10000);
+
+test("original owned cosmetics survive GS reentry and reach native 201, 71 and room 105 fields", async () => {
+  // The preceding production Shop startup imported the real original catalog.
+  // Seed owned rows only, not fake catalog definitions or a billing purchase.
+  const db = new CDBMan(DB_DIR), name = "decolook";
+  const itemSNs = [3, 16, 95, 169, 549, 20001]; // emotion, icon, fake level, slot deco, char deco, bomb
+  const inventoryDB = db.inventory[GetUserHashNo(name)];
+  const readInventory = (p: CReceived) => {
+    expect([r1(p), r2(p)]).toEqual([1, 6]);
+    for (const item of itemSNs) {
+      expect([r4(p), r1(p), r4(p), rstr(p)]).toEqual([item, item === 3 ? 255 : 0, 1, ""]);
+      expect(rbuf(p, 8).length).toBe(8); // A13 date value/timezone is separate
+    }
+    expect(p.off).toBe(p.buf.length);
+  };
+  let entered: Awaited<ReturnType<typeof enterGame>> | undefined;
+  try {
+    for (let round = 0; round < 2; round++) {
+      entered = await enterGame(name, {
+        existingAccount: round > 0, onInventory: readInventory,
+        mid: round === 0 ? () => {
+          for (const sn of [...itemSNs, 170]) {
+            const stock = db.item.query<{ SN: number }, [number]>("SELECT SN FROM FxStock WHERE ItemSN=? ORDER BY SN LIMIT 1").get(sn);
+            // Original bomb 20001 has a definition but no remaining stock row.
+            // Native GS still accepts already-owned items without a store listing.
+            if (sn === 20001) expect(stock).toBeNull(); else expect(stock).not.toBeNull();
+            inventoryDB.query(`INSERT INTO FxUserInventory(UserID,ItemSN,StockSN,Slot,Amount,DateCreated,LevelCreated)
+              VALUES(?,?,?,?,1,?,2000)`).run(name, sn, stock?.SN ?? 0, sn === 3 ? 255 : 0,
+                sn === 170 ? "2000-01-01T00:00:00.000Z" : "2099-01-01T00:00:00.000Z");
+          }
+          inventoryDB.query("INSERT INTO FxUserInventory(UserID,ItemSN,Amount,DateCreated,LevelCreated) VALUES(?,999999,1,'2000-01-01',0)").run(name);
+        } : undefined,
+      });
+      const { gs, ls, sn } = entered;
+      gs.send(67, e => e.str(name)); const detail = await gs.recv(71);
+      expect([r1(detail), rstr(detail), rstr(detail), rstr(detail), r1(detail)]).toEqual([1, name, name, "", 1]);
+      expect([r4(detail), r4(detail), r4(detail), r4(detail), r4(detail), r2(detail), r4(detail)])
+        .toEqual([0, 0, round, 0, 3000, 1, 0]); // native phase-0 room exit adds a loss (A21)
+      expect([r1(detail), r4(detail), r2(detail), r1(detail), r4(detail), r1(detail)])
+        .toEqual([10, 0, 65535, 0, 16, 0]);
+      // Literal native SendGameSlotInfo: E1 count, E1 kind, E2 picture, E2 fake level, E2 category-3 count/IDs.
+      expect([r1(detail), r1(detail), r2(detail), r2(detail), r2(detail), r2(detail)]).toEqual([1, 1, 1, 65521, 1, 3]);
+      expect(detail.off).toBe(detail.buf.length);
+
+      gs.send(80, e => { e.str("original decorations"); e.str(""); e.u8(0); e.u8(1); e.u8(0); });
+      const created = await gs.recv(80); expect(r1(created)).toBe(0);
+      const player = await gs.recv(105);
+      expect([r1(player), r4(player), r1(player), r1(player), r1(player)]).toEqual([0, sn, 1, 0, 255]);
+      rbuf(player, 3);
+      expect([rstr(player), r1(player), r2(player), r4(player), r4(player), r2(player)])
+        .toEqual([name, 1, 1, 16, 0, 0]);
+      expect([r1(player), r1(player), r1(player), r2(player)]).toEqual([1, 0, 1, 1]);
+      expect([r1(player), r1(player), r4(player), r4(player), r4(player), r4(player)])
+        .toEqual([1, 0, 0xffffffff, 1, 1, 1]);
+      expect(player.off).toBe(player.buf.length);
+      expect(db.GetUserInventoryRows(name).map(r => r.ItemSN)).toEqual([...itemSNs, 999999]);
+      gs.close(); ls.close();
+      for (let i = 0; i < 100 && center.serialTable.has(sn); i++) await Bun.sleep(10);
+      expect(center.serialTable.has(sn)).toBe(false);
+    }
+  } finally { entered?.gs.close(); entered?.ls.close(); db.Close(); }
 }, 10000);

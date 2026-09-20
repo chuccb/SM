@@ -5,6 +5,7 @@
 import { Decode1, Decode2, Decode4, Encode1, Encode2, Encode4, EncodeBuffer } from "../core/BufferManipulator.ts";
 import { CReceivedPacket, CSendPacket, CipherDegree, kPacketEncryptedCRC8 } from "../core/Packet.ts";
 import { GS_ClientSend, SESSION_ReceivedPacket } from "../lib/PacketIDs.ts";
+import { FunctionalItem, ItemCategory, SLOT_DECORATION_COUNT, CHAR_DECO_COUNT } from "../lib/Item.ts";
 import { timeGetTime } from "../core/timeGetTime.ts";
 import {
   ACCOUNTING_LOG_CHANNEL_TYPE,
@@ -353,36 +354,31 @@ export class CGameSession {
 
   /** CBaseSession::MakeSlotAccessoryPacket — the tail of packet 105. */
   MakeSlotAccessoryPacket(slot: number, packet: CSendPacket): void {
-    const user = this.m_rgPlayer[slot]!;
-    let decorationCount = 0;
-    for (let i = 0; i < 9; i++) if (user.GetSlotDecorationLoaded(i)) decorationCount++;
+    const user = this.m_rgPlayer[slot];
+    if (!user) return; // native null-user branch writes nothing
+    const decorations = Array.from({ length: SLOT_DECORATION_COUNT }, (_, i) => user.GetSlotDecorationLoaded(i));
+    const decorationCount = decorations.filter(Boolean).length;
     packet.Encode1(decorationCount);
     if (decorationCount > 0) {
       packet.Encode1(slot);
-      for (let i = 0; i < 9; i++) {
-        const deco = user.GetSlotDecorationLoaded(i);
-        if (deco) {
-          packet.Encode1(i);
-          packet.Encode2(deco.nAttr1 & 0xffff); // UserInventory+24
-        }
-      }
+      decorations.forEach((item, i) => {
+        if (item) { packet.Encode1(i); packet.Encode2(item.nAttr1); }
+      });
     }
-    let charDecoCount = 0;
-    for (let i = 0; i < 5; i++) if (user.GetCharDecoLoaded(i)) charDecoCount++;
+    const charDecos = Array.from({ length: CHAR_DECO_COUNT }, (_, i) => user.GetCharDecoLoaded(i));
+    const charDecoCount = charDecos.filter(Boolean).length;
     packet.Encode1(charDecoCount);
     if (charDecoCount > 0) {
       packet.Encode1(slot);
-      for (let i = 0; i < 5; i++) {
-        const deco = user.GetCharDecoLoaded(i);
-        if (deco) {
-          packet.Encode4(deco.nAttr1); // UserInventory+24
-          packet.Encode4(deco.nAttr2); // +28
-          packet.Encode4(deco.nAttr3); // +32
+      for (const item of charDecos) {
+        if (item) {
+          packet.Encode4(item.nAttr1);
+          packet.Encode4(item.nAttr2);
+          packet.Encode4(item.nAttr3);
         }
       }
     }
-    const loaded14 = user.GetInventoryLoaded(14);
-    packet.Encode4(loaded14 ? loaded14.nAttr3 : 0); // UserInventory+32
+    packet.Encode4(user.GetInventoryLoaded(ItemCategory.Bomb)?.nAttr3 ?? 0);
   }
 
   /** CBaseSession::MakeSetPlayerPacket — 105 [slot][serial][self][community]
@@ -396,7 +392,7 @@ export class CGameSession {
     packet.Encode1(fSelf);
     packet.Encode1(user.account.CommunitySvr);
     if (fSelf !== 0) {
-      const deco = user.GetInventoryLoaded(4);
+      const deco = user.GetInventoryLoaded(ItemCategory.EnterEffect);
       packet.Encode1(deco ? deco.nAttr1 & 0xff : 255); // UserInventory+24
     }
     packet.EncodeBuffer(this.m_rgSlotState.subarray(slot * 3, slot * 3 + 3));
@@ -774,7 +770,7 @@ export class CGameSession {
     if (this.m_nMaxSlot <= 0) return -2;
     for (let i = 0; i < this.m_nMaxSlot; i++) {
       const user = this.m_rgPlayer[i];
-      if (user && user.HasFunctionalItem("Item/RoomTicket")) return i;
+      if (user && user.HasFunctionalItem(FunctionalItem.RoomTicket)) return i;
     }
     return -2;
   }
@@ -863,7 +859,7 @@ export class CGameSession {
     } else {
       for (; chief < this.m_nMaxSlot; chief++) {
         const user = this.m_rgPlayer[chief];
-        if (user && user.HasFunctionalItem("Item/RoomTicket")) break;
+        if (user && user.HasFunctionalItem(FunctionalItem.RoomTicket)) break;
       }
       if (chief >= this.m_nMaxSlot) {
         this.m_nChiefSlotidx = -2;
@@ -1241,7 +1237,7 @@ export class CGameSession {
     const user = this.m_rgPlayer[slot]!;
     if (user === null || user.m_pSocket === null) return;
     // neg/sbb/and 2/inc — "Item/SuperChief" stretches every gate ×3
-    const superChief = user.HasFunctionalItem("Item/SuperChief") ? 3 : 1;
+    const superChief = user.HasFunctionalItem(FunctionalItem.SuperChief) ? 3 : 1;
     const now = CGameClock.Now(); // timeGetTime
     let oddGate = false; // 41C238
     if (this.m_nGameType === 0) {
@@ -1899,7 +1895,7 @@ export class CGameSession {
       // a super chief (Item/SuperChief) or an operator kicks outright
       let hasSuper = false;
       for (const u of socket.m_apUser) {
-        if (u && u.HasFunctionalItem("Item/SuperChief")) {
+        if (u && u.HasFunctionalItem(FunctionalItem.SuperChief)) {
           hasSuper = true;
           break;
         }
@@ -1917,7 +1913,7 @@ export class CGameSession {
     // Item/BanReflex bounces the ban onto the chief
     let reflex = false;
     for (const u of targetUser.m_pSocket?.m_apUser ?? []) {
-      if (u && u.HasFunctionalItem("Item/BanReflex")) {
+      if (u && u.HasFunctionalItem(FunctionalItem.BanReflex)) {
         reflex = true;
         break;
       }
