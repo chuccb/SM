@@ -1112,6 +1112,14 @@ function variantTime(date: Date | null): Uint8Array {
 /** CWebSocket — the ServerPort+1 web-mall listener socket.  The framing is
  *  the standard CPacketSocket one; the first packet is OnVerifyKey. */
 export class CWebSocket extends CPacketSocket {
+  /** CWebSocket::OnReceiveCompletionPacket runs the same 50-stamp receive
+   *  flood ring and the "(%s), disconnected." overflow report as the client
+   *  sockets (FxShop.exe.c:30457). */
+  m_fReceiveFloodGuard = true;
+
+  protected ReportReceiveOverflow(): void {
+    console.error(`Socket receive buffer overflow(${this.bunSocket?.remoteAddress ?? ""}), disconnected.`);
+  }
   static ms_tblSerialNo2Socket = new Map<number, CWebSocket>();
 
   m_nLocalSerialNo = 0;
