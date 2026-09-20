@@ -54,6 +54,8 @@ function practice(count = 1) {
 }
 const ids = () => packets.map(p => p[0]! ^ 0x5a);
 const kickoff = () => packets.find(p => (p[0]! ^ 0x5a) === 150)!;
+const e1 = (p: Buffer, off: number) => p[off]! ^ 0x5a;
+const e2 = (p: Buffer, off: number) => p.readUInt16BE(off) ^ 0xa569;
 const e4 = (p: Buffer, off: number) => (p.readUInt32BE(off) ^ 0x96ca5395) >>> 0;
 
 test("practice random/theme map selection uses native practice, max-team and ticket arguments", () => {
@@ -119,6 +121,75 @@ test("failed practice validation never reaches the launch extension", () => {
   expect(ids()).toEqual([115]); expect(packets[0]![1]! ^ 0x5a).toBe(3);
   expect([session.m_fPlaying, session.m_nGamePhase]).toEqual([0, 0]);
 });
+
+test("practice event4 -> event6 -> 163 reports the human kill and returns through 164", () => {
+  const { session, socket } = practice();
+  const human = socket.GetUser(0)!;
+  session.OnPacket(request("30"), socket); // 106: 115 -> 116 -> 173 -> 150
+
+  // 146 event 4: AI slot 1 dies, human slot 0 is the killer, zero drops.
+  session.OnPacket(request("c81ba569a5695a5a"), socket);
+  expect(session.m_DynInfoCalculator.GetKillCount(0)).toBe(1);
+  expect(session.m_abDeleted[1]).toBe(1);
+  // 146 event 6: human slot 0 reports the finish.  The exclude relay has no
+  // recipient in one-socket practice; Update performs the native end defer.
+  session.OnPacket(request("c83aa569a569"), socket);
+  session.Update();
+
+  expect(ids()).toEqual([115, 116, 173, 150, 159, 163]);
+  expect([session.m_nGamePhase, session.m_fPlaying]).toEqual([2, 1]);
+  const result = packets.at(-1)!;
+  expect(result).toHaveLength(35);
+  expect(Array.from({ length: 5 }, (_, i) => e1(result, 1 + i))).toEqual([0, 0, 0, 0, 0]);
+
+  // Human row: marker, serial, win, kill=1, save=0, unchanged exp/look.
+  expect(e1(result, 6)).toBe(1);
+  expect(e4(result, 7)).toBe(human.GetGlobalSerialNo());
+  expect([e1(result, 11), e1(result, 12), e1(result, 13)]).toEqual([0, 1, 0]);
+  expect([e2(result, 14), e2(result, 16), e2(result, 18), e1(result, 20), e1(result, 21)])
+    .toEqual([0, 0, human.GetLookLevel(), 0, 0]);
+
+  // AI row: marker 2, loss, its own calculator counts and native AI level.
+  expect([e1(result, 22), e1(result, 23), e1(result, 24), e1(result, 25), e2(result, 26)])
+    .toEqual([2, 2, 0, 0, session.m_anAILevel[1]]);
+  expect(Array.from({ length: 7 }, (_, i) => e1(result, 28 + i))).toEqual(Array(7).fill(0));
+
+  // Native return delay emits practice code 3, clears only round state, and
+  // keeps the human/AI roster ready for a later 106.
+  session.m_GameClock.m_dwEndTime = ((performance.now() >>> 0) - 8001) >>> 0;
+  session.Update();
+  expect(ids().at(-1)).toBe(164); expect(e1(packets.at(-1)!, 1)).toBe(3);
+  expect([session.m_nGamePhase, session.m_fPlaying, session.m_nGameMapIdx]).toEqual([0, 0, -1]);
+  expect([session.IsValidSlot(0), session.IsValidSlot(1), session.m_nCurPlayerNum]).toEqual([true, true, 2]);
+  expect([...session.m_aBomberIdx]).toEqual(Array(8).fill(-1));
+
+  // Practice vtbl+224 is an empty override: an idle Update must not run the
+  // normal room's chief-ban state machine after the 164 transition.
+  Object.assign(session.m_BanChief, { m_nCanStart: 123, m_dwCanStartTime: 456 });
+  session.Update();
+  expect([session.m_BanChief.m_nCanStart, session.m_BanChief.m_dwCanStartTime]).toEqual([123, 456]);
+  const beforeRelaunch = packets.length;
+  session.OnPacket(request("30"), socket);
+  expect(ids().slice(beforeRelaunch)).toEqual([115, 116, 173, 150]);
+  expect([session.m_nGamePhase, session.m_fPlaying]).toEqual([1, 1]);
+});
+
+test("practice serializes an AI killer's and saver's counts in the AI result row", () => {
+  const { session, socket } = practice(); session.OnPacket(request("30"), socket);
+  session.OnPacket(request("c87ba569a569"), socket); // event 2: AI slot 1 is trapped
+  session.OnPacket(request("c86ba569a5695b"), socket); // event 3: AI slot 1 is saved by AI slot 1
+  session.OnPacket(request("c81aa569a5695b5a"), socket); // event 4: human slot 0, killer AI slot 1
+  session.OnPacket(request("c83ba569a569"), socket); // event 6: AI slot 1 finishes
+  expect([session.m_DynInfoCalculator.GetKillCount(1), session.m_DynInfoCalculator.GetSaveCount(1)]).toEqual([1, 1]);
+  session.Update();
+  const result = packets.at(-1)!;
+  expect(ids().at(-1)).toBe(163);
+  expect(e1(result, 2)).toBe(7); // winning colour
+  expect([e1(result, 11), e1(result, 12), e1(result, 13)]).toEqual([2, 0, 0]);
+  expect([e1(result, 22), e1(result, 23), e1(result, 24), e1(result, 25)])
+    .toEqual([2, 0, 1, 1]);
+});
+
 test("ordinary room still needs BOTH TCP109 and UDP readiness", () => {
   map.m_fPracticeMap = 0;
   const session = table.m_apGameSession[0]!; session.Init("normal", "", 0); session.m_nMapIdx = 0;

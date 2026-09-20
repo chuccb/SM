@@ -60,8 +60,8 @@
 
 ## 4. 連動 caller 與 gate
 
-- `DeleteUser` `0041D297`：有效房間 phase 1 先 `OnBomberDie`，**再**檢查 skip-reward gate 決定是否加敗；phase 0 加敗、phase 2 不加敗的原有差異保留。
-- `SendGameResult` 的勝／和／敗與 skip-reward 分支透過相同 dyn mutation 落地；level-up 更新排名與結果封包的鏈路亦測試。
+- `DeleteUser` `0041D297`：有效房間 phase 1 先 `OnBomberDie`，**再**檢查 `CDynInfoCalculator::IsInvalidGame`（session `+12276`）決定是否加敗；phase 0 加敗、phase 2 不加敗的原有差異保留。
+- `SendGameResult` 的勝／和／敗與 `IsInvalidGame` 分支透過相同 dyn mutation 落地；level-up 更新排名與結果封包的鏈路亦測試。
 - 正常 `DeferHandleGameEnd` 的 IncGame caller 保留；沒有為了規則看起來一致而改掉原生 disagreement branch 不增加該玩家 counter 的特例。
 - byte +2008 官方 getter/setter 是 `IsClientInitialized`／`SetClientInitialized`（`00408155/0040815C`），不是 modified-client flag。
 - packet 7 的末 byte 為 0 時 initialized=1，其餘為 0（`00408385..0040839C`）。入場是否傳 202 讀此值，與 `GetGame` 無關；socket hash 的 `m_fImpPoint` 仍獨立。

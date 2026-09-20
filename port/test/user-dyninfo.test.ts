@@ -327,6 +327,7 @@ describe("detail packets, entry and result persistence", () => {
     first.user.dyn.exp = 2999; first.user.SetLevel();
     const session = new CGameSession(); session.fValid = 1; session.m_nGamePhase = 1;
     session.m_rgPlayer[0] = first.user; session.m_rgPlayer[1] = other.user;
+    session.m_DynInfoCalculator.m_nInvalidGame = 0;
     session.m_rgSlotState[2] = 0; session.m_rgSlotState[5] = 1;
     session.m_abDeleted[0] = 6; session.m_abDeleted[1] = 4;
     session.m_DynInfoCalculator.GetWinExp = () => 2;
@@ -360,18 +361,18 @@ describe("detail packets, entry and result persistence", () => {
     expect(detail(again.packets.pop()!).stats).toEqual([1, 0, 0, 3001, 6000, 2, 0]);
   });
 
-  for (const winTeam of [-1, 0, 1]) for (const skip of [0, 1]) {
-    test(`result team=${winTeam}, skip-reward gate=${skip}`, () => {
+  for (const winTeam of [-1, 0, 1]) for (const invalidGame of [0, 1]) {
+    test(`result team=${winTeam}, IsInvalidGame=${invalidGame}`, () => {
       const { user } = player(); const session = new CGameSession(); session.m_rgPlayer[0] = user;
-      session.m_fSkipExpReward = skip;
+      session.m_DynInfoCalculator.m_nInvalidGame = invalidGame;
       session.m_DynInfoCalculator.GetDrawExp = () => 5;
       session.m_DynInfoCalculator.GetWinExp = () => 5;
       session.m_DynInfoCalculator.GetKillNSaveExp = () => 5;
       session.m_GameClock.ElapsedTime = () => 45001; session.SendPacket = () => {};
       session.SendGameResult(winTeam);
-      const counts = [winTeam === 0, winTeam === -1, winTeam === 1].map((matches) => !skip && matches ? 1 : 0);
+      const counts = [winTeam === 0, winTeam === -1, winTeam === 1].map((matches) => !invalidGame && matches ? 1 : 0);
       expect([user.dyn.win, user.dyn.draw, user.dyn.lose]).toEqual(counts);
-      expect(user.dyn.exp).toBe(skip ? 0 : 5);
+      expect(user.dyn.exp).toBe(invalidGame ? 0 : 5);
       user.DeferFlushModifiedInfo(db, 1);
       const stored = dynRow(user.GetName()); expect([stored.win, stored.draw, stored.lose]).toEqual(counts);
     });
@@ -391,13 +392,13 @@ describe("detail packets, entry and result persistence", () => {
   test("leave-loss gate is evaluated after the death callback", () => {
     const { user } = player(); const session = new CGameSession();
     session.fValid = 1; session.m_nGamePhase = 1; session.m_rgPlayer[0] = user; session.m_nCurPlayerNum = 1;
-    session.OnBomberDie = () => { session.m_fSkipExpReward = 1; };
+    session.OnBomberDie = () => { session.m_DynInfoCalculator.m_nInvalidGame = 1; };
     session.DeleteUser(0); expect(user.dyn.lose).toBe(0);
   });
-  for (const [valid, phase, skip, losses] of [[0, 1, 0, 0], [1, 0, 1, 1], [1, 1, 0, 1], [1, 1, 1, 0], [1, 2, 0, 0]]) {
-    test(`leave-loss native gate valid=${valid} phase=${phase} skip=${skip}`, () => {
+  for (const [valid, phase, invalidGame, losses] of [[0, 1, 0, 0], [1, 0, 1, 1], [1, 1, 0, 1], [1, 1, 1, 0], [1, 2, 0, 0]]) {
+    test(`leave-loss native gate valid=${valid} phase=${phase} IsInvalidGame=${invalidGame}`, () => {
       const { user } = player(); const session = new CGameSession();
-      session.fValid = valid!; session.m_nGamePhase = phase!; session.m_fSkipExpReward = skip!;
+      session.fValid = valid!; session.m_nGamePhase = phase!; session.m_DynInfoCalculator.m_nInvalidGame = invalidGame!;
       session.m_rgPlayer[0] = user; session.m_nCurPlayerNum = 1;
       session.OnBomberDie = () => {}; // death cascade independent of the verified loss gate
       session.DeleteUser(0);

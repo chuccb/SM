@@ -85,7 +85,7 @@ export class CGameSession {
   m_aBomberIdx = new Int32Array(8).fill(-1); // +11572
   m_abDeleted = new Uint8Array(8); // +11604 (0 alive; 1 dead / 2 goal / 3 trap / 5 lap finish / 6 win / 7 draw)
   m_rgnUsedItem = new Int32Array(8); // +11652 (a special item was used this game)
-  m_rgnShopItem = new Int32Array(8); // +12112 (a shop item was used this game)  /** +12632/+12636 — per-slot {time, rank} lap pairs (LaunchGameStage fills -1). */
+  /** +12632/+12636 — per-slot {time, rank} lap pairs (LaunchGameStage fills -1). */
   m_rgLapTime = new Int32Array(16).fill(-1);
   m_rgLapRank = new Int32Array(16).fill(-1);
   m_rgLapCount = new Int32Array(8); // +12696 (per-slot lap byte)
@@ -98,23 +98,19 @@ export class CGameSession {
   m_BanChief = new CBanChief(); // +12576 (the idle-room start gate)
   m_nObj0 = -1; // +11612
   m_nObj1 = -1; // +11616
-  /** +12016/+12048/+12208/+12240 — the four dword arrays GetWinGameResult,
-   *  GetGameDetailResult and SendGameResult read.  No FXGS code writes any of
-   *  them (lst: 2EF0h/2F10h/2FB0h/2FD0h appear only as reads), so they stay 0
-   *  for the server's lifetime; the client-visible result bytes still flow
-   *  through their comparisons. */
-  m_rgColourCount = new Int32Array(8); // +12016 (GetGameDetailResult's D; SendGameResult encode 3)
-  m_rgWinDetailB = new Int32Array(8); // +12048 (SendGameResult encode 2)
-  m_rgDetailCount = new Int32Array(8); // +12208 (GetWinGameResult's expected-finish count)
-  m_rgWinDetailA = new Int32Array(8); // +12240 (GetGameDetailResult's A)
+  /**
+   * +11684..+12279 is one contiguous CDynInfoCalculator (0x254 bytes).
+   * In particular, the result fields at +12016/+12048/+12208/+12240 are its
+   * save/kill/my-team/other-team arrays; +12272/+12276 are its premium and
+   * invalid-game flags.  Keep one object so event updates and result
+   * serialization necessarily address the same native storage.
+   */
+  m_DynInfoCalculator = new CDynInfoCalculator();
   m_nBombTickTime = 0; // +12552 (dword 3138 — write-once zeroed at :32898, never read)
   m_dwLastTickTime = 0; // +12548 (Update's per-tick timeGetTime marker)
   m_nGameType100 = 0; // +12728 (tmpl+100 at DoStartGame)
   m_GameClock = new CGameClock(); // +12732
   m_UdpLossRegulator = new CUdpLossRegulator(); // +12280
-  m_DynInfoCalculator = new CDynInfoCalculator(); // +11684 (the results unit)
-  m_fSkipExpReward = 0; // +12276 (SendGameResult/DeleteUser: nonzero skips every exp reward; nothing writes it)
-  m_dwPremiumFlag = 0; // +12272 (SendGameResult's per-user premium dword, user+2004 == 1)
 
   m_SyncGameObjMan = new CSyncGameObjMan(); // +12788
   m_pCtx = new CGameContext(); // +1184 (SetCurrentGameContext(0))
@@ -723,12 +719,13 @@ export class CGameSession {
   DeleteUser(slot: number): void {
     const user = this.m_rgPlayer[slot];
     if (this.fValid !== 0) {
-      // CGameSession::DeleteUser — the in-play loss is gated by +12276
-      // after the captain's death cascade. Phase 0 has no reward gate.
+      // CGameSession::DeleteUser — the in-play loss is gated by
+      // CDynInfoCalculator::IsInvalidGame (+12276) after the captain's death
+      // cascade. Phase 0 has no reward gate.
       let incLose: boolean;
       if (this.m_nGamePhase === 1) {
         this.OnBomberDie(slot);
-        incLose = this.m_fSkipExpReward === 0;
+        incLose = this.m_DynInfoCalculator.IsInvalidGame() === 0;
       } else {
         incLose = this.m_nGamePhase === 0;
       }
@@ -1390,17 +1387,16 @@ export class CGameSession {
 
   /**
    * CGameSession::GetWinGameResult (41B482) — 1 when the number of slots in a
-   * finish state (2 goal / 6 win) equals the slot's expected count (+12208)
-   * while another team still has a pending count; in practice the counters
-   * are never written, so this always returns 0.
+   * finish state (2 goal / 6 win) equals this slot's GetMyTeamNo count while
+   * another colour still has a pending my-team count.
    */
   GetWinGameResult(n8: number): number {
-    const expected = this.m_rgDetailCount[n8]!; // [+12208+4n8]
+    const expected = this.m_DynInfoCalculator.GetMyTeamNo(n8); // +12208
     if (expected <= 2) return 0;
     const colour = this.GetColor(n8) & SLOTSTATE_COLOR_MASK;
     let otherPlaying = 0;
     for (let k = 0; k < MAX_SESSION_SLOTS; k++) {
-      if ((this.GetColor(k) & SLOTSTATE_COLOR_MASK) !== colour && this.m_rgDetailCount[k]! > 2) otherPlaying = 1;
+      if ((this.GetColor(k) & SLOTSTATE_COLOR_MASK) !== colour && this.m_DynInfoCalculator.GetMyTeamNo(k) > 2) otherPlaying = 1;
     }
     if (otherPlaying === 0) return 0;
     let finished = 0;
@@ -1411,21 +1407,19 @@ export class CGameSession {
   }
 
   /**
-   * CGameSession::GetGameDetailResult (41CA8C) — the winner slot's detail
-   * byte: 3 when the slot's user carries the premium ticket, 1 when
-   * +12240[n8] == +12048[n8] (both > 2), 2 when +12208[n8] == +12016[n8] + 1
-   * (both > 2).  Those counters are never written in FXGS, so the practical
-   * result is premium ? 3 : 0.
+   * CGameSession::GetGameDetailResult (41CA78) — the winner slot's detail
+   * byte: 3 for a premium ticket; 1 when GetOtherTeamNo == GetKillCount
+   * (both > 2); 2 when that holds and GetMyTeamNo == GetSaveCount + 1
+   * (both > 2).
    */
   GetGameDetailResult(n8: number): number {
     let result = 0;
     if (this.m_rgPlayer[n8]?.m_fPremiumTicket === 1) result = 3;
-    const a = this.m_rgWinDetailA[n8]!; // [+12240+4n8]
-    if (a > 2 && a === this.m_rgWinDetailB[n8]!) {
-      // [+12048+4n8]
+    const otherTeamNo = this.m_DynInfoCalculator.GetOtherTeamNo(n8); // +12240
+    if (otherTeamNo > 2 && otherTeamNo === this.m_DynInfoCalculator.GetKillCount(n8)) {
       result = 1;
-      const c = this.m_rgDetailCount[n8]!; // [+12208+4n8]
-      if (c > 2 && c === this.m_rgColourCount[n8]! + 1) return 2;
+      const myTeamNo = this.m_DynInfoCalculator.GetMyTeamNo(n8); // +12208
+      if (myTeamNo > 2 && myTeamNo === this.m_DynInfoCalculator.GetSaveCount(n8) + 1) return 2;
     }
     return result;
   }
@@ -1433,7 +1427,8 @@ export class CGameSession {
   /**
    * CGameSession::SendGameResult (vtbl+216, :36660) — the results unit.
    * Head [E1 flag][E1 winTeam][E1 view-type][E1 ladder][E1 diff-team item
-   * flag]; per user [E1 1][E4 serial] then [E1 result][E1 +12048][E1 +12016]
+   * flag]; per user [E1 1][E4 serial] then [E1 result][E1 GetKillCount]
+   * [E1 GetSaveCount]
    * [E2 exp‰][E2 exp‰ re-read][E2 look-level][E1 got-exp][E1 detail]; empty
    * slots send [E1 0].  IncDecExp feeds the DB dyn rows, IncWin/IncLose/
    * IncDraw the same persistent dyn block, and level-ups re-sort the lobby rank list.
@@ -1467,12 +1462,12 @@ export class CGameSession {
       let gotExp = 0; // DrawExp
       let gained = 0; // value
       let detail = 0; // GameDetailResult
-      this.m_dwPremiumFlag = user.m_fPremiumTicket === 1 ? 1 : 0; // [+12272]
+      this.m_DynInfoCalculator.SetHasPremium(user.m_fPremiumTicket === 1 ? 1 : 0); // +12272
       if (!CMainSystem.IsPremiumChannel() && user.m_fPremiumTicket === 1) detail = 3;
       let result: number; // n3
       if (winTeam === -1) {
         result = 3;
-        if (this.m_fSkipExpReward === 0) {
+        if (this.m_DynInfoCalculator.IsInvalidGame() === 0) {
           const exp = this.m_DynInfoCalculator.GetDrawExp(slot);
           gained = Math.trunc(exp * timeFactor);
           gotExp = user.IncDecExp(gained) > 0 ? 1 : 0;
@@ -1481,10 +1476,10 @@ export class CGameSession {
         }
       } else if ((this.GetColor(slot) & SLOTSTATE_COLOR_MASK) === winTeam) {
         result = this.GetWinGameResult(slot);
-        if (this.m_fSkipExpReward === 0) {
+        if (this.m_DynInfoCalculator.IsInvalidGame() === 0) {
           let boost = 1.0; // v49
           if (diffTeamUsedItem !== 0) boost = 1.05;
-          if (this.m_rgDetailCount[slot]! >= 2) {
+          if (this.m_DynInfoCalculator.GetMyTeamNo(slot) >= 2) {
             let premiumWinners = 0;
             for (let k = 0; k < MAX_SESSION_SLOTS; k++) {
               const w = this.m_rgPlayer[k]!;
@@ -1503,7 +1498,7 @@ export class CGameSession {
         }
       } else {
         result = 2;
-        if (this.m_fSkipExpReward === 0) {
+        if (this.m_DynInfoCalculator.IsInvalidGame() === 0) {
           const exp = this.m_DynInfoCalculator.GetKillNSaveExp(slot);
           gained = Math.trunc(exp * timeFactor);
           gotExp = user.IncDecExp(gained) > 0 ? 1 : 0;
@@ -1515,8 +1510,8 @@ export class CGameSession {
       if (expPct > pctNow) expPct = 0;
       if (detail === 3 && gained === 0) detail = 0;
       packet.Encode1(result);
-      packet.Encode1(this.m_rgWinDetailB[slot]!); // [+12048+4slot]
-      packet.Encode1(this.m_rgColourCount[slot]!); // [+12016+4slot]
+      packet.Encode1(this.m_DynInfoCalculator.GetKillCount(slot)); // +12048
+      packet.Encode1(this.m_DynInfoCalculator.GetSaveCount(slot)); // +12016
       packet.Encode2(expPct);
       packet.Encode2(pctNow);
       packet.Encode2(user.GetLookLevel());
@@ -2714,7 +2709,7 @@ export class CGameSession {
             return;
           }
           this.m_rgnUsedItem[slot] = 1;
-          this.m_rgnShopItem[slot] = 1;
+          this.m_DynInfoCalculator.SetNice(slot, 1); // session +12112 = calculator +0x1AC
           const sn = n.Decode4();
           const user = this.m_rgPlayer[slot];
           const inv = user ? user.GetUserInventory(sn) : null;
@@ -2774,7 +2769,7 @@ export class CGameSession {
         // the death report
         let killer = n.Decode1();
         killer = (killer << 24) >> 24; // signed char
-        if (killer !== -1) this.m_DynInfoCalculator.SetKillerIndex(killer);
+        if (killer !== -1) this.m_DynInfoCalculator.SetKillerIndex(slot, killer);
         packet.Encode1(killer);
         this.OnBomberDie(slot);
         const drops = n.Decode1();

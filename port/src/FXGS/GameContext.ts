@@ -96,21 +96,22 @@ export class CDynInfoCalculator {
   m_dwColourWeight = new Float32Array(8); // +12 (per-colour average sqrt(level+100))
   m_vtSlotWeight = new Float32Array(8); // +44 (+0x2C, per-slot sqrt(level+100))
   m_nSaveMatrix = new Int32Array(64); // +76 (+0x4C, 8×8 first-save-per-colour marks)
-  // offsets first-hand: SetKillerIndex (40B1DC) = ++*(this + 4*killer + 364),
-  // SetSaverIndex (40B1EC) = ++*(this + 4*saver + 332); every exp formula
-  // (GetKillNSaveExp/GetWinExp/GetDrawExp) only ever sums the two arrays.
-  m_vtKills = new Int32Array(8); // +364 (+0x16C, dword idx 91 — SetKillerIndex)
-  m_vtSaves = new Int32Array(8); // +332 (+0x14C, dword idx 83 — SetSaverIndex)
+  // Offsets first-hand: SetKillerIndex (40B1DC) = ++*(this + 4*killer + 364),
+  // SetSaverIndex (40B1EC) = ++*(this + 4*saver + 332).  These are also the
+  // two bytes serialized by both CGameSession::SendGameResult and
+  // CPracticeSession::SendGameResult through GetKillCount/GetSaveCount.
+  m_vtKills = new Int32Array(8); // +364 (+0x16C, GetKillCount)
+  m_vtSaves = new Int32Array(8); // +332 (+0x14C, GetSaveCount)
   m_nUnk18C = new Int32Array(8); // +396 (+0x18C, zeroed only)
-  m_vtNice = new Int32Array(8); // +428 (+0x1AC, dword idx 107 — CDynInfoCalculator::SetNice :31498)
-  // +460: the official floats write NaN (0x7FC00000) into empty slots
-  // (FxServer.exe.c:12699); only dead slots' colours are ever read, so the
-  // int -1 sentinel is indistinguishable.
-  m_vtColour = new Int32Array(8).fill(-1); // +460 (+0x1CC, slot → colour)
+  m_vtNice = new Int32Array(8); // +428 (+0x1AC, SetNice)
+  // +460: the official writes -1 into empty slots (the decompiler rendered
+  // the dword bit pattern as a NaN float because the surrounding fields are
+  // weights).
+  m_vtColour = new Int32Array(8).fill(-1); // +460 (+0x1CC, GetTeamColor)
   m_vtColourCount = new Int32Array(8); // +492 (+0x1EC, players per colour)
-  m_nUnk20C = new Int32Array(8); // +524 (+0x20C, zeroed only)
-  m_nUnk22C = new Int32Array(8); // +556 (+0x22C, zeroed only)
-  m_nPremiumFlag = 0; // +588 (+0x24C, IsPremiumRewardCondition bypass — never set in FXGS)
+  m_vtMyTeamNo = new Int32Array(8); // +524 (+0x20C, Get/IncMyTeamNo)
+  m_vtOtherTeamNo = new Int32Array(8); // +556 (+0x22C, Get/IncOtherTeamNo)
+  m_nPremiumFlag = 0; // +588 (+0x24C, SetHasPremium / IsPremiumRewardCondition)
   m_nInvalidGame = 1; // +592 (+0x250, forced 1 by Init; 0 once a second socket is seen)
 
   /**
@@ -130,8 +131,8 @@ export class CDynInfoCalculator {
       this.m_vtSaves[c] = 0; // [eax-0A0h] → +332
       this.m_vtNice[c] = 0; // [eax-40h]
       this.m_nUnk18C[c] = 0; // [eax-60h]
-      this.m_nUnk20C[c] = 0; // [eax+20h]
-      this.m_nUnk22C[c] = 0; // [eax+40h]
+      this.m_vtMyTeamNo[c] = 0; // [eax+20h]
+      this.m_vtOtherTeamNo[c] = 0; // [eax+40h]
       this.m_dwColourWeight[c] = 0; // fldz / [eax-1C0h]
     }
     this.m_nSaveMatrix.fill(0); // memset(+4Ch, 0, 0x100)
@@ -163,8 +164,58 @@ export class CDynInfoCalculator {
     return this.m_vtColourCount[c]!;
   }
 
+  /** CDynInfoCalculator::IsInvalidGame — FxServer.exe:0040B1BE. */
+  IsInvalidGame(): number {
+    return this.m_nInvalidGame;
+  }
+
+  /** CDynInfoCalculator::SetHasPremium — FxServer.exe:0041AAF1. */
+  SetHasPremium(hasPremium: number): void {
+    this.m_nPremiumFlag = hasPremium;
+  }
+
+  /** CDynInfoCalculator::GetKillCount — FxServer.exe:0041AAFE. */
+  GetKillCount(slot: number): number {
+    return this.m_vtKills[slot]!;
+  }
+
+  /** CDynInfoCalculator::GetSaveCount — FxServer.exe:0041AB0C. */
+  GetSaveCount(slot: number): number {
+    return this.m_vtSaves[slot]!;
+  }
+
+  /** CDynInfoCalculator::SetNice — FxServer.exe:0041AB1A. */
+  SetNice(slot: number, nice: number): void {
+    this.m_vtNice[slot] = nice;
+  }
+
+  /** CDynInfoCalculator::GetMyTeamNo — FxServer.exe:0041AB2C. */
+  GetMyTeamNo(slot: number): number {
+    return this.m_vtMyTeamNo[slot]!;
+  }
+
+  /** CDynInfoCalculator::GetOtherTeamNo — FxServer.exe:0041AB3A. */
+  GetOtherTeamNo(slot: number): number {
+    return this.m_vtOtherTeamNo[slot]!;
+  }
+
+  /** CDynInfoCalculator::IncMyTeamNo — FxServer.exe:0041AB48. */
+  IncMyTeamNo(slot: number): void {
+    this.m_vtMyTeamNo[slot]!++;
+  }
+
+  /** CDynInfoCalculator::IncOtherTeamNo — FxServer.exe:0041AB58. */
+  IncOtherTeamNo(slot: number): void {
+    this.m_vtOtherTeamNo[slot]!++;
+  }
+
+  /** CDynInfoCalculator::GetTeamColor — FxServer.exe:0041AB68. */
+  GetTeamColor(slot: number): number {
+    return this.m_vtColour[slot]!;
+  }
+
   /** CDynInfoCalculator::SetKillerIndex (40B1DC) — case 4 of OnSetBomberEvent. */
-  SetKillerIndex(killer: number): void {
+  SetKillerIndex(_victim: number, killer: number): void {
     this.m_vtKills[killer]!++;
   }
 

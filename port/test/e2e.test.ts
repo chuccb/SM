@@ -1412,8 +1412,8 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
         const result = r1(res);
         if (slot === 0) expect(result).toBe(2); // the killed chief lost
         if (slot === 1) expect(result).toBe(0); // the finisher won
-        expect(r1(res)).toBe(0); // +12048
-        expect(r1(res)).toBe(0); // +12016
+        expect(r1(res)).toBe(slot === 1 ? 1 : 0); // GetKillCount (+12048): slot 1 killed slot 0
+        expect(r1(res)).toBe(0); // GetSaveCount (+12016)
         const pctOld = r2(res);
         const pctNew = r2(res);
         expect(pctOld).toBe(pctNew); // the sub-15 s time factor zeroes the reward

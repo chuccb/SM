@@ -35,7 +35,7 @@ import { CDynInfoCalculator } from "./GameContext";
  * steps through packet 110.  Seats beyond 2*userCount are closed.
  *
  * The room never enters the lobby lists (the table flags stay untouched) and
- * the results unit pays no exp — SendGameResult (:425EC) only reports the
+ * the results unit pays no exp — SendGameResult (004260E4) only reports the
  * per-seat rows.  The start chain (106), the map (97), the emotion (108) and
  * the in-play relays (140..154, 185, 186) are inherited from CGameSession;
  * the overrides below are the seat-oriented handlers.
@@ -519,6 +519,9 @@ export class CPracticeSession extends CGameSession {
     }
   }
 
+  /** CPracticeSession::DeferBanChief (004259CE) — deliberately empty. */
+  override DeferBanChief(): void {}
+
   /** CPracticeSession::DeferHandleGameEnd (FxServer.exe.c:41942) — every
    *  valid seat (AI included) must be out of play, the winner colour comes
    *  from the seats that finished (code 2), and nobody's counters move. */
@@ -546,12 +549,13 @@ export class CPracticeSession extends CGameSession {
     this.m_nGamePhase = 2;
   }
 
-  /** CPracticeSession::SendGameResult (FxServer.exe.c:425EC) — the practice
+  /** CPracticeSession::SendGameResult (004260E4) — the practice
    *  results unit: head [E1 0][E1 win][E1 0]×3; per seat a human row
-   *  [E1 1][E4 serial][E1 n3][E1 +12048][E1 +12016][E2 exp‰][E2 exp‰]
-   *  [E2 look][E1 0][E1 0], an AI row [E1 2][E1 n3][E1 +12048][E1 +12016]
-   *  [E2 level], an empty seat [E1 0]; one trailing [E1 0] per human.  No
-   *  rewards: the dyn rows and counters stay untouched. */
+   *  [E1 1][E4 serial][E1 n3][E1 GetKillCount][E1 GetSaveCount][E2 exp‰]
+   *  [E2 exp‰][E2 look][E1 0][E1 0], an AI row [E1 2][E1 n3]
+   *  [E1 GetKillCount][E1 GetSaveCount][E2 level], an empty seat [E1 0];
+   *  one trailing [E1 0] per human.  No rewards: the dyn rows and counters
+   *  stay untouched. */
   SendGameResult(winTeam: number): void {
     const packet = new CSendPacket(GS_ClientSend.OnGameResult, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(0);
@@ -567,8 +571,8 @@ export class CPracticeSession extends CGameSession {
         packet.Encode4(user.GetGlobalSerialNo()); // [+1964]
         const expPct = CDynInfoCalculator.GetExpPercentage(user.dyn.exp);
         packet.Encode1(resultMark);
-        packet.Encode1(this.m_rgWinDetailB[slot]! & 0xff); // [+12048+4i] — never written
-        packet.Encode1(this.m_rgColourCount[slot]! & 0xff); // [+12016+4i] — never written
+        packet.Encode1(this.m_DynInfoCalculator.GetKillCount(slot)); // +12048
+        packet.Encode1(this.m_DynInfoCalculator.GetSaveCount(slot)); // +12016
         packet.Encode2(expPct);
         packet.Encode2(expPct);
         packet.Encode2(user.GetLookLevel());
@@ -577,8 +581,8 @@ export class CPracticeSession extends CGameSession {
       } else if (this.m_argpAISocket[slot] !== null) {
         packet.Encode1(2);
         packet.Encode1(resultMark);
-        packet.Encode1(this.m_rgWinDetailB[slot]! & 0xff);
-        packet.Encode1(this.m_rgColourCount[slot]! & 0xff);
+        packet.Encode1(this.m_DynInfoCalculator.GetKillCount(slot));
+        packet.Encode1(this.m_DynInfoCalculator.GetSaveCount(slot));
         packet.Encode2(this.m_anAILevel[slot]! & 0xffff);
       } else {
         packet.Encode1(0);
@@ -607,6 +611,8 @@ export class CPracticeSession extends CGameSession {
       const host = this.m_rgUdpHost[slot]!;
       if (host.some((b) => b !== 0)) host.fill(0); // HOSTHANDLE::operator!= invalidHost
     }
+    // vtbl+32 with a fresh CSendPacket, just like the normal return path.
+    this.m_pStrategy.SendSessionInfo(new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8));
   }
 
   /** CPracticeSession::OnPacket (FxServer.exe.c:42790) — the practice room
