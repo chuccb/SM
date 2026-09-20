@@ -7,7 +7,18 @@ import { CServerConfig } from "../src/core/Config.ts";
 import { CxCenter } from "../src/center/Center.ts";
 import { main as loginMain } from "../src/login/Login.ts";
 import { inet_addr } from "../src/login/MultiServer.ts";
-import { CClientSocket, CBomberAttr, main as gameMain } from "../src/gameserver/GameServer.ts";
+import {
+  CClientSocket,
+  CBomberAttr,
+  CGuild,
+  CGuildDynInfoCalculator,
+  CGuildSessionStrategy,
+  CGameSession,
+  CGameSessionStrategy,
+  CMainSystem,
+  CUser,
+  main as gameMain,
+} from "../src/gameserver/GameServer.ts";
 import { UpdateCRC32 } from "../src/core/CRC.ts";
 import { CLocalSocket } from "../src/lib/CenterLink.ts";
 import { SVRCLASS_UTIL, MC_ReceivedPacket } from "../src/lib/S2S.ts";
@@ -1276,5 +1287,144 @@ describe("audit regression: 82 auto-join, before-join ring, BomberAttr map", () 
     expect(attr.GetBombPower(0)).toBe(0); // +276 dword5
     expect(attr.IsValidSelectIdx(0)).toBe(true);
     expect(attr.IsValidSelectIdx(1)).toBe(true); // the random index (== total)
+  });
+});
+
+describe("guild strategy (type 77)", () => {
+  /** a bare roster socket: no link, just the user list the strategy reads */
+  function fakeSocket(users: CUser[]): CClientSocket {
+    const socket = Object.create(CClientSocket.prototype) as CClientSocket;
+    (socket as unknown as { m_apUser: (CUser | null)[] }).m_apUser = users;
+    (socket as unknown as { m_nUserCount: number }).m_nUserCount = users.length;
+    return socket;
+  }
+  function fakeUser(guildSn: number): CUser {
+    const user = Object.create(CUser.prototype) as CUser;
+    user.m_nGuildSN = guildSn;
+    return user;
+  }
+
+  test("CreateSessionStrategy binds the guild variant only on MainSystem+8 == 77", () => {
+    const main = CMainSystem.ms_pInstance!;
+    const saved = main.m_nChannelType;
+    try {
+      main.m_nChannelType = 0;
+      const plain = new CGameSession();
+      expect(plain.m_pStrategy).toBeInstanceOf(CGameSessionStrategy);
+      expect(plain.m_pStrategy.GetResultViewType()).toBe(0);
+      main.m_nChannelType = 77;
+      const guild = new CGameSession();
+      expect(guild.m_pStrategy).toBeInstanceOf(CGuildSessionStrategy);
+      expect(guild.m_pStrategy.GetResultViewType()).toBe(1); // the 163 view byte
+    } finally {
+      main.m_nChannelType = saved;
+    }
+  });
+
+  test("the roster keys on the guild serial; the 88 and the team summary encode; the colour drags", () => {
+    const main = CMainSystem.ms_pInstance!;
+    const saved = main.m_nChannelType;
+    main.m_nChannelType = 77;
+    const session = new CGameSession();
+    main.m_nChannelType = saved;
+    const strategy = session.m_pStrategy as CGuildSessionStrategy;
+
+    const userA = fakeUser(100);
+    const userB = fakeUser(100);
+    const userC = fakeUser(200);
+    session.m_rgPlayer[0] = userA;
+    session.m_rgPlayer[1] = userB;
+    session.m_rgPlayer[2] = userC;
+    session.SetColor(0, 0);
+    session.SetColor(1, 0);
+    session.SetColor(2, 3);
+    const socketAB = fakeSocket([userA, userB]);
+    const socketC = fakeSocket([userC]);
+
+    strategy.AddPlayer(socketAB); // guild 100: two seats
+    expect(strategy.m_nGuildCount).toBe(1);
+    expect(strategy.m_argSerialNo[0]).toBe(100);
+    expect(strategy.m_anPlayerCount[0]).toBe(2);
+    strategy.AddPlayer(socketC); // guild 200: one seat
+    expect(strategy.m_nGuildCount).toBe(2);
+    expect(strategy.m_anPlayerCount[1]).toBe(1);
+
+    // the 88: [E4 count][per guild: serial, playerCount, winCount]
+    const p88 = new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8);
+    strategy.EncodeGuildSessionInfo(p88);
+    const view = { buf: p88.m_pBlock, off: 0, deg: p88.GetCipherDegree() } as CReceived;
+    expect(r1(view)).toBe(88);
+    expect(r4(view)).toBe(2);
+    expect(r4(view)).toBe(100);
+    expect(r4(view)).toBe(2);
+    expect(r4(view)).toBe(0);
+    expect(r4(view)).toBe(200);
+    expect(r4(view)).toBe(1);
+    expect(r4(view)).toBe(0);
+
+    // SendSessionInfo rewrites the buffer as 88 and broadcasts it
+    const sent: CSendPacket[] = [];
+    session.SendPacket = (p: CSendPacket) => {
+      sent.push(p);
+    };
+    const p2 = new CSendPacket(112, CipherDegree.kPacketEncryptedCRC8); // the map-idx packet the caller built
+    strategy.SendSessionInfo(p2);
+    expect(sent.length).toBe(1);
+    expect(sent[0]!.m_nPacketType).toBe(88);
+
+    // the appended team summary on an 83: two distinct seated colours
+    // (0 for the guild-100 pair, 3 for guild 200)
+    const p83 = new CSendPacket(83, CipherDegree.kPacketEncryptedCRC8);
+    p83.Encode1(0); // stand-in for the real 83 body — the tail appends from byte 2
+    strategy.MakeSimpleInfoPacket(p83);
+    const tail = { buf: p83.m_pBlock, off: 2, deg: p83.GetCipherDegree() } as CReceived;
+    expect(r4(tail)).toBe(2); // distinct seated colours {0, 3}
+    expect(r4(tail)).toBe(1); // the colour-0 group holds one guild
+    expect(r4(tail)).toBe(100);
+    expect(r4(tail)).toBe(1); // the colour-3 group
+    expect(r4(tail)).toBe(200);
+
+    // OnSelectColor drags the same-guild seatmates, nobody else
+    session.SetColor(1, 5); // the hook fires inside SetColor — slot 0 follows
+    expect(session.GetColor(0)).toBe(5); // userA shares guild 100
+    expect(session.GetColor(2)).toBe(3); // userC (guild 200) untouched
+
+    // DestroyPlayer counts down per user and compacts the emptied guild
+    strategy.DestroyPlayer(socketAB); // both seats of guild 100 leave at once
+    expect(strategy.m_nGuildCount).toBe(1); // guild 100 gone, 200 shifted
+    expect(strategy.m_argSerialNo[0]).toBe(200);
+    strategy.DestroyPlayer(socketC);
+    expect(strategy.m_nGuildCount).toBe(0);
+  });
+
+  test("the calculator books the rows; CGuild flushes through prUpdateGuildDynamic", () => {
+    const calc = new CGuildDynInfoCalculator();
+    calc.AddPlayer(0, 100);
+    calc.AddPlayerExp(0, 250);
+    calc.MarkPlayerResult(0, 0); // win
+    calc.AddPlayer(1, 200);
+    calc.AddPlayerExp(1, 45);
+    calc.MarkPlayerResult(1, 2); // lose
+    expect(calc.m_nGuildCount).toBe(2);
+    expect(calc.IsWinGuild(100)).toBe(true);
+    expect(calc.IsWinGuild(200)).toBe(false);
+
+    const calls: number[][] = [];
+    const guild = new CGuild({
+      prUpdateGuildDynamic: (...args: number[]) => {
+        calls.push([...args]);
+        return 0;
+      },
+    } as unknown as ConstructorParameters<typeof CGuild>[0]) as CGuild;
+    guild.m_nGuildSN = 7;
+    guild.IncExp(45);
+    guild.IncWin();
+    guild.DeferFlushModifiedInfo(0); // dirty but only 1 game — held back
+    expect(calls.length).toBe(0);
+    guild.DeferFlushModifiedInfo(1); // forced
+    expect(calls.length).toBe(1);
+    expect(calls[0]).toEqual([7, 45, 1, 0, 0]); // sn, exp, win, draw, lose
+    expect(guild.m_fModified).toBe(0); // ResetDynamicInfo ran
+    expect(guild.m_nGames).toBe(0);
   });
 });
