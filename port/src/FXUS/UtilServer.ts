@@ -14,7 +14,7 @@
  * allocation here) → CMainPool → CLocalUserTable → CThreadJobQueue →
  * CSockRcvMultiplexer → CCenterProcess → CTimerThread → CListenThread.
  */
-import { CServerConfig } from "../core/Config.ts";
+import { CServerConfig, CXUTIL_STR_KEYS } from "../core/Config.ts";
 import { PacketLog } from "../core/PacketLog.ts";
 import { CPacketSocket } from "../core/CPacketSocket.ts";
 import { CipherDegree, CReceivedPacket, CSendPacket, enSocket, type enSocket as EnSocket } from "../core/Packet.ts";
@@ -481,7 +481,7 @@ export class CCenterProcess {
  * singletons → the center link → the 0x1FC0 listener.
  */
 export async function main(cfgFile: string): Promise<void> {
-  const cfg = new CServerConfig();
+  const cfg = new CServerConfig(CXUTIL_STR_KEYS);
   cfg.Init(cfgFile);
   CServerConfig.ms_pInstance = cfg;
 

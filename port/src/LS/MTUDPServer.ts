@@ -27,7 +27,7 @@
  * CUDPPacketDispatcher::Proc drain (the dispatcher thread) — the same
  * call sequence, without the Sleep(5)/Sleep(10) polling.
  */
-import { BuildFrame, HOSTHANDLE, MTUDP_UDP_PORT_OFFSET, SplitDatagram } from "../gameserver/MTUDP.ts";
+import { BuildFrame, HOSTHANDLE, MTUDP_UDP_PORT_OFFSET, SplitDatagram } from "../FXGS/MTUDP.ts";
 import { CServerConfig } from "../core/Config.ts";
 import { PacketLog } from "../core/PacketLog.ts";
 import type { CUser } from "./Login.ts";

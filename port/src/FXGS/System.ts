@@ -8,7 +8,7 @@ import { CDBMan } from "../db/DBMan.ts";
 import { CLocalSocket } from "../lib/CenterLink.ts";
 import { GS_ClientSend } from "../lib/PacketIDs.ts";
 import { CENTER_VERSION, CM_ReceivedPacket, CONN_HELLO_VERSION, MC_ReceivedPacket, SVRCLASS_GAME } from "../lib/S2S.ts";
-import { CDynInfoCalculator_GetLevel } from "../login/LevelTable.ts";
+import { CDynInfoCalculator_GetLevel } from "../LS/LevelTable.ts";
 import { CChannelPool } from "./Chat";
 import { CONN_PATCH_URL, SESSION_LOC_OTHER_SERVER } from "./Defs";
 import { CConnectPool } from "./Pools";

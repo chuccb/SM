@@ -6,7 +6,7 @@ import { CPacketSocket } from "../core/CPacketSocket.ts";
 import { CSendPacket, enSocket, type enSocket as EnSocket } from "../core/Packet.ts";
 import { CDBMan } from "../db/DBMan.ts";
 import { CLIENTSOCKET_HEADER_CODE_MODIFIER, CLIENTSOCKET_HEADER_CODE_RCV, CLIENTSOCKET_HEADER_CODE_SND, CLIENTSOCKET_SEQ, CLIENTSOCKET_SEQ_DELTA } from "../lib/PacketIDs.ts";
-import { CDynInfoCalculator_GetLevel, kLevelTableSize } from "../login/LevelTable.ts";
+import { CDynInfoCalculator_GetLevel, kLevelTableSize } from "../LS/LevelTable.ts";
 import { CChannelPool } from "./Chat";
 import { CHANNEL_TYPE_GUILD, DYN_FLUSH_BURST, SESSION_IDX_NONE } from "./Defs";
 import { CConnectPool } from "./Pools";

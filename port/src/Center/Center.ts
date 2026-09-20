@@ -488,7 +488,7 @@ export class CxCenter {
     expected.socket = sock;
     // vtbl+20 (SendInitialAttr) runs for every class after AttachSocket;
     // the login server has no override, and the base thunk is a bare `retn`
-    // (CxCenter.exe.lst:409AF0), so only game/shop/util get CM 12.
+    // (CxCenter.exe.lst:409AF0), so only game/FXSS/util get CM 12.
     if (nServerClass !== SVRCLASS_LOGIN) this.SendInitialAttr(sock, nServerClass);
     if (nServerClass === SVRCLASS_GAME) {
       // Version bookkeeping is keyed by the server class (map@+52/+64/+76).
@@ -1071,7 +1071,8 @@ export class CxCenter {
 
   /** CMonitorListenThread — the operator console listener. */
   ListenMonitor(): void {
-    const port = this.cfg.GetNumAttribute("MonitorPort") || 2829;
+    console.log("[Center] Monitor Listen socket thread created."); // :15969
+    const port = this.cfg.GetNumAttribute("CenterPort") + 1; // :16020 — atoi(CenterPort) + 1
     Bun.listen({
       hostname: "0.0.0.0",
       port,

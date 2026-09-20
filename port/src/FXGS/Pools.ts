@@ -305,7 +305,7 @@ export class CConnectPool extends CUserPool {
       const u = users[0];
       if (u) {
         if (flag === 0 && !fDbFail && users.every((x) => x !== null)) {
-          console.error(`[GS] Connection failed from center server(${u.GetName()}:0x${u.m_nGlobalSerialNo.toString(16)})`);
+          console.error(`[GS] Connection failed from center server(${u.GetName()}:0x${u.m_nGlobalSerialNo.toString(16).padStart(8, "0")})`); // %08x
         } else {
           // a vanished user or a DB miss — the quiet Report + close tail
           console.log(`[GS] OnCenterResConnEstablished User[0] [${u.GetName()}].`); // :10722

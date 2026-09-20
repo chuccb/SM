@@ -9,6 +9,7 @@ import { CDBMan } from "../db/DBMan.ts";
 import { CIDFMan } from "./CData.ts";
 import { HOSTHANDLE, MTUDP_TYPE_PEER_INFO, MTUDP_TYPE_READY_FOR_IMMEDIATE_START, MTUDP_UDP_PORT_OFFSET, SplitDatagram } from "./MTUDP.ts";
 import { CLIENT_SOCKET_CENSUS_MS } from "../lib/S2S.ts";
+import { FXSERVER_STR_KEYS } from "../core/Config.ts";
 import { PACKET_NAME_TABLES } from "../lib/PacketIDs.ts";
 import { CChannelPool } from "./Chat";
 import { CBomberAttr, CGameMapTmplList, CItemAttr } from "./GameData";
@@ -65,7 +66,7 @@ export function OnUDPPacket(payload: Uint8Array, host: HOSTHANDLE): void {
 }
 
 export async function main(cfgFile: string, dbDir: string): Promise<void> {
-  const cfg = new CServerConfig();
+  const cfg = new CServerConfig(FXSERVER_STR_KEYS);
   cfg.Init(cfgFile);
   CServerConfig.ms_pInstance = cfg;
 

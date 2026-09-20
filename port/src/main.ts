@@ -10,16 +10,16 @@
  *        shipped FXGS_00{idx}.cfg / FXSS_00{idx}.cfg, --idx picks the file)
  *   --db <dir>   overrides the SQLite directory (default port/db)
  */
-import { CServerConfig } from "./core/Config.ts";
+import { CServerConfig, CXCENTER_STR_KEYS } from "./core/Config.ts";
 import { PacketLog } from "./core/PacketLog.ts";
 import { mkdirSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
-import { CxCenter } from "./center/Center.ts";
-import { main as loginMain } from "./login/Login.ts";
-import { main as gameMain } from "./gameserver/GameServer.ts";
-import { main as relayMain } from "./relay/Relay.ts";
-import { main as shopMain } from "./shop/Shop.ts";
-import { main as utilMain } from "./utilserver/UtilServer.ts";
+import { CxCenter } from "./Center/Center.ts";
+import { main as loginMain } from "./LS/Login.ts";
+import { main as gameMain } from "./FXGS/GameServer.ts";
+import { main as relayMain } from "./Relay/Relay.ts";
+import { main as shopMain } from "./FXSS/Shop.ts";
+import { main as utilMain } from "./FXUS/UtilServer.ts";
 
 const only = process.argv.includes("--only") ? process.argv[process.argv.indexOf("--only") + 1] : null;
 if (process.argv.includes("--ip")) {
@@ -49,7 +49,7 @@ const dbDir = process.argv.includes("--db")
 mkdirSync(dbDir, { recursive: true });
 
 if (!only || only === "center") {
-  const cfg = new CServerConfig();
+  const cfg = new CServerConfig(CXCENTER_STR_KEYS, true);
   cfg.Init(join(import.meta.dir, "..", "..", "Center", "Center_000.cfg"));
   CServerConfig.ms_pInstance = cfg;
   const center = new CxCenter(cfg);

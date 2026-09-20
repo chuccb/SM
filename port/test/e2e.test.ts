@@ -3,10 +3,10 @@
  * account creation, channel lists — against the real code paths.
  */
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
-import { CServerConfig } from "../src/core/Config.ts";
-import { CxCenter, CUser as CenterCUser } from "../src/center/Center.ts";
-import { main as loginMain } from "../src/login/Login.ts";
-import { inet_addr } from "../src/login/MultiServer.ts";
+import { CServerConfig, CXCENTER_STR_KEYS } from "../src/core/Config.ts";
+import { CxCenter, CUser as CenterCUser } from "../src/Center/Center.ts";
+import { main as loginMain } from "../src/LS/Login.ts";
+import { inet_addr } from "../src/LS/MultiServer.ts";
 import {
   CClientSocket,
   CBomberAttr,
@@ -18,7 +18,7 @@ import {
   CMainSystem,
   CUser,
   main as gameMain,
-} from "../src/gameserver/GameServer.ts";
+} from "../src/FXGS/GameServer.ts";
 import { UpdateCRC32 } from "../src/core/CRC.ts";
 import { CLocalSocket } from "../src/lib/CenterLink.ts";
 import { SVRCLASS_UTIL, MC_ReceivedPacket } from "../src/lib/S2S.ts";
@@ -123,8 +123,8 @@ import {
   type CReceived,
   type Encoder,
 } from "./TestClient.ts";
-import { BuildFrame } from "../src/gameserver/MTUDP.ts";
-import { UpdateCRC8 } from "../src/gameserver/MTUDP.ts";
+import { BuildFrame } from "../src/FXGS/MTUDP.ts";
+import { UpdateCRC8 } from "../src/FXGS/MTUDP.ts";
 
 let center: CxCenter;
 
@@ -140,7 +140,7 @@ beforeAll(async () => {
   rmSync(DATA_DIR, { recursive: true, force: true });
   mkdirSync(DB_DIR, { recursive: true });
   writeGameDataPackage();
-  const cfg = new CServerConfig();
+  const cfg = new CServerConfig(CXCENTER_STR_KEYS, true);
   cfg.Init(DIR + "/center.cfg");
   CServerConfig.ms_pInstance = cfg;
   center = new CxCenter(cfg);
@@ -1159,7 +1159,10 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
     const p150c = await chief.recv(150);
     const p150m = await member.recv(150);
     for (const p150 of [p150c, p150m]) {
-      expect(r4(p150)).toBe(0); // the +12736 seed dword (never written)
+      // dword 3184 — CGameClock.m_dwStartTime, read right after StartGame
+      // (FxServer.exe.c:32901); the two sockets launched in the same tick can
+      // share it, so only pin non-zero
+      expect(r4(p150)).toBeGreaterThan(0);
       const seq = r4(p150);
       expect(seq).toBeGreaterThan(0); // serial ^ version
       expect(r4(p150)).toBe(0); // ghostStart (tmpl+60, RAW seconds on the wire)

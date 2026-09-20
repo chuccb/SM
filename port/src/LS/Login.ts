@@ -17,7 +17,7 @@
  * CAuthenThread (the external Nexon billing service) is not part of the
  * six-server suite; the paths that would defer to it answer immediately.
  */
-import { CServerConfig } from "../core/Config.ts";
+import { CServerConfig, CXLOGIN_STR_KEYS } from "../core/Config.ts";
 import { PacketLog } from "../core/PacketLog.ts";
 import { CPacketSocket } from "../core/CPacketSocket.ts";
 import { CipherDegree, CReceivedPacket, CSendPacket, enSocket, type enSocket as EnSocket } from "../core/Packet.ts";
@@ -1276,7 +1276,7 @@ class CMainSystem {
 
 /** CxLogin entry (LS_000.cfg). */
 export async function main(cfgFile: string, dbDir: string): Promise<void> {
-  const cfg = new CServerConfig();
+  const cfg = new CServerConfig(CXLOGIN_STR_KEYS);
   cfg.Init(cfgFile);
   CServerConfig.ms_pInstance = cfg;
 

@@ -4,7 +4,7 @@
 import { Decode1, Decode2, Decode4, Encode1, Encode2, Encode4, EncodeBuffer } from "../core/BufferManipulator.ts";
 import { CReceivedPacket, CSendPacket, CipherDegree, kPacketEncryptedCRC8 } from "../core/Packet.ts";
 import { GS_ClientSend } from "../lib/PacketIDs.ts";
-import { CDynInfoCalculator_GetLevel, CDynInfoCalculator_GetMaxExpInLevel } from "../login/LevelTable.ts";
+import { CDynInfoCalculator_GetLevel, CDynInfoCalculator_GetMaxExpInLevel } from "../LS/LevelTable.ts";
 import { MAX_SESSION_SLOTS, SLOTSTATE_COLOR_MASK, TICK_U32_MASK, UDP_REGULATE_DELAY } from "./Defs";
 import { CGameSession } from "./Session";
 import { CGameSessionTable } from "./SessionTable";

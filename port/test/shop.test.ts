@@ -7,11 +7,11 @@
 import { describe, test, expect, beforeAll } from "bun:test";
 import { Database } from "bun:sqlite";
 import { mkdirSync, rmSync } from "node:fs";
-import { CServerConfig } from "../src/core/Config.ts";
+import { CServerConfig, CXCENTER_STR_KEYS, FXSHOP_STR_KEYS } from "../src/core/Config.ts";
 import { CDBMan } from "../src/db/DBMan.ts";
-import { CxCenter, CUser } from "../src/center/Center.ts";
-import { CxShop } from "../src/shop/Shop.ts";
-import { CItemMan } from "../src/shop/CItemMan.ts";
+import { CxCenter, CUser } from "../src/Center/Center.ts";
+import { CxShop } from "../src/FXSS/Shop.ts";
+import { CItemMan } from "../src/FXSS/CItemMan.ts";
 import { SVRCLASS_SHOP } from "../src/lib/S2S.ts";
 import { GetUserHashNo } from "../src/db/DBMan.ts";
 import { CISmartStream } from "../src/core/SmartStream.ts";
@@ -52,14 +52,14 @@ beforeAll(async () => {
   user.close();
 
   // ---- boot the center + the shop ----
-  const ccfg = new CServerConfig();
+  const ccfg = new CServerConfig(CXCENTER_STR_KEYS, true);
   ccfg.Init(DIR + "/shop-center.cfg");
   CServerConfig.ms_pInstance = ccfg;
   center = new CxCenter(ccfg);
   center.Init();
   await center.Listen();
 
-  const scfg = new CServerConfig();
+  const scfg = new CServerConfig(FXSHOP_STR_KEYS);
   scfg.Init(DIR + "/shop0.cfg");
   CServerConfig.ms_pInstance = scfg;
   shop = new CxShop(scfg, DB_DIR);

@@ -9,7 +9,7 @@
  * SetCipherDegree(2)) and CListenExThread on ServerPort+1 (the web mall,
  * CWebSocket — first packet is the OnVerifyKey charge handshake).
  */
-import { CServerConfig } from "../core/Config.ts";
+import { CServerConfig, FXSHOP_STR_KEYS } from "../core/Config.ts";
 import { PacketLog } from "../core/PacketLog.ts";
 import { CDBMan } from "../db/DBMan.ts";
 import { CipherDegree, CReceivedPacket, CSendPacket, enSocket, type enSocket as EnSocket } from "../core/Packet.ts";
@@ -28,7 +28,7 @@ import {
   PACKET_NAME_TABLES,
 } from "../lib/PacketIDs.ts";
 import { CM_ReceivedPacket, CENTER_VERSION, CONN_HELLO_VERSION, MC_ReceivedPacket, SVRCLASS_SHOP, CLIENT_SOCKET_CENSUS_MS } from "../lib/S2S.ts";
-import { CDynInfoCalculator_GetLevel } from "../login/LevelTable.ts";
+import { CDynInfoCalculator_GetLevel } from "../LS/LevelTable.ts";
 import { CItemMan, type ShopItem } from "./CItemMan.ts";
 
 /** The registered cfg keys (the CServerConfig::Init table, .text:0047B520).
@@ -1886,7 +1886,7 @@ export class CxShop {
 /** the shop entry — mirror of CFxShopApp::SetUp's argv handling: the first
  *  token is the cfg path (missing ".cfg" → + ".cfg"). */
 export async function main(cfgPath: string, dbDir: string): Promise<void> {
-  const cfg = new CServerConfig();
+  const cfg = new CServerConfig(FXSHOP_STR_KEYS);
   cfg.Init(cfgPath);
   CServerConfig.ms_pInstance = cfg;
 

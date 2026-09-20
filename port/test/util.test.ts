@@ -15,8 +15,8 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CxCenter, CUser } from "../src/center/Center.ts";
-import { CServerConfig } from "../src/core/Config.ts";
+import { CxCenter, CUser } from "../src/Center/Center.ts";
+import { CServerConfig, CXCENTER_STR_KEYS, CXLOGIN_STR_KEYS } from "../src/core/Config.ts";
 import { CSendPacket } from "../src/core/Packet.ts";
 import { CDBMan, GetUserHashNo } from "../src/db/DBMan.ts";
 import { CLocalSocket } from "../src/lib/CenterLink.ts";
@@ -25,16 +25,16 @@ import {
   CCenterProcess,
   CClientSocket as LsClientSocket,
   CLoginPool,
-} from "../src/login/Login.ts";
+} from "../src/LS/Login.ts";
 import { LS_ClientSend } from "../src/lib/PacketIDs.ts";
-import { CMultiServer } from "../src/login/MultiServer.ts";
+import { CMultiServer } from "../src/LS/MultiServer.ts";
 import {
   CClientSocket,
   CLocalUserTable,
   CMainPool,
   CMainSystem,
   main as utilMain,
-} from "../src/utilserver/UtilServer.ts";
+} from "../src/FXUS/UtilServer.ts";
 import type { CReceivedPacket } from "../src/core/Packet.ts";
 import { TestClient, r1, r2, r4, rstr } from "./TestClient.ts";
 
@@ -63,12 +63,23 @@ beforeAll(async () => {
     [
       "MultiServerIDX = 0",
       "CenterPort = 23828",
-      "MonitorPort = 23829",
+      "FXAttrShop = 0",
+      "FXAttrCommunity = 0",
+      "WebLog = C:\\userlog.html",
+      "TextLog = C:\\userlog.txt",
+      "CommunityLog = C:\\communitylog.txt",
+      "AuthenIP = 127.0.0.1",
+      "AuthenPort = 3773",
       "GameDomain = 0",
       "LSNumber = 0",
       "FXGSNumber = 1",
       "FXGSIP0   = 127.0.0.1",
       "FXGSPort0 = 15848",
+      "FXGSName0 = UtilTestGS",
+      "FXGSMaxUser0 = 400",
+      "FXGSType0 = 0",
+      "FXGSCommunity0 = 0",
+      "FXGSEnterableType0 = 0",
       "FXSSNumber = 0",
       "FXUSNumber = 1",
       "FXUSIP0   = 127.0.0.1",
@@ -92,7 +103,7 @@ beforeAll(async () => {
     "latin1",
   );
 
-  const ccfg = new CServerConfig();
+  const ccfg = new CServerConfig(CXCENTER_STR_KEYS, true);
   ccfg.Init(join(dir, "util-center.cfg"));
   CServerConfig.ms_pInstance = ccfg;
   center = new CxCenter(ccfg);
@@ -304,7 +315,7 @@ describe("login server (CxLogin)", () => {
   const dir = mkdtempSync(join(tmpdir(), "ls-test-"));
 
   beforeAll(() => {
-    const cfg = new CServerConfig();
+    const cfg = new CServerConfig(CXLOGIN_STR_KEYS);
     cfg.Init(join(import.meta.dir, "login.cfg"));
     CServerConfig.ms_pInstance = cfg;
     db = new CDBMan(dir, 1);

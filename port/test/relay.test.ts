@@ -9,8 +9,8 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { UpdateCRC8 } from "../src/gameserver/MTUDP.ts";
-import { main as relayMain, MTUDPServer } from "../src/relay/Relay.ts";
+import { UpdateCRC8 } from "../src/FXGS/MTUDP.ts";
+import { main as relayMain, MTUDPServer } from "../src/Relay/Relay.ts";
 
 /** The client-side MTUDP frame: [totalLen][E4 srcSn][E4 dstSn][body][crc8]. */
 function BuildClientFrame(srcSn: number, dstSn: number, body: string | Uint8Array): Uint8Array {

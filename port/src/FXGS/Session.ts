@@ -73,7 +73,6 @@ export class CGameSession {
   m_rgJoinTime = new Int32Array(8);
   /** +988 — per-slot UDP peer hosts (3 × {ip dword, port u16, pad}); the UDP unit reads these. */
   m_rgUdpHost: Uint8Array[] = [0, 1, 2, 3, 4, 5, 6, 7].map(() => new Uint8Array(24));
-  m_dwStartSeed = 0; // +12736 (the DoStartGame seed dword)
   m_BanChief = new CBanChief(); // +12576 (the idle-room start gate)
   m_nObj0 = -1; // +11612
   m_nObj1 = -1; // +11616
@@ -2953,10 +2952,11 @@ export class CGameSession {
       const end = this.m_GameClock.m_dwEndTime;
       const launch = this.m_dwLaunchTime;
       if (this.m_nGamePhase === 2) {
-        console.log(`[GS]               Game Over    Now:${String((now - end) >>> 0).padEnd(8)}   Start:${String((start - launch) | 0).padEnd(8)}    LaunchTime:${launch}`);
+        // CxCenter-shaped columns: (now−end, end−start, start−launch)
+        console.log(`[GS]               Game Over    Now:${String((now - end) >>> 0).padEnd(8)}   Start:${String((end - start) | 0).padEnd(8)}    LaunchTime:${(start - launch) | 0}`);
       } else if (this.m_nGamePhase === 1) {
         console.log(`[GS]               Playing      Now:${String((end - start) | 0).padEnd(8)}   Start:${String((start - launch) | 0).padEnd(8)}    LaunchTime:${launch}`);
-      } else {
+      } else if (this.m_nGamePhase === 0) {
         console.log(`[GS]               Wait for UDP conn...        Now:${String((now - launch) >>> 0).padEnd(8)}      LaunchTime:${launch}`);
       }
     }
@@ -3288,7 +3288,7 @@ export class CGameSession {
     this.m_nBombTickTime = 0; // +12552 (dword 3138)
     this.m_nGamePhase = 1;
     const packet = new CSendPacket(GS_ClientSend.OnStartGame2, CipherDegree.kPacketEncryptedCRC8);
-    packet.Encode4(this.m_dwStartSeed);
+    packet.Encode4(this.m_GameClock.m_dwStartTime); // dword 3184 — read after StartGame (FxServer.exe.c:32901)
     packet.Encode4((this.m_nGameSerial ^ this.m_nGameVersion) >>> 0);
     this.m_nGameSerial = (this.m_nGameSerial + 1) >>> 0;
     // the wire carries the RAW tmpl+60/+64 seconds (FxServer.exe.c:32906 and

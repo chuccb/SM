@@ -24,9 +24,9 @@
  * the socket callbacks and three timers give the identical wire behaviour.
  * Report/ReportError strings are kept verbatim.
  */
-import { CServerConfig } from "../core/Config.ts";
+import { CServerConfig, CXRELAY_STR_KEYS } from "../core/Config.ts";
 import { PacketLog } from "../core/PacketLog.ts";
-import { UpdateCRC8 } from "../gameserver/MTUDP.ts";
+import { UpdateCRC8 } from "../FXGS/MTUDP.ts";
 
 /** HOSTHANDLEEX — the MTUDPServer host table value (32 bytes in the original). */
 export interface HOSTHANDLEEX {
@@ -378,7 +378,7 @@ export class CTimerThread {
  * single-instance guard and the Win32 dialog have no server-side behaviour.
  */
 export async function main(cfgFile: string): Promise<void> {
-  const cfg = new CServerConfig();
+  const cfg = new CServerConfig(CXRELAY_STR_KEYS);
   cfg.Init(cfgFile);
   CServerConfig.ms_pInstance = cfg;
   PacketLog.Configure("Relay");
