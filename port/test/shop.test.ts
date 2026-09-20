@@ -103,8 +103,8 @@ async function connectShopUser(name: string, serial: number, consume18 = true): 
     e.u8(1); // count
     e.str(name);
     e.u32be(serial); // +3096 — the global serial
-    e.u32be(0xffffffff); // +3104 — write-only in the original
-    e.u32be(0xffffffff); // +3108 — the billing SID (none registered → flag 0)
+    e.u32be(0xffffffff); // +3108 — SID
+    e.u32be(0xffffffff); // +3112 — BID
     e.u8(0); // selected user idx
   });
   // the game client waits for the initial info before anything else
@@ -452,7 +452,7 @@ for (const [authResult, cashResult] of [[0, 0], [5, 0], [0, 1]] as const) {
         client = await connectShopUser("tester", 7);
         const user = shop.userTable.FindUser("tester")!;
         const currency = user.m_nCash;
-        expect(user.m_nBillingCash).toBe(-1); // client 7's second DWORD, SetCash
+        expect(user.m_nBillingCash).toBe(0); // packet 7 supplies SID/BID, not cash
         client.send(224, e => { e.str("fixture-id"); e.str("fixture-pw"); });
         const response = await client.recv(209);
         if (authResult !== 0) {
@@ -464,7 +464,7 @@ for (const [authResult, cashResult] of [[0, 0], [5, 0], [0, 1]] as const) {
           const cash = await client.recv(203);
           if (cashResult === 1) {
             expect(r1(cash)).toBe(0); expect(rstr(cash)).toBe(message);
-            expect(user.m_nBillingCash).toBe(-1);
+            expect(user.m_nBillingCash).toBe(0);
           } else {
             expect([r1(cash), r4(cash)]).toEqual([1, 750]);
             expect(user.m_nBillingCash).toBe(750);

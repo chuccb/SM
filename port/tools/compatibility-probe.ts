@@ -128,6 +128,7 @@ function main(): void {
     report("A05.repeated-web-verify", verify, [1, 1]);
 
     const billing = new CBillingProcess(db);
+    pool.billingProcess = billing; // normal CxShop assembly dependency
     let lookedUp = -1;
     const find = table.FindUserFromGlobalSerialNo;
     table.FindUserFromGlobalSerialNo = (serial) => { lookedUp = serial; return null; };
@@ -135,7 +136,7 @@ function main(): void {
       billing.OnPurchaseOKTw(body((p) => {
         p.Encode4(0); p.Encode4(0); p.Encode4(0);
         p.Encode1(4); p.EncodeBuffer(Uint8Array.of(65, 66, 67, 68));
-        p.Encode4(123); p.Encode4(0); p.Encode4(0); p.Encode1(0);
+        p.Encode4(123); p.Encode4(0); p.Encode4(0); // native result=0 has no error-string tail
       }));
       report("A08.billing-312-account-prefix", lookedUp, 123);
     } finally { table.FindUserFromGlobalSerialNo = find; }

@@ -1,5 +1,14 @@
 # CrazyArcade server port
 
+## 本機 billing
+
+已加入可實際連線、驗證帳密及原子結算常駐商品／套裝的本機 Tw billing 服務。
+`bun run start` 會在 Shop 前啟動它；分程序部署可用 `bun run billing`。
+點數初始為 0，使用管理 CLI 加點，與遊戲 Money 分開。不是官方 DigiQ 或真實金流。
+
+**啟動、加點、資料目錄、支援限制與驗證：** [本機 billing 操作及實作說明](docs/local-billing.md)。
+Gift/coupon/cart、premium、限時等未完成路徑明確拒絕，不以假成功替代。
+
 ## 統一的預覽版工具鏈
 
 2026-09-20 查詢並固定 **npm `typescript@next`／`bun@canary`／`bun-types@canary`**：
@@ -48,7 +57,7 @@ Bun npm wrapper 的安裝 script 使用 `node install.js`；其餘 server／測�
 ./node_modules/.bin/bun run typecheck
 ./node_modules/.bin/bun run probe
 ./node_modules/.bin/bun run start
-# 或 center / login / game / shop / util / relay
+# 或 center / login / game / shop / util / relay / billing
 ```
 
 `probe` 的 GAP 是尚未修復的診斷觀察，不是測試通過證明。

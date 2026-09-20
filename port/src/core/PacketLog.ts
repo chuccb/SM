@@ -95,9 +95,13 @@ export class PacketLog {
     const map = PacketLog.names.get(`${tableKey ?? tag}:${dir}`);
     let name = map?.get(nPacketType) ?? PacketIdName(tableKey ?? tag, dir, nPacketType);
     if (name === null) name = `p${nPacketType}`;
+    // These bodies contain account/password fields. Keep useful ID/length
+    // diagnostics, but never persist credential bytes even with scope=all.
+    const credentials = (nPacketType === 341 && (tableKey === "BILL" || tag === "Billing")) ||
+      (nPacketType === 224 && tag === "Shop");
     PacketLog.Emit(
       `[${PacketLog.Timestamp()}] [${tag}] ${peer} ${dir === "recv" ? "<-" : "->"} ` +
-        `${name}(${nPacketType}) deg${nCipherDegree} len=${payload.length} | ${PacketLog.Hex(payload)}`,
+        `${name}(${nPacketType}) deg${nCipherDegree} len=${payload.length} | ${credentials ? "[credentials redacted]" : PacketLog.Hex(payload)}`,
     );
   }
 

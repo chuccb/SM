@@ -8,9 +8,10 @@
 另有 [A04 Center 逾時與狀態清理](center-timeout-compatibility-fix.md)、
 [A16 Taiwan billing transport](billing-transport-compatibility-fix.md)、
 [A06 NexonClub ID](nexonclub-id-compatibility-fix.md) 已完成報告列明差異。
-目前已列 A 待辦 **15 組**、兩輪 probes 合計 **24 GAP／14 MATCH**；全套 **465 pass／0 fail**。
+目前已列 A 待辦 **15 組**、兩輪 probes 合計 **22 GAP／16 MATCH**；全套 **506 pass／0 fail**。
 另完成 [GS ↔ Shop 轉服修復](shop-transfer-compatibility-fix.md)：回覆 opcode、Shop request 寬度與整組使用者檢查；新增雙向 TCP 回歸。
-另完成 [DigiQ 授權／餘額回覆](digiq-authorization-compatibility-fix.md) 的 224→341/342→209→301/302→203；A08／A17 其餘購買交易仍待修。
+另完成 [DigiQ 授權／餘額回覆](digiq-authorization-compatibility-fix.md) 的 224→341/342→209→301/302→203；後續新增[本機 billing](local-billing.md)，已驗證常駐商品／flat package 的原子結算及回 GS 的實際 inventory 回覆。
+本機政策不等於 native backend；A08/A17 其餘 gift/coupon/cart、receipt/reset、外部 settlement 等仍待修，15 組待辦未減。
 工具鏈統一與尚未取得的 GitHub Bun canary 限制見 [port README](../README.md)。
 Center 全域 serial／SID、其餘建立回報與位置查詢另列第一輪 B，不含於上述完成範圍。
 以下除已修項目的註記外，保留第二輪清點當時的結果。A16–A23 中 A16 transport 與 A21 個人資料範圍完成；
@@ -49,7 +50,9 @@ Center 全域 serial／SID、其餘建立回報與位置查詢另列第一輪 B�
 **後續部分修復：** 302 精確 byte 解碼、結果分支、錯誤字串及獨立 user+3104 cache 已修；
 probe `A17.billing-302-serial` 已為 MATCH，另有正反 wire／cash guard 與 TCP 回歸。
 詳見 [DigiQ 授權與餘額修復](digiq-authorization-compatibility-fix.md)。
-311 correlation 及 312／321／322 購買鏈仍未修，A17 保留待辦。以下保留原始清點。
+後續[本機 billing](local-billing.md) 已用 `.lst` 核實並修正 311 global-serial correlation，該 probe 亦為 MATCH；
+本機 312/321/322 原子結算已通過 TCP/重送/rollback/E2E。這不是完整 native 外部 backend／補償語意，A17 保留待辦。
+以下保留原始清點。
 
 - TS `OnRemainCashTw` 讀完名字長度後使用 `DecodeRest()`；該函式會消耗**整個剩餘 body**，
   不是只取名字。因此後續 serial、balance、result 全從 EOF 讀成 0。
@@ -102,6 +105,10 @@ probe `A17.billing-302-serial` 已為 MATCH，另有正反 wire／cash guard 與
   TS 也有此邏輯。不能反過來移除到期判斷來掩蓋上游寫錯資料。
 - **重現**：等級10，商品 ValidityPeriod=30、ValidityLevel=6：
   期限剩餘天數 TS=0／應30；到期等級 TS=10／應16；隨後 GS 載入，DB 剩0筆／應1筆。
+
+**本機 billing 後續範圍：** 新給物路徑使用 native 常駐門檻（100000 天／2000），拒絕向已過期／限時 stack 疊加；
+E2E 啟用 `FXAttrShop=1`，實測回 GS 的 201 及 DB 存留，不靠關閉 loader 掩蓋問題。
+既有遊戲金錢 caller／預庫存的 A19 probes 仍為 GAP，沒有宣稱修復全部 A19。
 
 ### 預庫存 → 領取 → GS 載入
 

@@ -1,7 +1,7 @@
 /**
  * Suite entry — boots the servers against the shipped configuration files.
  *
- *   bun run start            → all six (center, relay, game, shop, util, login)
+ *   bun run start            → six game services plus the configured local billing replacement
  *   bun run start -- --only game --idx 1    → one piece / one instance
  *   bun run start -- --ip <addr>            → re-point ServerIP/CenterIP of the
  *        shipped cfgs at <addr> (they ship 127.0.0.1; listeners always bind
@@ -20,6 +20,9 @@ import { main as gameMain } from "./FXGS/GameServer.ts";
 import { main as relayMain } from "./Relay/Relay.ts";
 import { main as shopMain } from "./FXSS/Shop.ts";
 import { main as utilMain } from "./FXUS/UtilServer.ts";
+import { CDBMan } from "./db/DBMan.ts";
+import { canUseLocalBilling, loadBillingConfig, registerLocalBilling } from "./Billing/Config.ts";
+import { startBilling } from "./Billing/Server.ts";
 
 const only = process.argv.includes("--only") ? process.argv[process.argv.indexOf("--only") + 1] : null;
 if (process.argv.includes("--ip")) {
@@ -47,6 +50,23 @@ const dbDir = process.argv.includes("--db")
   ? resolveCfg(process.argv[process.argv.indexOf("--db") + 1]!)
   : join(import.meta.dir, "..", "db");
 mkdirSync(dbDir, { recursive: true });
+
+// Start the optional local replacement BEFORE Shop reads BillingSvr. Existing
+// external endpoints are never overwritten or interpreted as the local mode.
+if (!only || only === "billing") {
+  const pathIndex = process.argv.indexOf("--billing-config");
+  const config = loadBillingConfig(pathIndex < 0 ? undefined : resolveCfg(process.argv[pathIndex + 1]!));
+  const db = new CDBMan(dbDir);
+  if (canUseLocalBilling(db, config)) {
+    const server = startBilling(db, config);
+    try { registerLocalBilling(db, config); }
+    catch (error) { server.close(); db.Close(); throw error; }
+  } else {
+    db.Close();
+    if (only === "billing") throw new Error("Local billing is disabled or BillingSvr belongs to an external service.");
+    console.log("[Billing] local replacement skipped (disabled or external endpoint configured)");
+  }
+}
 
 if (!only || only === "center") {
   const cfg = new CServerConfig(CXCENTER_STR_KEYS, true);

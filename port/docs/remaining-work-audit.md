@@ -13,9 +13,10 @@
 [A16 Taiwan billing transport](billing-transport-compatibility-fix.md)、
 [A06 NexonClub ID](nexonclub-id-compatibility-fix.md) 已修復各輪列明差異。
 A02 為保留需求，目前已列 A 待辦剩 **15 組**（不含 B 待全鏈追查工作）；兩份 probe 最新合計
-**38 個觀察／24 GAP／14 MATCH**。全套最新 **465 pass／0 fail**。
+**38 個觀察／22 GAP／16 MATCH**。全套最新 **506 pass／0 fail**。
 另完成 [GS ↔ Shop 轉服修復](shop-transfer-compatibility-fix.md)：回覆 opcode、Shop request 寬度與整組使用者檢查；新增雙向 TCP 回歸。
-另完成 [DigiQ 授權／餘額回覆](digiq-authorization-compatibility-fix.md) 的 224→341/342→209→301/302→203；A08／A17 其餘購買交易仍待修。
+另完成 [DigiQ 授權／餘額回覆](digiq-authorization-compatibility-fix.md) 的 224→341/342→209→301/302→203；後續新增[本機 billing](local-billing.md)，已驗證常駐商品／flat package 的原子結算及回 GS 的實際 inventory 回覆。
+本機政策不等於 native backend；A08/A17 其餘 gift/coupon/cart、receipt/reset、外部 settlement 等仍待修，15 組待辦未減。
 工具鏈已固定為 npm 可用的最新預覽版，所有 src／test／tools 納入同一份 strict typecheck；
 GitHub 更晚的 Bun canary 下載失敗，未宣稱已升級，詳見 [工具鏈說明](../README.md)。
 上段數字與下文發現過程為清點時的歷史紀錄；有效 SQL schema／序號語意等仍列 B 待核實。
@@ -139,7 +140,9 @@ GitHub 更晚的 Bun canary 下載失敗，未宣稱已升級，詳見 [工具�
 
 **後續部分修復：** 342 授權與後續 301/302 餘額回覆已補實，含 guard、字串、wire 與 cache，
 新增 25 個單元及 3 個 TCP 回歸，詳見 [DigiQ 修復](digiq-authorization-compatibility-fix.md)。
-312／321／322 等仍未完成，A08 保留待辦；以下為原始清點結果。
+後續[本機 billing](local-billing.md) 已修 312 prefix 與 serial 查找，並提供本機模式 311→312→321→322 結算；
+A08 prefix probe 已 MATCH（成功 fixture 移除多餘 tail；strict parser 安全限制另有說明）。
+完整 native 外部給物補償、gift/coupon/cart、receipt/reset 仍未完成，A08 保留待辦；以下為原始清點結果。
 
 - TS：`Shop.ts::CBillingProcess.OnPurchaseOKTw` 讀了 name length，卻沒消耗
   name bytes，就讀 serial；以 `result !== 1` 當失敗。其餘分支沒有完成交易。

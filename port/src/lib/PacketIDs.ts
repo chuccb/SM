@@ -370,7 +370,7 @@ export const UTIL_ClientSend = {
 // The shop ↔ digicell billing link (CBillingSocketTw).  Request ids encode the
 // Tw flow (…01 = request, …2 = response); the dispatch decodes an E4 type.
 /** Shop → billing server (CBillingProcess senders; FxShop.exe.c).  The ctor's
- *  degree-4 arg clamps to 0, so every billing send is plain with an E1 type. */
+ *  (id, 4) overload selects a FOUR-byte opcode, not a cipher degree. */
 export const BILLING_SendPacket = {
   RequestCheckCoupon: 0, // CBillingProcess::RequestCheckCoupon (1844)
   RequestUseCoupon: 1, // CBillingProcess::RequestUseCoupon (1905)

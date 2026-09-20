@@ -28,11 +28,15 @@ import { SVRCLASS_UTIL, MC_ReceivedPacket } from "../src/lib/S2S.ts";
 import { CReceivedPacket, CSendPacket, CipherDegree } from "../src/core/Packet.ts";
 import { GS_ClientSend } from "../src/lib/PacketIDs.ts";
 import { CA_CONFIG_SEED_IP } from "../src/db/CAConfigBak.ts";
-import { EncodePassword, GetUserHashNo } from "../src/db/DBMan.ts";
+import { CDBMan, EncodePassword, GetUserHashNo } from "../src/db/DBMan.ts";
 import { SimpleStreamEncrypt3, SimpleStreamDecrypt3 } from "../src/core/StreamCipher.ts";
 import { copyFileSync, mkdirSync, rmSync } from "node:fs";
 import { Database } from "bun:sqlite";
 import { inflateSync } from "node:zlib";
+import { BillingStore } from "../src/Billing/Store.ts";
+import { BillingServer } from "../src/Billing/Server.ts";
+import { registerLocalBilling } from "../src/Billing/Config.ts";
+import { CUserItemMan as GSItemMan } from "../src/FXGS/CUserItemMan.ts";
 
 const DIR = import.meta.dir;
 const DB_DIR = DIR + "/tmp-db";
@@ -146,6 +150,7 @@ beforeAll(async () => {
   writeGameDataPackage();
   const cfg = new CServerConfig(CXCENTER_STR_KEYS, true);
   cfg.Init(DIR + "/center.cfg");
+  cfg.ParseConfigString("FXAttrShop = 1"); // same as shipped Center cfg: exercise real GS inventory loading
   CServerConfig.ms_pInstance = cfg;
   center = new CxCenter(cfg);
   center.Init();
@@ -510,9 +515,9 @@ describe("game server entry flow (FXGS)", () => {
       e.u32be(0); // y — x^y = the known client hash
       e.u8(1); // z
     });
-    // 210 [E1 attr] — attr = the center's FXAttrShop flag (0 here)
+    // 210 [E1 attr] — attr = the center's FXAttrShop flag (enabled)
     const p210 = await gs.recv(210);
-    expect(r1(p210)).toBe(0);
+    expect(r1(p210)).toBe(1);
     // 202 — the whole FxItem table (empty in the test DB)
     const p202 = await gs.recv(202);
     expect(r2(p202)).toBe(0);
@@ -1994,7 +1999,15 @@ test("expired transfer rejects a late GS establishment without resurrecting the 
 
 // Unlike shop.test.ts's isolated fixtures, do NOT inject Center users or arm
 // their connecting state here: LS -> GS -> Shop must establish it on the wire.
-test("GS packet 6 redirects to Shop, establishes there, and can return to GS", async () => {
+test("GS -> Shop -> real local billing authorization/purchase -> GS round trip", async () => {
+  const billingDB = new CDBMan(DB_DIR);
+  billingDB.item.exec(`INSERT INTO FxItem(SN,Category,nAttr1) VALUES(60000,1,100);
+    INSERT INTO FxStock(SN,Category,ItemSN,Unit,Price,MoneyType,IsValid) VALUES(60001,1,60000,2,25,0,1)`);
+  GSItemMan.ms_pInstance!.Init(billingDB); // refresh the test catalog before either client enters
+  const billingStore = new BillingStore(billingDB);
+  const billingServer = new BillingServer(billingStore);
+  billingServer.listen();
+  registerLocalBilling(billingDB, { enabled: true, host: "127.0.0.1", port: billingServer.port });
   const ready = Promise.withResolvers<void>();
   const shopProc = Bun.spawn([
     process.execPath, "--eval",
@@ -2045,6 +2058,26 @@ test("GS packet 6 redirects to Shop, establishes there, and can return to GS", a
     shopClient.send(213, () => {});
     await shopClient.recv(200); // real Shop item-list response after admission
 
+    // No fake billing replies: use the actual independently listening service.
+    shopClient.send(224, e => { e.str(name); e.str("wrong-password"); });
+    const denied = await shopClient.recv(209);
+    expect(r1(denied)).toBe(13);
+    billingStore.credit(name, 100, "e2e-starting-credit");
+    shopClient.send(224, e => { e.str(name); e.str(name); });
+    const authorized = await shopClient.recv(209);
+    expect(r1(authorized)).toBe(12); expect(r4(authorized)).toBeGreaterThan(0); expect(r4(authorized)).toBeGreaterThan(0);
+    const initialCash = await shopClient.recv(203);
+    expect([r1(initialCash), r4(initialCash)]).toEqual([1, 100]);
+    shopClient.send(206, e => { e.u16(60001); });
+    const purchase = await shopClient.recv(204);
+    expect(r1(purchase)).toBe(0); expect(purchase.buf.length - purchase.off).toBe(8);
+    shopClient.send(205, () => {});
+    const remaining = await shopClient.recv(203);
+    expect([r1(remaining), r4(remaining)]).toEqual([1, 75]);
+    expect(billingStore.inspect(name).balance).toBe(75);
+    expect(billingDB.inventory[GetUserHashNo(name)].query("SELECT Amount FROM FxUserInventory WHERE UserID=? AND ItemSN=60000").get(name))
+      .toEqual({ Amount: 2 });
+
     // Follow the reciprocal redirect instead of leaving a pending transfer.
     shopClient.send(6, e => { e.u8(10); e.u32be(0); }); // Shop has no version word
     const back = await shopClient.recv(6);
@@ -2059,14 +2092,20 @@ test("GS packet 6 redirects to Shop, establishes there, and can return to GS", a
       e.u8(1); e.str(name); e.u32be(sn); e.u32be(0);
       e.u32be(0x11221122); e.u32be(0); e.u8(1);
     });
-    await returnedGS.recv(210);
+    expect(r1(await returnedGS.recv(210))).toBe(1); // CM12 enabled the actual inventory loader
     await returnedGS.recv(202);
-    await returnedGS.recv(201);
+    const delivered = await returnedGS.recv(201);
+    expect([r1(delivered), r2(delivered)]).toEqual([1, 1]); // one user, one live inventory row
+    expect([r4(delivered), r1(delivered), r4(delivered), rstr(delivered)]).toEqual([60000, 255, 2, ""]);
+    expect(delivered.buf.length - delivered.off).toBe(8); // native variant date
+    expect(billingDB.inventory[GetUserHashNo(name)].query("SELECT Amount FROM FxUserInventory WHERE UserID=? AND ItemSN=60000").get(name))
+      .toEqual({ Amount: 2 }); // GS loading must not expire/delete a newly bought permanent item
     expect(center.serialTable.get(sn)).toBe(user);
     expect([user.m_fConnecting, user.nChannel, user.nSvrIdx]).toEqual([0, 10, 0]);
   } finally {
     clearTimeout(deadline);
     entered?.ls.close(); entered?.gs.close(); shopClient.close(); returnedGS.close();
     shopProc.kill(); await shopProc.exited;
+    billingServer.close(); billingDB.Close();
   }
 }, 10000);

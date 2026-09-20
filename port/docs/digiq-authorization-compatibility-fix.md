@@ -2,6 +2,9 @@
 
 日期：2026-09-20。接續使用者確認 GS → Shop 已能正常進入後，回報 client 224 沒有後續回覆。
 
+> 後續：使用者確認沒有外部 backend，現已新增[本機 billing 替代服務](local-billing.md)。
+> 下文測試數字為上一輪歷史紀錄。另更正本文件原先的 packet 7 欄位解讀：三 DWORD 是 serial/SID/BID，並沒有 cash；已補 distinct-value 回歸。
+
 ## 診斷與範圍
 
 使用者提供的 21-byte log payload 解碼為 opcode **224** 加兩個 EStr，長度均為 8 bytes。
@@ -45,8 +48,8 @@ TS 原本已能產生 341，但 `OnDigiQAuthen` 是空函式，即使收到 342 
 - 新增共用 `DecodeBillingString`：E1 長度、Latin-1 byte mapping，保留高位 bytes 和內嵌 NUL。
   明確限制為封包內有效範圍，截斷封包安全忽略，不仿製 native stack buffer overflow／未初始化資料讀取。
 - 原 user+20 被重複命名為 `m_fConnEstablished`，但沒有建立連線時的寫入；移除誤名，統一用既有 `m_fTranxInProgress` guard。
-- 新增 `m_nBillingCash`／官方名稱 `SetCash`，Shop client 7 的第二 DWORD 也存進這個欄位。
-  302 不修改既有遊戲金錢快取 `m_nCash` 或 SQLite Money。
+- 新增 `m_nBillingCash`／官方名稱 `SetCash`，由 302 更新，不修改遊戲金錢 `m_nCash` 或 SQLite Money。
+  **後續更正：** packet 7 的第二 DWORD 是 SID、第三是 BID，不寫 cash；本文件原先說第二欄是 cash 有誤（詳見後續報告的 `.lst` 地址）。
 - billing 不可用時，224 路徑會發出不含帳密的診斷；仍不偽造 client 授權成功或原版沒有的錯誤回覆。
 
 ## 測試
@@ -97,6 +100,6 @@ TS 原本已能產生 341，但 `OnDigiQAuthen` 是空函式，即使收到 342 
 4. 若顯示 `DigiQ authorization: billing link is unavailable`，先處理 billing 服務／設定／連通性；
    這項修復不會令「沒有 billing server」自動授權成功。
 5. PacketLog 預設只記 client links；要觀察 billing packet ID 需使用 `CA_PACKET_LOG_SCOPE=all`。
-   原有 raw packet dump 可能包含明文帳密，分享診斷時只提供連線結果、packet ID 與順序，遮掉 payload。
+   後續本機版本已遮蔽 224/341 credential payload；其他 raw dump／歷史 log 仍可能敏感，分享時遮掉 payload。
 
 尚未以使用者實際 client 或真實外部 DigiQ 服務聯測；目前不能宣稱其部署已完成授權。

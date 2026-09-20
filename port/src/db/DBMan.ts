@@ -373,6 +373,12 @@ export class CDBMan {
     return GetUserHashNo(id);
   }
 
+  /** Release file handles for standalone billing tools/tests. Servers retain
+   * their DB manager for their whole process lifetime. */
+  Close(): void {
+    for (const db of [...this.userInfo, ...this.inventory, this.config, this.item, this.guild]) db.close();
+  }
+
   /** prGetTime */
   prGetTime(): Date {
     return new Date();
