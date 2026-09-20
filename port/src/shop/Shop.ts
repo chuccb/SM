@@ -206,6 +206,10 @@ export class CClientSocket extends CPacketSocket {
   protected ReportReceiveOverflow(): void {
     console.error(`Socket receive buffer overflow(${this.bunSocket?.remoteAddress ?? ""}), disconnected.`);
   }
+
+  protected ReportSendOverflow(): void {
+    console.error(`Socket send buffer overflow, close connection: (${this.bunSocket?.remoteAddress ?? ""})`);
+  }
   static ms_nHeaderTypeCounter = 0;
   static ms_tblSN2Obj = new Map<number, CClientSocket>();
 
@@ -1114,11 +1118,16 @@ function variantTime(date: Date | null): Uint8Array {
 export class CWebSocket extends CPacketSocket {
   /** CWebSocket::OnReceiveCompletionPacket runs the same 50-stamp receive
    *  flood ring and the "(%s), disconnected." overflow report as the client
-   *  sockets (FxShop.exe.c:30457). */
+   *  sockets (FxShop.exe.c:30457); its PutPacket reports the send-side
+   *  overflow with the same "(%s)" shape (:30301). */
   m_fReceiveFloodGuard = true;
 
   protected ReportReceiveOverflow(): void {
     console.error(`Socket receive buffer overflow(${this.bunSocket?.remoteAddress ?? ""}), disconnected.`);
+  }
+
+  protected ReportSendOverflow(): void {
+    console.error(`Socket send buffer overflow, close connection: (${this.bunSocket?.remoteAddress ?? ""})`);
   }
   static ms_tblSerialNo2Socket = new Map<number, CWebSocket>();
 
@@ -1209,6 +1218,14 @@ export class CBillingSocketTw extends CPacketSocket {
   /** "Socket receive buffer overflow on Billing Socket" (FxShop.exe.c:3527). */
   protected ReportReceiveOverflow(): void {
     console.error("Socket receive buffer overflow on Billing Socket");
+  }
+
+  /** "Billing Socket TW send buffer overflow, terminate process" — the
+   *  original kills the server once the billing peer stops draining; the
+   *  port closes the link and lets the reconnect re-establish it
+   *  (infra-only deviation, no client-visible delta on the healthy path). */
+  protected ReportSendOverflow(): void {
+    console.error("Billing Socket TW send buffer overflow, terminate process");
   }
   constructor() {
     super(CPacketSocket.dwRcvBufferSize, CPacketSocket.dwSndBufferSize, {

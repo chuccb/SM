@@ -39,6 +39,13 @@ export class CLocalSocket extends CPacketSocket {
   protected ReportReceiveOverflow(): void {
     console.error("Socket receive buffer overflow on LocalSocket");
   }
+
+  /** "LocalSocket send buffer overflow, terminate process" — the original
+   *  closes and kills the server; the port closes and lets the reconnect
+   *  logic re-establish the link (infra-only deviation). */
+  protected ReportSendOverflow(): void {
+    console.error("LocalSocket send buffer overflow, terminate process");
+  }
   constructor(hooks: Partial<IPacketSocketHooks>) {
     super(CPacketSocket.dwRcvBufferSize, CPacketSocket.dwSndBufferSize, hooks);
     this.m_szLogTable = "S2S";

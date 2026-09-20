@@ -222,6 +222,13 @@ export class CenterClientSocket extends CPacketSocket {
     const addr = this.bunSocket?.remoteAddress ?? "";
     console.error(`Socket receive buffer overflow(${this.owner?.m_strName ?? ""}:${addr}), PostClosePacket called`);
   }
+
+  /** "Socket send buffer overflow, close connection: (name:addr)"
+   *  (CxCenter.exe.c:15015). */
+  protected ReportSendOverflow(): void {
+    const addr = this.bunSocket?.remoteAddress ?? "";
+    console.error(`Socket send buffer overflow, close connection: (${this.owner?.m_strName ?? ""}:${addr})`);
+  }
   private pending = new Uint8Array(0);
   private fGreeted = false;
   private fIdentified = false;
@@ -1019,6 +1026,12 @@ export class MonitorSocket extends CPacketSocket {
    *  nothing to port. */
   protected ReportReceiveOverflow(): void {
     console.error(`Socket receive buffer overflow(${this.bunSocket?.remoteAddress ?? ""}), PostClosePacket called`);
+  }
+
+  /** "Socket send buffer overflow, close connection: (addr)"
+   *  (CxCenter.exe.c:16308). */
+  protected ReportSendOverflow(): void {
+    console.error(`Socket send buffer overflow, close connection: (${this.bunSocket?.remoteAddress ?? ""})`);
   }
 
   constructor(private center: CxCenter) {

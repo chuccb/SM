@@ -84,6 +84,10 @@ export class CClientSocket extends CPacketSocket {
   protected ReportReceiveOverflow(): void {
     console.error(`Socket receive buffer overflow(${this.bunSocket?.remoteAddress ?? ""}), disconnected.`);
   }
+
+  protected ReportSendOverflow(): void {
+    console.error(`Socket send buffer overflow, close connection: (${this.bunSocket?.remoteAddress ?? ""})`);
+  }
   static ms_nLocalSerialNo = 1;
   /** dword_49F968 — the per-connection header-type counter. It starts at 0
    *  and is separate from the serial: the first client connection gets

@@ -241,12 +241,21 @@ export abstract class CPacketSocket {
     return enSocket.kioOk;
   }
 
+  /** The send-buffer-overflow report — every official class names its own
+   *  link here and closes (the S2S local/billing links add "terminate
+   *  process": the deployment is broken once a peer stops draining). */
+  protected ReportSendOverflow(): void {}
+
   /** CPacketSocket::PutPacket */
   PutPacket(packet: CSendPacket): EnSocket {
     if (!this.m_bConnected) return enSocket.kioNotConnected;
     const outgoing = packet.GetOutgoingPacketLength();
     if (outgoing <= 0) return enSocket.kioInvalidPacket;
-    if (outgoing + this.m_nSndCnt > this.m_mbSndBuffer.length) return enSocket.kioSendBufferOverflow;
+    if (outgoing + this.m_nSndCnt > this.m_mbSndBuffer.length) {
+      this.ReportSendOverflow();
+      this.PostClosePacket();
+      return enSocket.kioSendBufferOverflow;
+    }
     if (
       packet.EncodePacket(
         this.m_mbSndBuffer,
@@ -272,7 +281,11 @@ export abstract class CPacketSocket {
   PutBuffer(pBuf: Uint8Array, len: number): EnSocket {
     if (!this.m_bConnected) return enSocket.kioNotConnected;
     if (len <= 0) return enSocket.kioInvalidPacket;
-    if (this.m_nSndCnt + len > this.m_mbSndBuffer.length) return enSocket.kioSendBufferOverflow;
+    if (this.m_nSndCnt + len > this.m_mbSndBuffer.length) {
+      this.ReportSendOverflow();
+      this.PostClosePacket();
+      return enSocket.kioSendBufferOverflow;
+    }
     this.m_mbSndBuffer.set(pBuf.subarray(0, len), this.m_nSndCnt);
     this.m_nSndCnt += len;
     return enSocket.kioOk;
