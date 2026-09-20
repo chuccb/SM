@@ -804,6 +804,11 @@ export class CLocalUserTable {
   FindUserFromGlobalSerialNo(sn: number): CUser | null {
     return this.bySN.get(sn >>> 0) ?? null;
   }
+
+  /** CLocalUserTable::ForEach — walks the table under the lock. */
+  ForEach(fn: (user: CUser) => void): void {
+    for (const user of [...this.bySN.values()]) fn(user);
+  }
 }
 
 // ============================ CGuild / CGuildTable ============================
@@ -911,6 +916,11 @@ export class CGuildTable {
   FindGuildFromSerialNo(value: number): CGuild | null {
     return this.m_vtGuild.get(value) ?? null;
   }
+
+  /** CGuildTable::ForEach (:25684) — the timer's flush sweep walks this. */
+  ForEach(fn: (guild: CGuild) => void): void {
+    for (const guild of [...this.m_vtGuild.values()]) fn(guild);
+  }
 }
 
 // ============================ CUserPool (base) ============================
@@ -984,7 +994,14 @@ export class CUserPool {
     }
   }
 
-  /** CUserPool::OnTimer → DisconnectTimeoutSocket (0x9C40 ms without RTT). */
+  /** CUserPool::OnTimer (:29605) — every pool bumps the ONE shared BSS
+   *  counter each tick (dword_4AF7B8, +2 per CTimerThreadNormal tick) and
+   *  the sweep fires at %0x258 — 300 ticks = 120 s with both pools wired. */
+  OnTimer(count: number): void {
+    if (count % 0x258 === 0) this.DisconnectTimeoutSocket();
+  }
+
+  /** CUserPool::DisconnectTimeoutSocket — 0x9C40 ms without RTT. */
   DisconnectTimeoutSocket(): void {
     const now = Date.now();
     for (const socket of [...this.m_setSocket]) {
@@ -7152,6 +7169,14 @@ export class CChatPool extends CUserPool {
     }
   }
 
+  /** CChatPool::FlushAll (:7644) — the timer passes 0: per-socket
+   *  CServerSocket::Flush (vtbl+64).  TS sockets write through on PutPacket,
+   *  so the flush is a no-op here; the fLobbyOnly!=0 zombie sweep lives in
+   *  SendAll. */
+  FlushAll(fLobbyOnly: number): void {
+    void fLobbyOnly;
+  }
+
   /** CChatPool::OnPacket — 25/26/27/28/30/31/71/74/216, then the RTT tail. */
   OnPacket(n: CReceivedPacket, socket: CClientSocket): void {
     const id = n.Decode1();
@@ -8355,17 +8380,35 @@ export async function main(cfgFile: string, dbDir: string): Promise<void> {
   console.log(`[GS] MTUDP initialized succefully (udp :${port + MTUDP_UDP_PORT_OFFSET})`);
   void udpServer;
 
-  // the periodic CUserPool::OnTimer sweeps (once a second, like the timer thread)
+  // CTimerThreadNormal::Proc (FxServer.exe.c:415B65) — one Sleep(0x190)
+  // tick; every cadence below is a mod-counted defer with its own BSS
+  // counter (dword_4AF678..68C), run in the original order.  The room
+  // 85/86/87 broadcasts ride this timer in the original, not the request
+  // path.  DeferUpdateFreeServerListCache (every 12th tick) refreshes the
+  // table's cached free-room list (:422EC5 CacheGameServerList) — the list
+  // has no readers anywhere in the binary, so it is not modeled (the
+  // UpdateGameEtc table slot at vtbl+36 is equally uncalled in the binary);
+  // the
+  // trailing FlushLocalSocketSndBuffer/FlushClientSocketSndBuffer and the
+  // per-socket CServerSocket::Flush in CChatPool::FlushAll are no-ops
+  // (TS sockets write through on PutPacket); DeferTimeLog is log-only.
+  let poolOnTimerCount = 0; // dword_4AF7B8 — one counter shared by both pools
+  let flushRoomCount = 0; // dword_4AF678
+  let flushTableCount = 0; // dword_4AF67C
+  let flushUserCount = 0; // dword_4AF688
+  let flushGuildCount = 0; // dword_4AF68C
   setInterval(() => {
-    connectPool.DisconnectTimeoutSocket();
-    channelPool.DisconnectTimeoutSocket();
-  }, 1000);
-
-  // CTimerThreadNormal::Proc (Sleep 0x190 = 400 ms) — the room 85/86/87
-  // broadcasts ride this timer in the original, not the request path.
-  setInterval(() => {
-    sessionTable.FlushModifiedInfo();
-    sessionTable.FlushModifiedTableInfo();
+    connectPool.OnTimer(++poolOnTimerCount);
+    channelPool.OnTimer(++poolOnTimerCount); // shared counter: +2 per tick → 120 s sweep
+    if (++flushRoomCount % 0xC === 0) sessionTable.FlushModifiedInfo(); // every 12th tick
+    if (++flushTableCount % 3 === 0) sessionTable.FlushModifiedTableInfo(); // every 3rd
+    if (++flushUserCount % 0x96 === 0) {
+      CLocalUserTable.ms_pInstance!.ForEach((user) => user.DeferFlushModifiedInfo(db, 0));
+      channelPool.FlushAll(0);
+    }
+    if (CMainSystem.ms_pInstance!.m_nChannelType === 77 && ++flushGuildCount % 0x12C === 0) {
+      CGuildTable.ms_pInstance!.ForEach((guild) => guild.DeferFlushModifiedInfo(0)); // every 0x12C ticks = 120 s
+    }
     sessionTable.UpdateGameSessions();
   }, 0x190);
 }
