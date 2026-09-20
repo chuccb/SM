@@ -1022,15 +1022,19 @@ export class CUserPool {
     if (count % 0x258 === 0) this.DisconnectTimeoutSocket();
   }
 
-  /** CUserPool::DisconnectTimeoutSocket — 0x9C40 ms without RTT. */
+  /** CUserPool::DisconnectTimeoutSocket (:29397) — 0x9C40 ms without RTT,
+   *  then the count summary Report. */
   DisconnectTimeoutSocket(): void {
     const now = Date.now();
+    let count = 0;
     for (const socket of [...this.m_setSocket]) {
       if (now - socket.m_dwIdleTime > SOCKET_TIMEOUT) {
         console.error(`[GS] Disconnect timeout socket [${socket.GetUser(0)?.GetName() ?? "NULL"}]`);
         socket.PostClosePacket();
+        count++;
       }
     }
+    if (count > 0) console.log(`[GS] Disconnect time-out users: (${count})`);
   }
 }
 
