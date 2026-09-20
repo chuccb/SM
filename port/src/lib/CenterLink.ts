@@ -46,6 +46,12 @@ export class CLocalSocket extends CPacketSocket {
   protected ReportSendOverflow(): void {
     console.error("LocalSocket send buffer overflow, terminate process");
   }
+
+  /** CLocalSocket::PutPacket's wrapper switch (FxServer.exe.c:19180). */
+  protected ReportPutError(err: EnSocket): void {
+    if (err === enSocket.kioNotConnected) console.error("Not-connected local socket tried to put packet.");
+    else if (err === enSocket.kioInvalidPacket) console.error("tried to send invalid( =\tNULL ) packet to local socket");
+  }
   constructor(hooks: Partial<IPacketSocketHooks>) {
     super(CPacketSocket.dwRcvBufferSize, CPacketSocket.dwSndBufferSize, hooks);
     this.m_szLogTable = "S2S";

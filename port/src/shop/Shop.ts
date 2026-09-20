@@ -12,7 +12,7 @@
 import { CServerConfig } from "../core/Config.ts";
 import { PacketLog } from "../core/PacketLog.ts";
 import { CDBMan } from "../db/DBMan.ts";
-import { CipherDegree, CReceivedPacket, CSendPacket, enSocket } from "../core/Packet.ts";
+import { CipherDegree, CReceivedPacket, CSendPacket, enSocket, type enSocket as EnSocket } from "../core/Packet.ts";
 import { CPacketSocket, type IPacketSocketHooks } from "../core/CPacketSocket.ts";
 import { CLocalSocket } from "../lib/CenterLink.ts";
 import {
@@ -209,6 +209,12 @@ export class CClientSocket extends CPacketSocket {
 
   protected ReportSendOverflow(): void {
     console.error(`Socket send buffer overflow, close connection: (${this.bunSocket?.remoteAddress ?? ""})`);
+  }
+
+  /** CClientSocket::PutPacket's wrapper switch (FxShop.exe.c:5705). */
+  protected ReportPutError(err: EnSocket): void {
+    if (err === enSocket.kioNotConnected) console.error("Not-connected client socket tried to put packet.");
+    else if (err === enSocket.kioInvalidPacket) console.error("tried to send invalid( =\tNULL ) packet");
   }
   static ms_nHeaderTypeCounter = 0;
   static ms_tblSN2Obj = new Map<number, CClientSocket>();
@@ -1129,6 +1135,13 @@ export class CWebSocket extends CPacketSocket {
   protected ReportSendOverflow(): void {
     console.error(`Socket send buffer overflow, close connection: (${this.bunSocket?.remoteAddress ?? ""})`);
   }
+
+  /** CWebSocket::PutPacket's wrapper switch (FxShop.exe.c:30290) — the
+   *  client shapes. */
+  protected ReportPutError(err: EnSocket): void {
+    if (err === enSocket.kioNotConnected) console.error("Not-connected client socket tried to put packet.");
+    else if (err === enSocket.kioInvalidPacket) console.error("tried to send invalid( =\tNULL ) packet");
+  }
   static ms_tblSerialNo2Socket = new Map<number, CWebSocket>();
 
   m_nLocalSerialNo = 0;
@@ -1226,6 +1239,12 @@ export class CBillingSocketTw extends CPacketSocket {
    *  (infra-only deviation, no client-visible delta on the healthy path). */
   protected ReportSendOverflow(): void {
     console.error("Billing Socket TW send buffer overflow, terminate process");
+  }
+
+  /** CBillingSocketTw::PutPacket's wrapper switch (FxShop.exe.c:3730). */
+  protected ReportPutError(err: EnSocket): void {
+    if (err === enSocket.kioNotConnected) console.error("Not-connected Billing socket TW tried to put packet.");
+    else if (err === enSocket.kioInvalidPacket) console.error("tried to send invalid( =\tNULL ) packet to local socket");
   }
   constructor() {
     super(CPacketSocket.dwRcvBufferSize, CPacketSocket.dwSndBufferSize, {

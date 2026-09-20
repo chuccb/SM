@@ -246,11 +246,22 @@ export abstract class CPacketSocket {
    *  process": the deployment is broken once a peer stops draining). */
   protected ReportSendOverflow(): void {}
 
+  /** The PutPacket failure reports — the official wrappers switch on the
+   *  code and name their link ("Not-connected ... tried to put packet." /
+   *  "tried to send invalid( =\tNULL ) packet ..."). */
+  protected ReportPutError(_err: EnSocket): void {}
+
   /** CPacketSocket::PutPacket */
   PutPacket(packet: CSendPacket): EnSocket {
-    if (!this.m_bConnected) return enSocket.kioNotConnected;
+    if (!this.m_bConnected) {
+      this.ReportPutError(enSocket.kioNotConnected);
+      return enSocket.kioNotConnected;
+    }
     const outgoing = packet.GetOutgoingPacketLength();
-    if (outgoing <= 0) return enSocket.kioInvalidPacket;
+    if (outgoing <= 0) {
+      this.ReportPutError(enSocket.kioInvalidPacket);
+      return enSocket.kioInvalidPacket;
+    }
     if (outgoing + this.m_nSndCnt > this.m_mbSndBuffer.length) {
       this.ReportSendOverflow();
       this.PostClosePacket();

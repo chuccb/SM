@@ -20,7 +20,7 @@
 import { CServerConfig } from "../core/Config.ts";
 import { PacketLog } from "../core/PacketLog.ts";
 import { CPacketSocket } from "../core/CPacketSocket.ts";
-import { CipherDegree, CReceivedPacket, CSendPacket } from "../core/Packet.ts";
+import { CipherDegree, CReceivedPacket, CSendPacket, enSocket, type enSocket as EnSocket } from "../core/Packet.ts";
 import { CDBMan, EncodePassword } from "../db/DBMan.ts";
 import { CMultiServer, inet_addr } from "./MultiServer.ts";
 import { MTUDPServer, SetLocalUserTableFinder } from "./MTUDPServer.ts";
@@ -144,6 +144,12 @@ export class CClientSocket extends CPacketSocket {
 
   protected ReportSendOverflow(): void {
     console.error(`Socket send buffer overflow, close connection: (${this.bunSocket?.remoteAddress ?? ""})`);
+  }
+
+  /** CClientSocket::PutPacket's wrapper switch (CxLogin.exe.c:9568). */
+  protected ReportPutError(err: EnSocket): void {
+    if (err === enSocket.kioNotConnected) console.error("Not-connected client socket tried to put packet.");
+    else if (err === enSocket.kioInvalidPacket) console.error("tried to send invalid( =\tNULL ) packet");
   }
   static ms_nLocalSerialNo = 1;
   /** dword_49F968 — the per-connection header-type counter. It starts at 0

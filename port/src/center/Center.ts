@@ -18,7 +18,7 @@ import { CServerConfig } from "../core/Config.ts";
 import { PacketLog } from "../core/PacketLog.ts";
 import { GetUserHashNo } from "../db/DBMan.ts";
 import { CPacketSocket } from "../core/CPacketSocket.ts";
-import { CReceivedPacket, CSendPacket } from "../core/Packet.ts";
+import { CReceivedPacket, CSendPacket, enSocket, type enSocket as EnSocket } from "../core/Packet.ts";
 import {
   CM_ReceivedPacket,
   MC_ReceivedPacket,
@@ -228,6 +228,12 @@ export class CenterClientSocket extends CPacketSocket {
   protected ReportSendOverflow(): void {
     const addr = this.bunSocket?.remoteAddress ?? "";
     console.error(`Socket send buffer overflow, close connection: (${this.owner?.m_strName ?? ""}:${addr})`);
+  }
+
+  /** the center side of the local link (CxCenter.exe.c:14997). */
+  protected ReportPutError(err: EnSocket): void {
+    if (err === enSocket.kioNotConnected) console.error("Not-connected local socket tried to put packet.");
+    else if (err === enSocket.kioInvalidPacket) console.error("tried to send invalid( =\tNULL ) packet to local socket");
   }
   private pending = new Uint8Array(0);
   private fGreeted = false;
@@ -1032,6 +1038,12 @@ export class MonitorSocket extends CPacketSocket {
    *  (CxCenter.exe.c:16308). */
   protected ReportSendOverflow(): void {
     console.error(`Socket send buffer overflow, close connection: (${this.bunSocket?.remoteAddress ?? ""})`);
+  }
+
+  /** CMonitorSocket::PutPacket's wrapper switch (CxCenter.exe.c:16295). */
+  protected ReportPutError(err: EnSocket): void {
+    if (err === enSocket.kioNotConnected) console.error("Not-connected monitor socket tried to put packet.");
+    else if (err === enSocket.kioInvalidPacket) console.error("tried to send invalid( =\tNULL ) packet to local socket");
   }
 
   constructor(private center: CxCenter) {

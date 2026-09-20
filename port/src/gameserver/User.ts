@@ -3,7 +3,7 @@
 
 import { Encode1, Encode2, Encode4, EncodeBuffer } from "../core/BufferManipulator.ts";
 import { CPacketSocket } from "../core/CPacketSocket.ts";
-import { CSendPacket } from "../core/Packet.ts";
+import { CSendPacket, enSocket, type enSocket as EnSocket } from "../core/Packet.ts";
 import { CDBMan } from "../db/DBMan.ts";
 import { CLIENTSOCKET_HEADER_CODE_MODIFIER, CLIENTSOCKET_HEADER_CODE_RCV, CLIENTSOCKET_HEADER_CODE_SND, CLIENTSOCKET_SEQ, CLIENTSOCKET_SEQ_DELTA } from "../lib/PacketIDs.ts";
 import { CDynInfoCalculator_GetLevel, kLevelTableSize } from "../login/LevelTable.ts";
@@ -306,6 +306,13 @@ export class CClientSocket extends CPacketSocket {
 
   protected ReportSendOverflow(): void {
     console.error(`Socket send buffer overflow, close connection: (${this.bunSocket?.remoteAddress ?? ""})`);
+  }
+
+  /** CClientSocket::PutPacket's wrapper switch (FxServer.exe.c:9526). */
+  protected ReportPutError(err: EnSocket): void {
+    const addr = this.bunSocket?.remoteAddress ?? "";
+    if (err === enSocket.kioNotConnected) console.error(`Not-connected client [${addr}] socket tried to put packet.`);
+    else if (err === enSocket.kioInvalidPacket) console.error("tried to send invalid( =\tNULL ) packet");
   }
   static ms_nHeaderTypeCounter = 0; // dword_4AF338
   static ms_tblSN2Obj = new Map<number, CClientSocket>();
