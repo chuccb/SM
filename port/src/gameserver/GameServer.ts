@@ -3285,11 +3285,10 @@ export class CGameSession {
 
   /** CGameSession::DestroyPlayer — the full leave path (FxServer.exe.c:32692). */
   DestroyPlayer(socket: CClientSocket, fSendReset: number): number {
-    const wasChief = this.IsChief(socket);
     let dissolve = false;
-    // CListSession::DestroyPlayer → CBaseSession::DestroyPlayer:
-    // DeleteSocket, DeleteUser(socket) per user, SendResetPlayer, +468 = 1
-    this.m_setSocket.delete(socket);
+    // CGameSession::DestroyPlayer (:32692) loop 1 — for the seated leavers,
+    // clear the UDP-alive flag (+12940) and the 24-byte ghost-host block
+    // (+988, memset 0x18) before anything else runs.
     for (let i = 0; i < socket.GetUserCount(); i++) {
       const user = socket.GetUser(i);
       if (!user) continue;
@@ -3299,18 +3298,24 @@ export class CGameSession {
         this.m_rgUdpHost[slot]!.fill(0);
       }
     }
+    const wasChief = this.IsChief(socket);
     // the first leaver's slot drives CSyncGameObjMan::OnPlayerLeave
     const firstUser = socket.GetUserCount() > 0 ? socket.GetUser(0) : null;
     const firstSlot = firstUser ? firstUser.m_nSlotIdx : -1;
     this.DealWithGhostOfLeavingPlayer(socket);
-    this.m_setSocket.delete(socket); // CBaseSession::DeleteSocket
+    // CListSession::DestroyPlayer → CBaseSession::DestroyPlayer (:31250):
+    // DeleteSocket (vtbl+68), DeleteAllUser (vtbl+52 — per user the vtbl+96
+    // residency check then the virtual DeleteUser(slot); a non-resident
+    // user reports), SendResetPlayer, socket +468 = 1.
+    this.m_setSocket.delete(socket);
     for (let i = 0; i < socket.GetUserCount(); i++) {
       const user = socket.GetUser(i);
       if (!user) continue;
       const slot = this.GetSlotidx(user);
       if (slot >= 0 && slot < this.m_nMaxSlot && this.m_rgPlayer[slot] === user) {
-        this.m_abDeleted[slot] = 0;
-        this.DeleteUser(slot);
+        this.DeleteUser(slot); // vtbl+56 = CGameSession::DeleteUser
+      } else {
+        console.error(`[GS] Invalid User try to destory, socket [${user.GetName()}]`);
       }
     }
     this.SendResetPlayer(socket, fSendReset);
@@ -3328,11 +3333,11 @@ export class CGameSession {
     this.FlushPacket();
     this.DeleteAllSlotidx(socket);
     this.m_pStrategy.SendSessionInfo(new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8)); // vtbl+32 (:32746)
-    if (this.m_nBanSerial !== 0) this.DeferBanPlayer();
+    if (this.m_nBanSerial !== 0) this.DeferBanPlayer(); // +207 → vtbl+144
+    // a chief gone while the game is launching → try to start with the rest
+    if (this.m_fPlaying !== 0 && this.m_nGamePhase === 0) this.DeferStartGame(); // +213/+246 → vtbl+148
     socket.AddBeforeJoinSession(this.m_nIdx);
     if (dissolve) this.DoBangPok();
-    // a chief gone while the game is launching → try to start with the rest
-    if (this.m_fPlaying !== 0 && this.m_nGamePhase === 0) this.DeferStartGame();
     return 1;
   }
 
