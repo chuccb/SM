@@ -1156,6 +1156,14 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
       expect(r4(p150)).toBe(0); // ghostStart (tmpl+60, RAW seconds on the wire)
       expect(r4(p150)).toBe(0); // ghostFreq (tmpl+64, RAW seconds on the wire)
     }
+    // in play the 185 gate (fPlaying && gamePhase 1) is open: the chief
+    // blames the member's seat and the member is told to relay — 54 [E1 0],
+    // the chief's seat (CGameSession::OnNotifyUDPLoss, FxServer.exe.c:34093)
+    chief.send(185, (e) => {
+      e.u8(1); // the target seat — the member at slot 1
+    });
+    const p54 = await member.recv(54);
+    expect(r1(p54)).toBe(0); // the asker's (the chief's) m_nSlotIdx
     (udp as unknown as { close?: () => void }).close?.();
   });
 
