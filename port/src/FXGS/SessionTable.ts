@@ -230,20 +230,28 @@ export class CGameSessionTable {
     return 1;
   }
 
+  /** Decode the inlined rgnBomber loop shared by native create/join paths:
+   *  every wire byte is reduced modulo (CBomberAttr::GetTotalCount() + 1),
+   *  where the extra value is the random-bomber sentinel. */
+  private DecodeBomberSelections(n: CReceivedPacket, count: number): number[] {
+    const modulo = CBomberAttr.ms_pInstance!.GetTotalCount() + 1;
+    const selects = new Array<number>(count);
+    for (let i = 0; i < count; i++) selects[i] = n.Decode1() % modulo;
+    return selects;
+  }
+
   /** CGameSessionTable::CreateSession — packet 80 body. */
   CreateSession(n: CReceivedPacket, socket: CClientSocket): void {
     const title = n.DecodeStr();
     const password = n.DecodeStr();
     const gameType = n.Decode1();
     const count = n.Decode1();
-    const selects: number[] = [];
-    for (let i = 0; i < count; i++) selects.push(n.Decode1());
     if (count !== socket.GetUserCount()) {
       console.error("[GS] CChannelPool::OnRequestCreateSession, player count not matched!");
       socket.PostClosePacket();
       return;
     }
-    this.DoCreateSession(socket, title, password, selects, gameType);
+    this.DoCreateSession(socket, title, password, this.DecodeBomberSelections(n, count), gameType);
   }
 
   /** CGameSessionTable::DoCreateSession (FxServer.exe.c:38917). */
@@ -284,21 +292,19 @@ export class CGameSessionTable {
     CGameSessionTable.UnlockBaseSessions(-1);
   }
 
-  /** CGameSessionTable::CreateSessionPractice (vtbl+60, FxServer.exe.c:39557)
+  /** CGameSessionTable::CreateSessionPractice (vtbl+60, 004231C5)
    *  — packet 86: [E1 count][count × E1 select].  The selects decode with the
    *  usual % (CBomberAttr total + 1) clamp and only feed the bomber
    *  preference; a count that disagrees with the socket's roster
-   *  disconnects without a reply. */
+   *  disconnects before the select bytes are consumed and without a reply. */
   CreateSessionPractice(n: CReceivedPacket, socket: CClientSocket): void {
     const count = n.Decode1();
-    const selects: number[] = [];
-    for (let i = 0; i < count; i++) selects.push(n.Decode1());
     if (count !== socket.GetUserCount()) {
       console.error("[GS] ChannelPool::OnRequestCreatePraticeSession, player count not matched!");
       socket.PostClosePacket();
       return;
     }
-    this.DoCreatePracticeSession(socket, selects);
+    this.DoCreatePracticeSession(socket, this.DecodeBomberSelections(n, count));
   }
 
   /** CGameSessionTable::DoCreatePracticeSession (FxServer.exe.c:39300) —
@@ -345,14 +351,12 @@ export class CGameSessionTable {
     const serial = n.Decode4();
     const password = n.DecodeStr();
     const count = n.Decode1();
-    const selects: number[] = [];
-    for (let i = 0; i < count; i++) selects.push(n.Decode1());
     if (count !== socket.GetUserCount()) {
       console.error("[GS] CChannelPool::OnRequestJoinSession, player count not matched!");
       socket.PostClosePacket();
       return;
     }
-    this.DoJoinSession(socket, idx, serial, password, selects);
+    this.DoJoinSession(socket, idx, serial, password, this.DecodeBomberSelections(n, count));
   }
 
   /** CGameSessionTable::DoJoinSession (FxServer.exe.c:39015). */

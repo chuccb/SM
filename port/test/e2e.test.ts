@@ -1361,6 +1361,38 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
     });
     await expect(gs.recv(195, 900)).rejects.toThrow("timeout");
     expect(gs.closed).toBe(false);
+
+    // Complete the same live 89 -> roster -> 106 -> events -> 163 path.
+    // AI slot 1 dies to human slot 0, then human slot 0 reports the finish.
+    gs.send(146, (e) => {
+      e.u8(0x41);
+      e.u16(280);
+      e.u16(39);
+      e.u8(0);
+      e.u8(0);
+    });
+    const death = await gs.recv(159);
+    expect([r1(death), r2(death), r2(death), r1(death), r1(death)])
+      .toEqual([0x41, 280, 39, 0, 0]);
+    gs.send(146, (e) => {
+      e.u8(0x60);
+      e.u16(280);
+      e.u16(54);
+    });
+    const result = await gs.recv(163);
+    expect(result.buf).toHaveLength(34);
+    expect([r1(result), r1(result), r1(result), r1(result)]).toEqual([0, 0, 0, 0]);
+    expect(r1(result)).toBe(1); // human marker immediately follows the four-byte head
+    expect(r4(result)).toBeGreaterThan(0);
+    expect([r1(result), r1(result), r1(result)]).toEqual([0, 1, 0]); // win, kill, save
+    const expPercentage = r2(result);
+    expect(r2(result)).toBe(expPercentage); // unchanged exp percentages
+    expect(r2(result)).toBeGreaterThan(0); // look level
+    expect([r1(result), r1(result)]).toEqual([0, 0]);
+    expect([r1(result), r1(result), r1(result), r1(result)]).toEqual([2, 2, 0, 0]);
+    expect(r2(result)).toBeGreaterThan(0); // AI level
+    expect(Array.from({ length: 7 }, () => r1(result))).toEqual(Array(7).fill(0));
+    expect(result.off).toBe(result.buf.length); // exact 34-byte packet body consumed
     gs.close();
   });
 
@@ -1402,8 +1434,7 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
       expect(r1(res)).toBe(0); // the 5/6/7-state flag
       expect(r1(res)).toBe(1); // winTeam — the finisher's colour; the launch re-seats
       // through GetColorForNewComer, which deals 0 to the chief and 1 to the member
-      expect(r1(res)).toBe(0); // strategy vtbl+44 view type (a normal room)
-      expect(r1(res)).toBe(0); // session vtbl+156 ladder
+      expect(r1(res)).toBe(0); // session vtbl+156 ladder; no later result-view byte
       expect(r1(res)).toBe(0); // the diff-team used-item flag
       const serials: number[] = [];
       for (let slot = 0; slot < 8; slot++) {
@@ -1708,7 +1739,9 @@ describe("guild strategy (type 77)", () => {
       main.m_nChannelType = 77;
       const guild = new CGameSession();
       expect(guild.m_pStrategy).toBeInstanceOf(CGuildSessionStrategy);
-      expect(guild.m_pStrategy.GetResultViewType()).toBe(1); // the 163 view byte
+      // The hook exists in the 2005 object layout, although the compatible
+      // 2004 packet-163 serializer does not put that later field on the wire.
+      expect(guild.m_pStrategy.GetResultViewType()).toBe(1);
     } finally {
       main.m_nChannelType = saved;
     }

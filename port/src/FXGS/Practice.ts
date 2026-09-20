@@ -448,8 +448,10 @@ export class CPracticeSession extends CGameSession {
       players++;
       if (chiefUser && chiefUser.m_pSocket === user.m_pSocket) {
         if ((state0 & SLOTSTATE_GROUP_MASK) !== 0) {
+          // 00425F56: report + virtual DumpLog, then keep evaluating.  This
+          // diagnostic branch is not the return-2 readiness rejection.
           console.error(`[GS] Chief Player is not stand-by, but [${(state0 >> 2) & 7}].`);
-          return 2;
+          this.DumpLog();
         }
       } else if ((state0 & SLOTSTATE_CHIEF) === 0 && (state0 & SLOTSTATE_GROUP_MASK) !== 4) {
         return 2;
@@ -549,20 +551,24 @@ export class CPracticeSession extends CGameSession {
     this.m_nGamePhase = 2;
   }
 
-  /** CPracticeSession::SendGameResult (004260E4) — the practice
-   *  results unit: head [E1 0][E1 win][E1 0]×3; per seat a human row
-   *  [E1 1][E4 serial][E1 n3][E1 GetKillCount][E1 GetSaveCount][E2 exp‰]
-   *  [E2 exp‰][E2 look][E1 0][E1 0], an AI row [E1 2][E1 n3]
-   *  [E1 GetKillCount][E1 GetSaveCount][E2 level], an empty seat [E1 0];
-   *  one trailing [E1 0] per human.  No rewards: the dyn rows and counters
-   *  stay untouched. */
+  /** CPracticeSession::SendGameResult — the client-compatible practice
+   *  results unit.  FxServer.map maps the 2004 build to lines 697..767 and
+   *  proves its head has four bytes [E1 0][E1 win][E1 0][E1 0].  The exact
+   *  2005 EXE/PDB pair inserts a result-view Encode1 at source line 705,
+   *  making the function ten machine bytes larger and the payload one byte
+   *  longer; that newer field is incompatible with the original client.
+   *  Per seat: a human row [E1 1][E4 serial][E1 n3][E1 GetKillCount]
+   *  [E1 GetSaveCount][E2 exp‰][E2 exp‰][E2 look][E1 0][E1 0], an AI row
+   *  [E1 2][E1 n3][E1 GetKillCount][E1 GetSaveCount][E2 level], or an empty
+   *  [E1 0]; one trailing [E1 0] per human.  No rewards: dyn rows and
+   *  counters stay untouched. */
   SendGameResult(winTeam: number): void {
     const packet = new CSendPacket(GS_ClientSend.OnGameResult, CipherDegree.kPacketEncryptedCRC8);
-    packet.Encode1(0);
+    packet.Encode1(0); // result flag
     packet.Encode1(winTeam);
-    packet.Encode1(0);
-    packet.Encode1(0);
-    packet.Encode1(0);
+    // The matching client predates the later strategy result-view byte.
+    packet.Encode1(0); // IsLadderGame
+    packet.Encode1(0); // different-team used-item flag
     for (let slot = 0; slot < MAX_SESSION_SLOTS; slot++) {
       const resultMark = winTeam === -1 ? 3 : winTeam !== (this.m_rgSlotState[slot * 3 + 2]! & SLOTSTATE_COLOR_MASK) ? 2 : 0;
       const user = this.m_rgPlayer[slot];

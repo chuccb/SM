@@ -340,7 +340,8 @@ describe("detail packets, entry and result persistence", () => {
     expect([first.user.dyn.win, other.user.dyn.lose]).toEqual([1, 1]);
     expect(first.user.dyn.exp).toBe(3001); expect(channel.m_vtRankList[0]).toBe(first.user);
     const result = results[0]!; expect(result.m_nPacketType).toBe(163);
-    expect(Array.from({ length: 5 }, () => result.Decode1())).toEqual([1, 0, 0, 0, 0]);
+    // Taiwan client layout: flag, winner, ladder, different-team item flag.
+    expect(Array.from({ length: 4 }, () => result.Decode1())).toEqual([1, 0, 0, 0]);
     expect(result.Decode1()).toBe(1); expect(result.Decode4()).toBe(first.user.GetGlobalSerialNo());
     expect([result.Decode1(), result.Decode1(), result.Decode1(), result.Decode2(), result.Decode2(), result.Decode2(), result.Decode1(), result.Decode1()])
       .toEqual([0, 0, 0, 0, 0, 2, 1, 0]);

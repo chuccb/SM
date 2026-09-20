@@ -1425,13 +1425,18 @@ export class CGameSession {
   }
 
   /**
-   * CGameSession::SendGameResult (vtbl+216, :36660) — the results unit.
-   * Head [E1 flag][E1 winTeam][E1 view-type][E1 ladder][E1 diff-team item
-   * flag]; per user [E1 1][E4 serial] then [E1 result][E1 GetKillCount]
-   * [E1 GetSaveCount]
-   * [E2 exp‰][E2 exp‰ re-read][E2 look-level][E1 got-exp][E1 detail]; empty
-   * slots send [E1 0].  IncDecExp feeds the DB dyn rows, IncWin/IncLose/
-   * IncDraw the same persistent dyn block, and level-ups re-sort the lobby rank list.
+   * CGameSession::SendGameResult (vtbl+216) — the results unit.
+   *
+   * The Taiwan client-compatible (2004-08-06 map) head is four bytes:
+   * [E1 flag][E1 winTeam][E1 ladder][E1 diff-team item flag].  The matching
+   * 2005-01-04 EXE added a strategy result-view byte between winTeam and
+   * ladder; that newer five-byte head shifts every row for the original
+   * client and makes it fail while decoding 163, so it is deliberately not
+   * emitted here.  Per user: [E1 1][E4 serial][E1 result]
+   * [E1 GetKillCount][E1 GetSaveCount][E2 exp‰][E2 exp‰ re-read]
+   * [E2 look-level][E1 got-exp][E1 detail]; empty slots send [E1 0].
+   * IncDecExp feeds the DB dyn rows, IncWin/IncLose/IncDraw the same
+   * persistent dyn block, and level-ups re-sort the lobby rank list.
    */
   SendGameResult(winTeam: number): void {
     const packet = new CSendPacket(GS_ClientSend.OnGameResult, CipherDegree.kPacketEncryptedCRC8);
@@ -1443,7 +1448,9 @@ export class CGameSession {
     }
     packet.Encode1(flag);
     packet.Encode1(winTeam & 0xff);
-    packet.Encode1(this.m_pStrategy.GetResultViewType()); // strategy vtbl+44 (guild → 1)
+    // FxServer.map's client-compatible build goes straight from winTeam to
+    // IsLadderGame.  The later EXE's m_pStrategy->GetResultViewType() byte is
+    // the one-byte protocol insertion that the original client cannot parse.
     packet.Encode1(IS_LADDER_GAME); // session vtbl+156
     let diffTeamUsedItem = 0; // v47
     for (let i = 0; i < MAX_SESSION_SLOTS; i++) {
@@ -2110,8 +2117,10 @@ export class CGameSession {
       players++;
       if (chiefUser && chiefUser.m_pSocket === user.m_pSocket) {
         if ((state0 & SLOTSTATE_GROUP_MASK) !== 0) {
+          // Native CanStartGame reports the anomalous chief state and calls
+          // virtual DumpLog, but does not reject the start on this branch.
           console.error(`[GS] Chief Player is not stand-by, but [${(state0 >> 2) & 7}].`);
-          return 2;
+          this.DumpLog();
         }
       } else if ((state0 & SLOTSTATE_CHIEF) === 0 && (state0 & SLOTSTATE_GROUP_MASK) !== 4) {
         return 2;
@@ -2311,6 +2320,25 @@ export class CGameSession {
     // and the slot-state triples whose +2 byte holds the colour)
     this.m_DynInfoCalculator.Init(this.m_rgPlayer, this.m_rgSlotState);
     this.m_UdpLossRegulator.Init();
+    // 00420D66..00420DEF: initialise each valid seat's inclusive own-team
+    // size and opposing-team size.  IsPlayerSet is virtual, so Practice AI
+    // seats participate even though CDynInfoCalculator::Init only weights
+    // real CUser objects.
+    for (let slot = 0; slot < MAX_SESSION_SLOTS; slot++) {
+      if (!this.IsPlayerSet(slot)) continue;
+      this.m_DynInfoCalculator.IncMyTeamNo(slot); // count the seat itself
+      const color = this.GetColor(slot);
+      for (let other = slot + 1; other < MAX_SESSION_SLOTS; other++) {
+        if (!this.IsPlayerSet(other)) continue;
+        if (color === this.GetColor(other)) {
+          this.m_DynInfoCalculator.IncMyTeamNo(slot);
+          this.m_DynInfoCalculator.IncMyTeamNo(other);
+        } else {
+          this.m_DynInfoCalculator.IncOtherTeamNo(slot);
+          this.m_DynInfoCalculator.IncOtherTeamNo(other);
+        }
+      }
+    }
     for (let slot = 0; slot < MAX_SESSION_SLOTS; slot++) this.m_abDeleted[slot] = this.IsPlayerSet(slot) ? 0 : 1;
     this.SetPlaying(1);
     // SetCurrentGameContext(0) + CGameContext::Init

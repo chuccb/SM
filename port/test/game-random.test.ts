@@ -164,6 +164,8 @@ describe("Init → random map → launch 116 → kickoff 150", () => {
       { slot: 5, captain: 0, spawn: 7, bomber: 1, color: 5 },
     ] });
     expect(Array.from(session.m_aBomberIdx)).toEqual([1, -1, 3, -1, -1, 1, -1, -1]);
+    expect([0, 2, 5].map((slot) => session.m_DynInfoCalculator.GetMyTeamNo(slot))).toEqual([1, 1, 1]);
+    expect([0, 2, 5].map((slot) => session.m_DynInfoCalculator.GetOtherTeamNo(slot))).toEqual([2, 2, 2]);
 
     // Keep the actual DoStartGame/ClearModifiedFlag implementations; only
     // the unused 510 preallocated room objects are omitted from this fixture.
@@ -201,6 +203,20 @@ describe("Init → random map → launch 116 → kickoff 150", () => {
     expect(main.m_WorkerRandom.rand()).toBe(26500);
   });
 
+  test("launch builds the native inclusive own-team and opposing-team counts", () => {
+    const { session } = capture();
+    player(session, 0, 0, 0);
+    player(session, 2, 1, 0);
+    player(session, 5, 2, 3);
+    session.LaunchGameStage();
+    expect([0, 2, 5].map((slot) => session.m_DynInfoCalculator.GetMyTeamNo(slot)))
+      .toEqual([2, 2, 1]);
+    expect([0, 2, 5].map((slot) => session.m_DynInfoCalculator.GetOtherTeamNo(slot)))
+      .toEqual([1, 1, 2]);
+    expect(session.m_DynInfoCalculator.GetMyTeamNo(1)).toBe(0);
+    expect(session.m_DynInfoCalculator.GetOtherTeamNo(1)).toBe(0);
+  });
+
   test("practice AI seats get spawn positions in slot order but do not add a draw for explicit bombers", () => {
     const practice = new CPracticeSession();
     const { packets } = capture(practice);
@@ -214,6 +230,10 @@ describe("Init → random map → launch 116 → kickoff 150", () => {
       { slot: 0, captain: 0, spawn: 4, bomber: 0, color: 0 },
       { slot: 3, captain: 0, spawn: 1, bomber: 5, color: 7 },
     ] });
+    expect([practice.m_DynInfoCalculator.GetMyTeamNo(0), practice.m_DynInfoCalculator.GetOtherTeamNo(0)])
+      .toEqual([1, 1]);
+    expect([practice.m_DynInfoCalculator.GetMyTeamNo(3), practice.m_DynInfoCalculator.GetOtherTeamNo(3)])
+      .toEqual([1, 1]);
     expect(main.m_WorkerRandom.rand()).toBe(29358);
   });
 });
