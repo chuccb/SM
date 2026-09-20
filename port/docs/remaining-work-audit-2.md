@@ -8,7 +8,8 @@
 另有 [A04 Center 逾時與狀態清理](center-timeout-compatibility-fix.md)、
 [A16 Taiwan billing transport](billing-transport-compatibility-fix.md)、
 [A06 NexonClub ID](nexonclub-id-compatibility-fix.md) 已完成報告列明差異。
-目前已列 A 待辦 **15 組**、兩輪 probes 合計 **25 GAP／13 MATCH**；全套 **413 pass／0 fail**。
+目前已列 A 待辦 **15 組**、兩輪 probes 合計 **25 GAP／13 MATCH**；全套 **437 pass／0 fail**。
+另完成 [GS ↔ Shop 轉服修復](shop-transfer-compatibility-fix.md)：回覆 opcode、Shop request 寬度與整組使用者檢查；新增雙向 TCP 回歸。
 工具鏈統一與尚未取得的 GitHub Bun canary 限制見 [port README](../README.md)。
 Center 全域 serial／SID、其餘建立回報與位置查詢另列第一輪 B，不含於上述完成範圍。
 以下除已修項目的註記外，保留第二輪清點當時的結果。A16–A23 中 A16 transport 與 A21 個人資料範圍完成；

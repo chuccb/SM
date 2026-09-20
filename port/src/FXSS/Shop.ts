@@ -558,40 +558,36 @@ export class CMainPool extends CUserPool {
     CCenterProcess.ms_pInstance?.SendPacket(p);
   }
 
-  /** CMainPool::OnReqConnectToSvr — client 6 [E2 svrIdx][E1 x][E4 y]? — the
-   *  shop decodes [E2] then forwards center MC 2:
-   *  [E1 n][n×E4 serial][E1 type][E4 x]. */
+  /** CMainPool::OnReqConnectToSvr (00415210) — client 6:
+   * [E1 serverType][E4 target], with no version word. The native 00415232
+   * calls Decode1, NOT Decode2. Forward all socket users to Center MC 2;
+   * SelectedUserIdx is not involved in this request.
+   */
   OnReqConnectToSvr(n: CReceivedPacket, socket: CClientSocket): void {
-    const type = n.Decode2();
-    const x = n.Decode4();
-    const user = socket.GetUser(socket.m_nSelectedUserIdx);
-    if (!user) return;
+    const type = n.Decode1();
+    const target = n.Decode4();
     const p = new CSendPacket(MC_ReceivedPacket.OnReqConnectToSvr);
-    const serials: number[] = [];
-    for (const u of socket.m_apUser) if (u) serials.push(u.GetGlobalSerialNo());
-    p.Encode1(serials.length);
-    for (const sn of serials) p.Encode4(sn);
+    const count = socket.GetUserCount();
+    p.Encode1(count);
+    for (let i = 0; i < count; i++) p.Encode4(socket.GetUser(i)!.GetGlobalSerialNo());
     p.Encode1(type);
-    p.Encode4(x);
+    p.Encode4(target);
     CCenterProcess.ms_pInstance?.SendPacket(p);
   }
 
-  /** CMainPool::OnCenterResConnectToSvr — center CM 1:
-   *  [E1 n][n×E4 serial][E1 result][==1: E1 svrType, E4 idx, E4 ip, E2 port].
-   *  The reply rides client 6 to the first user (in serial order) that is in
-   *  the local table and not in a billing tranx (user+20 == 0). */
+  /** CMainPool::OnCenterResConnectToSvr (004152E0) — Center CM 1:
+   * [E1 n][n×E4 serial][E1 result][==1: E1 type, E4 idx, E4 ip, E2 port].
+   * Every user must exist and have no billing transaction in progress.
+   * Abort on the first failure; otherwise send client 6 to the LAST user.
+   */
   OnCenterResConnectToSvr(n: CReceivedPacket): void {
     const count = n.Decode1();
-    const serials: number[] = [];
-    for (let i = 0; i < count; i++) serials.push(n.Decode4());
     let target: CUser | null = null;
     for (let i = 0; i < count; i++) {
-      const u = CLocalUserTable.ms_pInstance!.FindUserFromGlobalSerialNo(serials[i]!);
-      if (u !== null && u.m_fTranxInProgress === 0) {
-        target = u;
-        break;
-      }
+      target = CLocalUserTable.ms_pInstance!.FindUserFromGlobalSerialNo(n.Decode4());
+      if (!target || target.m_fTranxInProgress !== 0) return;
     }
+    // Zero-count native code uses an invalid target; keep the port safe.
     if (!target || !target.m_pSocket) return;
     const result = n.Decode1();
     const p = new CSendPacket(SC_SendPacket.OnResConnectToSvr, CipherDegree.kPacketEncryptedCRC8);

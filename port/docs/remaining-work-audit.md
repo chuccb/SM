@@ -13,7 +13,8 @@
 [A16 Taiwan billing transport](billing-transport-compatibility-fix.md)、
 [A06 NexonClub ID](nexonclub-id-compatibility-fix.md) 已修復各輪列明差異。
 A02 為保留需求，目前已列 A 待辦剩 **15 組**（不含 B 待全鏈追查工作）；兩份 probe 最新合計
-**38 個觀察／25 GAP／13 MATCH**。全套最新 **413 pass／0 fail**。
+**38 個觀察／25 GAP／13 MATCH**。全套最新 **437 pass／0 fail**。
+另完成 [GS ↔ Shop 轉服修復](shop-transfer-compatibility-fix.md)：回覆 opcode、Shop request 寬度與整組使用者檢查；新增雙向 TCP 回歸。
 工具鏈已固定為 npm 可用的最新預覽版，所有 src／test／tools 納入同一份 strict typecheck；
 GitHub 更晚的 Bun canary 下載失敗，未宣稱已升級，詳見 [工具鏈說明](../README.md)。
 上段數字與下文發現過程為清點時的歷史紀錄；有效 SQL schema／序號語意等仍列 B 待核實。

@@ -316,7 +316,7 @@ describe("login flow", () => {
     // center, LS and DB the other describes use.
     copyFileSync(DIR + "/game3.cfg", DATA_DIR + "/game77.cfg");
     guildGsProc = Bun.spawn(
-      ["bun", "run", "src/main.ts", "--only", "game", "--cfg", DATA_DIR + "/game77.cfg", "--db", DB_DIR],
+      [process.execPath, "run", "src/main.ts", "--only", "game", "--cfg", DATA_DIR + "/game77.cfg", "--db", DB_DIR],
       { cwd: DIR + "/..", stdout: "ignore", stderr: "ignore" },
     );
     for (let t = 0; t < 100 && !center.GetSvr(10, 3)?.socket; t++) await Bun.sleep(100);
@@ -1991,3 +1991,82 @@ test("expired transfer rejects a late GS establishment without resurrecting the 
     ls.close(); gs.close();
   }
 });
+
+// Unlike shop.test.ts's isolated fixtures, do NOT inject Center users or arm
+// their connecting state here: LS -> GS -> Shop must establish it on the wire.
+test("GS packet 6 redirects to Shop, establishes there, and can return to GS", async () => {
+  const ready = Promise.withResolvers<void>();
+  const shopProc = Bun.spawn([
+    process.execPath, "--eval",
+    `import { main } from './src/FXSS/Shop.ts';
+     await main(${JSON.stringify(DIR + "/shop-transfer.cfg")}, ${JSON.stringify(DB_DIR)});
+     process.send?.('ready');`,
+  ], {
+    cwd: DIR + "/..", stdout: "ignore", stderr: "inherit",
+    env: { ...process.env, TC_NOWEB: "1" },
+    ipc: message => { if (message === "ready") ready.resolve(); },
+  });
+  const deadline = setTimeout(() => ready.reject(new Error("Shop startup timeout")), 4000);
+  void shopProc.exited.then(code => ready.reject(new Error(`Shop exited: ${code}`)));
+  const shopClient = new TestClient();
+  const returnedGS = new TestClient();
+  let entered: Awaited<ReturnType<typeof enterGame>> | undefined;
+  try {
+    await ready.promise;
+    for (let i = 0; i < 100 && !center.GetSvr(11, 0)?.socket; i++) await Bun.sleep(10);
+    expect(center.GetSvr(11, 0)?.socket).toBeTruthy();
+    const name = "shopwalk";
+    entered = await enterGame(name);
+    const { ls, gs, sn } = entered;
+    const user = center.serialTable.get(sn)!;
+    expect([user.m_fConnecting, user.nChannel, user.nSvrIdx]).toEqual([0, 10, 0]);
+    ls.close(); // leaving LS must not remove the now-established GS user
+    gs.send(6, e => { e.u8(11); e.u32be(0); }); // no version word for Shop
+    const redirect = await gs.recv(6); // literal native id; fails with the old id 2
+    expect(r1(redirect)).toBe(1); expect(r1(redirect)).toBe(11);
+    expect(r4(redirect)).toBe(0); expect(r4(redirect)).toBe(0x7f000001);
+    const shopPort = r2(redirect);
+    expect(shopPort).toBe(19811);
+    expect(redirect.off).toBe(redirect.buf.length);
+    expect(gs.hasPending(2)).toBe(false);
+    expect([user.m_fConnecting, user.nChannel, user.nSvrIdx]).toEqual([1, 11, 0]);
+    gs.close(); // real source disconnect, not just a parallel Shop login
+    await shopClient.connect(shopPort, { sndDeg: 2, rcvDeg: 2 });
+    await shopClient.recv(0);
+    shopClient.send(7, e => {
+      e.u8(1); e.str(name); e.u32be(sn);
+      e.u32be(0xffffffff); e.u32be(0xffffffff); e.u8(0);
+    });
+    const info = await shopClient.recv(18);
+    expect(r1(info)).toBe(0); // initial-info premium flag: ordinary account
+    expect(center.serialTable.get(sn)).toBe(user);
+    expect([user.m_fConnecting, user.nChannel, user.nSvrIdx]).toEqual([0, 11, 0]);
+    expect(shopClient.closed).toBe(false);
+    shopClient.send(213, () => {});
+    await shopClient.recv(200); // real Shop item-list response after admission
+
+    // Follow the reciprocal redirect instead of leaving a pending transfer.
+    shopClient.send(6, e => { e.u8(10); e.u32be(0); }); // Shop has no version word
+    const back = await shopClient.recv(6);
+    expect([r1(back), r1(back), r4(back), r4(back), r2(back)])
+      .toEqual([1, 10, 0, 0x7f000001, 14848]);
+    expect(back.off).toBe(back.buf.length);
+    expect([user.m_fConnecting, user.nChannel, user.nSvrIdx]).toEqual([1, 10, 0]);
+    shopClient.close();
+    await returnedGS.connect(14848, { sndDeg: 2, rcvDeg: 2 });
+    await returnedGS.recv(0);
+    returnedGS.send(7, e => {
+      e.u8(1); e.str(name); e.u32be(sn); e.u32be(0);
+      e.u32be(0x11221122); e.u32be(0); e.u8(1);
+    });
+    await returnedGS.recv(210);
+    await returnedGS.recv(202);
+    await returnedGS.recv(201);
+    expect(center.serialTable.get(sn)).toBe(user);
+    expect([user.m_fConnecting, user.nChannel, user.nSvrIdx]).toEqual([0, 10, 0]);
+  } finally {
+    clearTimeout(deadline);
+    entered?.ls.close(); entered?.gs.close(); shopClient.close(); returnedGS.close();
+    shopProc.kill(); await shopProc.exited;
+  }
+}, 10000);

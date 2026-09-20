@@ -7,7 +7,7 @@ import { CReceivedPacket, CSendPacket, CipherDegree, kPacketEncryptedCRC8 } from
 import { CDBMan } from "../db/DBMan.ts";
 import { GS_ClientSend, GS_ReceivedPacket } from "../lib/PacketIDs.ts";
 import { CDynInfoCalculator_GetMaxExpInLevel } from "../lib/LevelTable.ts";
-import { MC_ReceivedPacket } from "../lib/S2S.ts";
+import { MC_ReceivedPacket, SVRCLASS_SHOP } from "../lib/S2S.ts";
 import { SESSION_IDX_NONE } from "./Defs";
 import { CUserPool } from "./Pools";
 import { CUserItemMan } from "./CUserItemMan";
@@ -518,22 +518,22 @@ export class CChannelPool extends CChatPool {
 
   /**
    * CChannelPool::OnReqConnectToSvr — packet 6:
-   * [E1 type][E4 target][E2 version]; ok → center p2, else client 6 with the
+   * [E1 type][E4 target][E2 version only for non-Shop]; ok → center p2, else client 6 with the
    * CCenterProcess::CheckEnterGame code.
    */
   OnReqConnectToSvr(n: CReceivedPacket, socket: CClientSocket): void {
     const type = n.Decode1();
-    if (type !== 11 && socket.m_nPoolType !== 3) {
+    if (type !== SVRCLASS_SHOP && socket.m_nPoolType !== 3) {
       console.error("[GS] Non-front user try to connect server. Disconnect");
       socket.PostClosePacket();
       return;
     }
     const target = n.Decode4();
-    if (type !== 11) {
+    if (type !== SVRCLASS_SHOP) {
       const version = n.Decode2();
       const r = CCenterProcess.ms_pInstance!.CheckEnterGame(type, target, version);
       if (r !== 1) {
-        const p = new CSendPacket(GS_ClientSend.OnReqConnectToSvrFail, CipherDegree.kPacketEncryptedCRC8);
+        const p = new CSendPacket(GS_ClientSend.OnReqConnectToSvrRes, CipherDegree.kPacketEncryptedCRC8);
         p.Encode1(r);
         socket.SendPacket(p);
         return;
@@ -548,14 +548,21 @@ export class CChannelPool extends CChatPool {
     CCenterProcess.ms_pInstance?.SendPacket(p);
   }
 
-  /** CChannelPool::OnCenterResConnectToSvr — CM 1 → client 6. */
+  /** CChannelPool::OnCenterResConnectToSvr (00403699) — CM 1 → client 6.
+   * The native 004036E6 pushes opcode 6; constructor 00411DDE selects
+   * cipher degree 2. Neither that degree nor the MC request's id is the
+   * client reply id. Resolve every serial, then reply once to the last user.
+   */
   OnCenterResConnectToSvr(n: CReceivedPacket): void {
     const count = n.Decode1();
     let user: CUser | null = null;
     for (let i = 0; i < count; i++) {
       user = CLocalUserTable.ms_pInstance!.FindUserFromGlobalSerialNo(n.Decode4());
-      if (!user) break;
+      if (!user) return;
     }
+    // Zero users leaves native's target uninitialized; do not reproduce UB.
+    const socket = user?.m_pSocket;
+    if (!socket) return;
     const result = n.Decode1();
     const p = new CSendPacket(GS_ClientSend.OnReqConnectToSvrRes, CipherDegree.kPacketEncryptedCRC8);
     p.Encode1(result);
@@ -565,7 +572,7 @@ export class CChannelPool extends CChatPool {
       p.Encode4(n.Decode4()); // ip
       p.Encode2(n.Decode2()); // port
     }
-    user?.m_pSocket?.SendPacket(p);
+    socket.SendPacket(p);
   }
 
   /** CChannelPool::OnRequestUserSimpleInfo — packet 64. */

@@ -126,11 +126,10 @@ export const GS_ReceivedPacket = {
   OnRequestUserInventory: 209,
 } as const;
 
-/** Client-facing packet ids only the game server sends. */
+/** Client-facing packet IDs sent by the game server. */
 export const GS_ClientSend = {
   OnConnect: 0, // CMainSystem::OnConnEstablished [E2 CENTER_VERSION][E2 CONN_HELLO_VERSION][E4 headerType][EStr url]
-  OnReqConnectToSvrRes: 2, // CM 1 success path: [E1 1][E1 type][E4 idx][E4 ip][E2 port]
-  OnReqConnectToSvrFail: 6, // CheckEnterGame failure code
+  OnReqConnectToSvrRes: 6, // FxServer 004036E6: both Center results and local CheckEnterGame refusals
   OnChannelsState: 13, // CCenterProcess::MakeChannelsStatePacket
   OnChannelsGameState: 14, // CCenterProcess::MakeChannelsGameStatePacket
   OnChannelAnnounce: 15, // the empty lobby announce (OnAddNewSocket / 83)
