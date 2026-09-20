@@ -3,6 +3,8 @@
 日期：2026-09-21。範圍是**已存在的 live inventory → GS 登入載入 → 功能／外觀狀態 → 201、個人資料 71、入房 105 → 重新登入**。
 不是完整商城交易／預庫存領取／裝備切換功能的完成聲明；A18、A19、A13 仍分別追蹤。
 
+> 後續動態回報找出本文件當時漏核的 201 count 寬度：外層玩家數是 E1，但每位玩家的 inventory count 是 **E4**，不是原 TS 的 E2。現已依 vtable assembly 修正並加入購入、裝備、回 GS 及完整重新登入回歸；詳見 [商城道具裝備後重新登入黑屏修復](item-relogin-compatibility-fix.md)。本文件其餘 loader／欄位與 71／105 結論不變。
+
 ## 原生證據與修正
 
 以提供的 `FXGS/FxServer.exe.c`、`.lst` 及 `FxServer.pdb` 公開符號核對；沒有執行 Windows EXE。

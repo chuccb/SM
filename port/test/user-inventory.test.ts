@@ -218,12 +218,33 @@ test("DB-loaded live inventory preserves fields and packet 201 order/width; fres
   expect(user.m_vtInventory[0]).toMatchObject({ ItemSN: 1, StockSn: 10001, Type: 10, strAttr: "Item/1", nAttr1: 91, nAttr2: 2, nAttr3: 3,
     SlotByte: 4, Amount: 7, Verbose: "raw-byte-carrier", LevelCreated: 2000, fModified: 0 });
   const packet = new CSendPacket(201, 2); user.MakeUserInventoryPacket(packet); const r = reader(packet);
-  expect([r.e2(), r.e4(), r.e1(), r.e4(), r.str()]).toEqual([1, 1, 4, 7, "raw-byte-carrier"]);
+  expect([r.e4(), r.e4(), r.e1(), r.e4(), r.str()]).toEqual([1, 1, 4, 7, "raw-byte-carrier"]);
   expect(r.raw(8).length).toBe(8); // date value/timezone belongs to the still-open A13 audit
   r.end();
   user = new CUser(socket); user.SetName("inventory"); user.m_nLevel = 10; expect(load()).toBe(true);
   const again = new CSendPacket(201, 2); user.MakeUserInventoryPacket(again);
   expect(reader(again).bytes).toEqual(reader(packet).bytes);
+});
+
+test("reported four-equipped-item reentry encodes packet 201 with the native E4 count and aligned rows", () => {
+  for (const [ItemSN, SlotByte] of [[150, 0x78], [289, 0xe1], [380, 0x79], [730, 0xf0]]) {
+    user.AddInventory(Object.assign(new UserInventory(), {
+      ItemSN, SlotByte, Amount: 1, Verbose: "", DateCreated: new Date("2300-07-06T18:39:48.249Z"),
+    }));
+  }
+  const packet = new CSendPacket(201, 2);
+  packet.Encode1(1); // outer user count
+  user.MakeUserInventoryPacket(packet);
+  expect(packet.m_uOffset).toBe(82); // type + E1 users + E4 count + 4 × 19-byte rows
+  expect(Buffer.from(packet.m_pBlock.subarray(0, 17)).toString("hex"))
+    .toBe("935b96ca539196ca53032296ca5394a569");
+  const r = reader(packet);
+  expect([r.e1(), r.e4()]).toEqual([1, 4]);
+  for (const [ItemSN, SlotByte] of [[150, 0x78], [289, 0xe1], [380, 0x79], [730, 0xf0]]) {
+    expect([r.e4(), r.e1(), r.e4(), r.str()]).toEqual([ItemSN, SlotByte, 1, ""]);
+    expect(r.raw(8).length).toBe(8);
+  }
+  r.end();
 });
 
 test("functional lookup has native NUL-terminated byte equality, not Unicode case folding", () => {
@@ -278,6 +299,6 @@ test("two-player center response keeps auth bytes and owned-item snapshots assig
   }));
   expect(players.map(p => [p.GetAuthencode(), p.GetLevelIconSn(), p.m_vtInventory.length])).toEqual([[0, 1, 1], [1, 0, 0]]);
   const inventory = packets.find(p => p.m_nPacketType === 201)!; expect(inventory).toBeDefined();
-  const r = reader(inventory); expect([r.e1(), r.e2(), r.e4(), r.e1(), r.e4(), r.str()]).toEqual([2, 1, 1, 0, 7, "raw-byte-carrier"]);
-  r.raw(8); expect(r.e2()).toBe(0); r.end();
+  const r = reader(inventory); expect([r.e1(), r.e4(), r.e4(), r.e1(), r.e4(), r.str()]).toEqual([2, 1, 1, 0, 7, "raw-byte-carrier"]);
+  r.raw(8); expect(r.e4()).toBe(0); r.end();
 });

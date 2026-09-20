@@ -536,10 +536,10 @@ describe("game server entry flow (FXGS)", () => {
     // 202 — the whole FxItem table (empty in the test DB)
     const p202 = await gs.recv(202);
     expect(r2(p202)).toBe(0);
-    // 201 [E1 n][per-user inventory] — no rows: an empty inventory
+    // 201 [E1 users][E4 item count per user] — no rows: an empty inventory
     const p201 = await gs.recv(201);
     expect(r1(p201)).toBe(1);
-    expect(r2(p201)).toBe(0);
+    expect(r4(p201)).toBe(0);
     // the lobby announce + the rank list (packet 15 empty, then 70):
     // the entry leaves the socket at the lobby stage
     const p15 = await gs.recv(15);
@@ -2088,7 +2088,7 @@ test("expired transfer rejects a late GS establishment without resurrecting the 
 
 // Unlike shop.test.ts's isolated fixtures, do NOT inject Center users or arm
 // their connecting state here: LS -> GS -> Shop must establish it on the wire.
-test("GS -> Shop -> original CAItem, points + afro game-Money purchase -> GS and relogin", async () => {
+test("GS -> Shop -> original CAItem purchases + equipped afro -> GS and fresh relogin", async () => {
   const billingDB = new CDBMan(DB_DIR);
   const billingStore = new BillingStore(billingDB);
   const billingServer = new BillingServer(billingStore);
@@ -2188,12 +2188,18 @@ test("GS -> Shop -> original CAItem, points + afro game-Money purchase -> GS and
     expect(r1(await shopClient.recv(204))).toBe(4); // already owned, not the bogus "-1" limit
     expect((billingDB.prGetUserDynamic(name) as { Money: number }).Money).toBe(70000);
 
+    // Persist the real category-12 equipment slot reported by the client
+    // protocol: 210 [E2 count][E1 slot][E2 ItemSN]. The reciprocal transfer
+    // response below is the ordered wire barrier proving this write ran.
+    shopClient.send(210, e => { e.u16(1); e.u8(0xf0); e.u16(678); });
+
     // Follow the reciprocal redirect instead of leaving a pending transfer.
     shopClient.send(6, e => { e.u8(10); e.u32be(0); }); // Shop has no version word
     const back = await shopClient.recv(6);
     expect([r1(back), r1(back), r4(back), r4(back), r2(back)])
       .toEqual([1, 10, 0, 0x7f000001, 14848]);
     expect(back.off).toBe(back.buf.length);
+    expect(billingDB.GetUserInventoryRows(name).find(r => r.ItemSN === 678)?.Slot).toBe(0xf0);
     expect([user.m_fConnecting, user.nChannel, user.nSvrIdx]).toEqual([1, 10, 0]);
     shopClient.close();
     await returnedGS.connect(14848, { sndDeg: 2, rcvDeg: 2 });
@@ -2205,10 +2211,10 @@ test("GS -> Shop -> original CAItem, points + afro game-Money purchase -> GS and
     expect(r1(await returnedGS.recv(210))).toBe(1); // CM12 enabled the actual inventory loader
     await returnedGS.recv(202);
     const delivered = await returnedGS.recv(201);
-    expect([r1(delivered), r2(delivered)]).toEqual([1, 2]); // needle + original afro
+    expect([r1(delivered), r4(delivered)]).toEqual([1, 2]); // needle + original afro
     expect([r4(delivered), r1(delivered), r4(delivered), rstr(delivered)]).toEqual([1, 255, 15, ""]);
     rbuf(delivered, 8); // needle's native variant date
-    expect([r4(delivered), r1(delivered), r4(delivered), rstr(delivered)]).toEqual([678, 255, 1, ""]);
+    expect([r4(delivered), r1(delivered), r4(delivered), rstr(delivered)]).toEqual([678, 0xf0, 1, ""]);
     expect(delivered.buf.length - delivered.off).toBe(8); // afro's native variant date
     expect(billingDB.GetUserInventoryRows(name).find(r => r.ItemSN === 678)?.Amount).toBe(1);
     expect(billingDB.inventory[GetUserHashNo(name)].query("SELECT Amount FROM FxUserInventory WHERE UserID=? AND ItemSN=1").get(name))
@@ -2222,9 +2228,9 @@ test("GS -> Shop -> original CAItem, points + afro game-Money purchase -> GS and
     for (let i = 0; i < 100 && center.serialTable.has(sn); i++) await Bun.sleep(10);
     expect(center.serialTable.has(sn)).toBe(false);
     entered = await enterGame(name, { existingAccount: true, onInventory: p => {
-      expect([r1(p), r2(p)]).toEqual([1, 2]);
-      for (const [item, amount] of [[1, 15], [678, 1]]) {
-        expect([r4(p), r1(p), r4(p), rstr(p)]).toEqual([item, 255, amount, ""]);
+      expect([r1(p), r4(p)]).toEqual([1, 2]);
+      for (const [item, slot, amount] of [[1, 255, 15], [678, 0xf0, 1]]) {
+        expect([r4(p), r1(p), r4(p), rstr(p)]).toEqual([item, slot, amount, ""]);
         rbuf(p, 8);
       }
       expect(p.off).toBe(p.buf.length);
@@ -2247,7 +2253,7 @@ test("original owned cosmetics survive GS reentry and reach native 201, 71 and r
   const itemSNs = [3, 16, 95, 169, 549, 20001]; // emotion, icon, fake level, slot deco, char deco, bomb
   const inventoryDB = db.inventory[GetUserHashNo(name)];
   const readInventory = (p: CReceived) => {
-    expect([r1(p), r2(p)]).toEqual([1, 6]);
+    expect([r1(p), r4(p)]).toEqual([1, 6]);
     for (const item of itemSNs) {
       expect([r4(p), r1(p), r4(p), rstr(p)]).toEqual([item, item === 3 ? 255 : 0, 1, ""]);
       expect(rbuf(p, 8).length).toBe(8); // A13 date value/timezone is separate

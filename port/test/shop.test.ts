@@ -11,8 +11,8 @@ import { mkdirSync, rmSync } from "node:fs";
 import { CServerConfig, CXCENTER_STR_KEYS, FXSHOP_STR_KEYS } from "../src/core/Config.ts";
 import { CDBMan } from "../src/db/DBMan.ts";
 import { CxCenter, CUser } from "../src/Center/Center.ts";
-import { CxShop, CLocalUserTable } from "../src/FXSS/Shop.ts";
-import { CReceivedPacket, type CSendPacket } from "../src/core/Packet.ts";
+import { CxShop, CLocalUserTable, CUser as ShopUser, UserInventory as ShopUserInventory } from "../src/FXSS/Shop.ts";
+import { CReceivedPacket, CSendPacket } from "../src/core/Packet.ts";
 import { CItemMan } from "../src/FXSS/CItemMan.ts";
 import { SVRCLASS_SHOP } from "../src/lib/S2S.ts";
 import { GetUserHashNo } from "../src/db/DBMan.ts";
@@ -121,6 +121,23 @@ function deStream(n: CReceived): CISmartStream {
 }
 
 describe("shop flow", () => {
+  test("shop-side packet 201 uses the same native E4 per-user inventory count", () => {
+    const user = new ShopUser(null);
+    user.m_vecUserInventory.push(Object.assign(new ShopUserInventory(), {
+      SN: 123, Slot: 0xf0, ItemSN: 300, Verbose: "", dateAcquired: new Date("2099-01-01T00:00:00.000Z"),
+    }));
+    const packet = new CSendPacket(201, 2);
+    shop.mainPool.MakeUserInventoryPacket(user, packet);
+    expect(packet.m_uOffset).toBe(24); // type + E4 count + one 19-byte row
+    const decoded = new CReceivedPacket();
+    decoded.SetCipherDegree(2);
+    decoded.SetRcvPacket(packet.m_pBlock, packet.m_uOffset);
+    expect([decoded.Decode1(), decoded.Decode4(), decoded.Decode4(), decoded.Decode1(), decoded.Decode4(), decoded.DecodeStr()])
+      .toEqual([201, 1, 123, 0xf0, 300, ""]);
+    expect(decoded.DecodeRest().length).toBe(8);
+    expect(decoded.m_uOffset).toBe(decoded.m_uLength);
+  });
+
   test("client 7 → center CM 2 → client 18 initial info", async () => {
     const c = await connectShopUser("tester", 7, false);
 

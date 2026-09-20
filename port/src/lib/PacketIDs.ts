@@ -204,7 +204,7 @@ export const GS_ClientSend = {
   OnReqTakeHouseRes: 178, // CGameSession::OnReqTakeHouse [E1 slot][E1 n]…
   OnUdpLossBan: 195, // asm-only site in Update: empty body + stage=4 (UDP-loss kick)
   OnHackingKick: 196, // CGameSession::OnHackingSuspected [E1 slot]
-  OnUserInventory: 201, // [E1 n][per-user inventory]
+  OnUserInventory: 201, // [E1 users][users×(E4 itemCount + inventory rows)]
   OnUserItemList: 202, // the whole FxItem table
   OnPreInventory: 207, // [E1 n][per-user pre-inventory]
   OnEnterGame: 210, // [E1 attr] — the entry-accepted packet
@@ -314,7 +314,7 @@ export const SC_SendPacket = {
   OnEstimateRTTRes: 20,
   OnAdminNotifyMsg: 26, // CCenterProcess::OnAdminNotifyMsg broadcast
   OnShopItemList: 200, // CItemMan cached packet (UpdateShopItemPacket)
-  OnUserInventory: 201, // CUser::MakeUserInventoryPacket
+  OnUserInventory: 201, // [E1 users][users×(E4 itemCount + inventory rows)]
   OnUserItemList: 202, // CItemMan::PutUserItemList (the FxItem table)
   OnRemainCash: 203, // CBillingProcess::OnRemainCashTw
   OnPurchaseRes: 204, // OnReqPurchaseStockItem / OnRequestPresent — [E1 code][EStr msg]

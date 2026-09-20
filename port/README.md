@@ -97,5 +97,6 @@ ESNext 是 compiler/runtime 提供的語言與標準庫目標，不是另一個�
 - [爆炸頭：商城 category 限制、遊戲金錢發貨與購入後期限修復](docs/shop-purchase-compatibility-fix.md)
 - [Practice：立即開局、練習地圖選擇與 UDP-loss 誤踢修復](docs/practice-start-compatibility-fix.md)
 - [A20：GS 庫存、功能／外觀狀態與裝飾封包修復](docs/user-inventory-compatibility-fix.md)
+- [商城道具裝備後重新登入：201 E4 庫存筆數黑屏修復](docs/item-relogin-compatibility-fix.md)
 
 保留「未知帳號登入自動註冊」的明確需求。其餘 client 可觀測行為以提供的原生 EXE／PDB／反組譯為依據；未完成的項目仍列在清單，不宣稱整個 server 已完全相容。

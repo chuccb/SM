@@ -740,10 +740,12 @@ export class CMainPool extends CUserPool {
     packet.Encode1(0);
   }
 
-  /** CUser::MakeUserInventoryPacket — 201: [E1 n][n×(E4 SN, E1 slot, E4 ItemSN,
-   *  EStr verbose, 8B CTime)]. */
+  /** CUser::MakeUserInventoryPacket — 201 per-user body:
+   *  [E4 n][n×(E4 SN, E1 slot, E4 ItemSN, EStr verbose, 8B CTime)].
+   *  FxShop.exe.c:27145 calls the send-packet vtable at +28 (Encode4) for
+   *  both this vector count and each SN/ItemSN. */
   MakeUserInventoryPacket(user: CUser, packet: CSendPacket): void {
-    packet.Encode1(user.m_vecUserInventory.length);
+    packet.Encode4(user.m_vecUserInventory.length);
     for (const inv of user.m_vecUserInventory) {
       packet.Encode4(inv.SN);
       packet.Encode1(inv.Slot);

@@ -289,9 +289,11 @@ export class CUser {
     packet.Encode2(0);
   }
 
-  /** CUser::MakeUserInventoryPacket — packet 201 per-user body. */
+  /** CUser::MakeUserInventoryPacket — packet 201 per-user body.
+   * The vector count is E4: FxServer.exe.lst:00416C40–00416C41 calls the
+   * send-packet vtable at +0x1C, which is Encode4 (004921B4), not Encode2. */
   MakeUserInventoryPacket(packet: CSendPacket): void {
-    packet.Encode2(this.m_vtInventory.length);
+    packet.Encode4(this.m_vtInventory.length);
     for (const inv of this.m_vtInventory) {
       packet.Encode4(inv.ItemSN);
       packet.Encode1(inv.SlotByte);
