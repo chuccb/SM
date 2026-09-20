@@ -29,8 +29,12 @@ import {
   PACKET_NAME_TABLES,
 } from "../lib/PacketIDs.ts";
 import { CM_ReceivedPacket, CENTER_VERSION, CONN_HELLO_VERSION, MC_ReceivedPacket, SVRCLASS_SHOP, CLIENT_SOCKET_CENSUS_MS } from "../lib/S2S.ts";
-import { CDynInfoCalculator_GetLevel } from "../LS/LevelTable.ts";
+import { CDynInfoCalculator_GetLevel } from "../lib/LevelTable.ts";
 import { CItemMan, type ShopItem } from "./CItemMan.ts";
+import { NEXONCLUB_EMAIL_DOMAIN } from "./Defs.ts";
+import { CSendPacket as CBillingSendPacket } from "./Packet.ts";
+import { CBillingSocketTw } from "./CBillingSocketTw.ts";
+export { CBillingSocketTw } from "./CBillingSocketTw.ts";
 
 /** The registered cfg keys (the CServerConfig::Init table, .text:0047B520).
  *  Each entry is "key / counter-key" — an empty counter marks a plain key,
@@ -173,10 +177,24 @@ export class CUser {
     this.m_nLevel = CDynInfoCalculator_GetLevel(dyn.Exp);
   }
 
-  /** CUser::SetNexonClubId — from the account profile prefix (FxShop builds it
-   *  from the account SN/CommunitySvr pair; kept verbatim from the account). */
+  /** CUser::SetNexonClubId (0041FC60): range-based byte search in Email,
+   * then erase the last pattern-length bytes, NOT the matched substring.
+   * Account strings on this path use the port's raw Latin-1 byte mapping.
+   */
   SetNexonClubId(account: USERACCOUNT): void {
-    this.m_strNexonClubId = account.CommunitySvr ? String(account.SN) : "";
+    const email = account.Email;
+    this.m_strNexonClubId = email.includes(NEXONCLUB_EMAIL_DOMAIN)
+      ? email.slice(0, -NEXONCLUB_EMAIL_DOMAIN.length)
+      : "";
+  }
+
+  /** CUser::GetNexonClubId (0041F000) returns const char*. Its billing
+   * callers construct a string from that C pointer, stopping at the first
+   * NUL. Preserve the full stored value; expose its C-string view here.
+   */
+  GetNexonClubId(): string {
+    const end = this.m_strNexonClubId.indexOf("\0");
+    return end < 0 ? this.m_strNexonClubId : this.m_strNexonClubId.slice(0, end);
   }
 
   /** CUser::ResetTranxInfo — clears the in-flight purchase state. */
@@ -231,7 +249,6 @@ export class CClientSocket extends CPacketSocket {
   constructor() {
     super(CPacketSocket.dwRcvBufferSize, CPacketSocket.dwSndBufferSize, {
       onPacket: (_sock, packet) => CMainPool.ms_pInstance?.OnPacket(packet, this),
-      onClose: () => this.Close(),
     });
     this.m_szLogTag = "Shop";
     this.m_fClientLink = true;
@@ -259,8 +276,7 @@ export class CClientSocket extends CPacketSocket {
     return this.m_nUserCount;
   }
 
-  Close(): void {
-    if (!this.m_bConnected) return;
+  protected OnClose(): void {
     CMainPool.ms_pInstance?.DeleteSocket(this);
     for (const user of this.m_apUser) {
       if (!user) continue;
@@ -270,7 +286,7 @@ export class CClientSocket extends CPacketSocket {
     this.m_apUser = [];
     this.m_nUserCount = 0;
     CClientSocket.ms_tblSN2Obj.delete(this.m_nLocalSerialNo);
-    super.Close();
+    super.OnClose();
   }
 }
 
@@ -1161,7 +1177,6 @@ export class CWebSocket extends CPacketSocket {
         // post-verify web traffic (charge receipts) — logged, no in-game effect
         console.log(`[Shop] web packet type ${packet.m_nPacketType}`);
       },
-      onClose: () => this.Close(),
     });
     this.m_szLogTag = "Shop";
     this.m_fClientLink = true;
@@ -1174,14 +1189,13 @@ export class CWebSocket extends CPacketSocket {
   }
 
   /** the raw verify reply (4 bytes, no packet header) */
-  SendBuffer(buf: ArrayBuffer): void {
-    this.bunSocket?.write(new Uint8Array(buf));
+  SendBuffer(buf: ArrayBuffer | Uint8Array): EnSocket {
+    return super.SendBuffer(buf instanceof Uint8Array ? buf : new Uint8Array(buf));
   }
 
-  Close(): void {
-    if (!this.m_bConnected) return;
+  protected OnClose(): void {
     for (const [sn, s] of CWebSocket.ms_tblSerialNo2Socket) if (s === this) CWebSocket.ms_tblSerialNo2Socket.delete(sn);
-    super.Close();
+    super.OnClose();
   }
 }
 
@@ -1221,53 +1235,6 @@ export class CTranxCtrl {
     const len = Math.min(rec.data.length, pBuf.length, 500);
     pBuf.set(rec.data.subarray(0, len), 0);
     return len;
-  }
-}
-
-// ============================ CBillingSocketTw ============================
-
-/** CBillingSocketTw — the digicell billing link socket (CBillingSocket ctor,
- *  FxShop.exe.c:404E70): CServerSocket base + SetHeaderCode(41, 41, 0). */
-export class CBillingSocketTw extends CPacketSocket {
-  /** "Socket receive buffer overflow on Billing Socket" (FxShop.exe.c:3527). */
-  protected ReportReceiveOverflow(): void {
-    console.error("Socket receive buffer overflow on Billing Socket");
-  }
-
-  /** "Billing Socket TW send buffer overflow, terminate process" — the
-   *  original kills the server once the billing peer stops draining; the
-   *  port closes the link and lets the reconnect re-establish it
-   *  (infra-only deviation, no client-visible delta on the healthy path). */
-  protected ReportSendOverflow(): void {
-    console.error("Billing Socket TW send buffer overflow, terminate process");
-  }
-
-  /** CBillingSocketTw::PutPacket's wrapper switch (FxShop.exe.c:3730). */
-  protected ReportPutError(err: EnSocket): void {
-    if (err === enSocket.kioNotConnected) console.error("Not-connected Billing socket TW tried to put packet.");
-    else if (err === enSocket.kioInvalidPacket) console.error("tried to send invalid( =\tNULL ) packet to local socket");
-  }
-
-  /** CBillingSocketTw::CheckResult's billing family (FxShop.exe.c:3739) —
-   *  the too-long line carries no packet id in this build. */
-  protected ReportInvalidPacketLine(addr: string): void {
-    console.error(`Invalid( = NULL ) packet received from billing socket, close connection: [${addr}]`);
-  }
-  protected ReportTooLongPacketLine(addr: string, _id: number): void {
-    console.error(`Too long packet length read from billing socket, close connection: [${addr}]`);
-  }
-  protected ReportSequencingErrorLine(addr: string): void {
-    console.error(`Error in billing packet sequencing, close connection: [${addr}]`);
-  }
-  protected ReportDecodingErrorLine(addr: string): void {
-    console.error(`Error in local packet decoding(Maybe CRC Mismatch), close connection: [${addr}]`);
-  }
-  constructor() {
-    super(CPacketSocket.dwRcvBufferSize, CPacketSocket.dwSndBufferSize, {
-      onPacket: (_sock, packet) => CBillingProcess.ms_pInstance?.OnPacket(packet),
-    });
-    this.m_szLogTag = "Shop";
-    this.SetHeaderCode(41, 41, 0);
   }
 }
 
@@ -1312,7 +1279,16 @@ export class CBillingProcess {
       return 0;
     }
     for (const svr of this.m_aBillingSvr) {
-      const socket = new CBillingSocketTw();
+      const socket = new CBillingSocketTw(true, {
+        onPacket: (_socket, packet) => this.OnPacket(packet),
+      });
+      socket.hooks.onClose = () => {
+        console.error("[Shop] BillingSocket Connected closed... "); // :30937
+        if (this.m_pSocket === socket) {
+          this.m_pSocket = null;
+          this.m_fConnected = 0;
+        }
+      };
       try {
         const conn = await Bun.connect({
           hostname: svr.ip,
@@ -1323,26 +1299,22 @@ export class CBillingProcess {
               socket.m_bConnected = true;
             },
             data: (_t, data) => socket.OnReceive(new Uint8Array(data as Buffer)),
-            close: () => {
-              console.error("[Shop] BillingSocket Connected closed... "); // :30937
-              socket.m_bConnected = false;
-              this.m_fConnected = 0;
-            },
-            error: () => {
-              this.m_fConnected = 0;
-            },
+            drain: () => socket.Flush(),
+            close: () => socket.Close(),
+            error: () => socket.Close(),
           },
         });
+        if (!socket.m_bConnected) continue;
         socket.bunSocket = conn;
         this.m_pSocket = socket;
         this.m_fConnected = 1;
         console.log("[Shop] Connection to Billing Server established"); // :521
         // CBillingProcess::ConnectToSvr — the 331 hello: [E4 4][E4 GetWorld()]
-        const hello = new CSendPacket(BILLING_SendPacket.OnConnEstablished, 4);
+        const hello = new CBillingSendPacket(BILLING_SendPacket.OnConnEstablished);
         hello.Encode4(4);
         hello.Encode4(this.m_nSvrTag);
         this.Send(hello);
-        return 1;
+        return this.m_fConnected;
       } catch {
         console.log("[Shop] Connection to Billing Server failed."); // :513
         if (++this.m_nConnectAttempts > 10000) {
@@ -1376,7 +1348,7 @@ export class CBillingProcess {
   }
 
   /** CBillingProcess::OnPacket (404DB0) — the billing ids are E4 payloads
-   *  behind the CPacketSocket framing. */
+   *  behind the dedicated 8-byte Tw frame. */
   OnPacket(n: CReceivedPacket): void {
     switch (n.Decode4()) {
       case BILLING_ReceivedPacket.OnRemainCashTw:
@@ -1399,7 +1371,7 @@ export class CBillingProcess {
     }
   }
 
-  /** CBillingProcess::RequestRemainCashTw — billing 301 (cipher degree 4):
+  /** CBillingProcess::RequestRemainCashTw — billing 301 (4-byte opcode, raw degree):
    *  [E4 SID][E4 BID][E4 4][E4 GetWorld()][E1 len][name][E4 serial]
    *  [E1 len][client ip].  Requires the billing link (this+324) and the
    *  user's socket. */
@@ -1408,7 +1380,7 @@ export class CBillingProcess {
     if (!user.m_pSocket) return;
     const ip = user.m_pSocket.m_strPeerAddress;
     const name = user.GetName();
-    const p = new CSendPacket(BILLING_SendPacket.RequestRemainCashTw, 4);
+    const p = new CBillingSendPacket(BILLING_SendPacket.RequestRemainCashTw);
     p.Encode4(user.m_nSID);
     p.Encode4(user.m_nBID);
     p.Encode4(4);
@@ -1428,13 +1400,13 @@ export class CBillingProcess {
    *  [E4 serial][E4 0][E4 0][E4 stockSN][E4 price][EStr clubId][EStr name]
    *  [E1 domain][E2 UA+128 HIWORD][EStr +2904 tranx string]. */
   RequestGift(user: CUser, targetId: string, stockSN: number, price: number): void {
-    const p = new CSendPacket(BILLING_SendPacket.RequestGift);
+    const p = CBillingSendPacket.FromBillingPacket(BILLING_SendPacket.RequestGift);
     p.Encode4(user.GetGlobalSerialNo());
     p.Encode4(0);
     p.Encode4(0);
     p.Encode4(stockSN);
     p.Encode4(price);
-    p.EncodeStr(user.m_strNexonClubId);
+    p.EncodeStr(user.GetNexonClubId());
     p.EncodeStr(user.GetName());
     p.Encode1(CxShop.ms_pInstance!.m_nFXAttr & 0xff); // CMainSystem+4 GetDomain
     p.Encode2(user.m_nUserAccountHiword);
@@ -1446,13 +1418,13 @@ export class CBillingProcess {
    *  [E4 serial][EStr +3008 coupon][EStr clubId][EStr name][E1 domain]
    *  [E2 UA+128 HIWORD]. */
   RequestCheckCoupon(user: CUser): void {
-    const p = new CSendPacket(BILLING_SendPacket.RequestCheckCoupon);
+    const p = CBillingSendPacket.FromCouponPacket(BILLING_SendPacket.RequestCheckCoupon);
     this.EncodeCouponBody(p, user);
     this.Send(p);
   }
 
   RequestUseCoupon(user: CUser): void {
-    const p = new CSendPacket(BILLING_SendPacket.RequestUseCoupon);
+    const p = CBillingSendPacket.FromCouponPacket(BILLING_SendPacket.RequestUseCoupon);
     this.EncodeCouponBody(p, user);
     this.Send(p);
   }
@@ -1460,7 +1432,7 @@ export class CBillingProcess {
   private EncodeCouponBody(p: CSendPacket, user: CUser): void {
     p.Encode4(user.GetGlobalSerialNo());
     p.EncodeStr(user.m_strCoupon);
-    p.EncodeStr(user.m_strNexonClubId);
+    p.EncodeStr(user.GetNexonClubId());
     p.EncodeStr(user.GetName());
     p.Encode1(CxShop.ms_pInstance!.m_nFXAttr & 0xff); // CMainSystem+4 GetDomain
     p.Encode2(user.m_nUserAccountHiword);
@@ -1469,7 +1441,7 @@ export class CBillingProcess {
   /** CBillingProcess::RequestDigiQAuthorization — billing 341:
    *  [E1 len][Ebuf]×3 (three length-prefixed ANSI strings). */
   RequestDigiQAuthorization(_user: CUser, a: string, b: string, c: string): void {
-    const p = new CSendPacket(BILLING_SendPacket.RequestDigiQAuthorization);
+    const p = new CBillingSendPacket(BILLING_SendPacket.RequestDigiQAuthorization);
     for (const s of [a, b, c]) {
       const buf = Buffer.from(s, "latin1");
       p.Encode1(buf.length);
@@ -1485,7 +1457,7 @@ export class CBillingProcess {
     if (!user.m_pSocket) return;
     const ip = user.m_pSocket.m_strPeerAddress;
     const name = user.GetName();
-    const p = new CSendPacket(BILLING_SendPacket.RequestPurchaseTw, 4);
+    const p = new CBillingSendPacket(BILLING_SendPacket.RequestPurchaseTw);
     p.Encode4(user.m_nSID);
     p.Encode4(user.m_nBID);
     p.Encode4(4);
@@ -1504,7 +1476,7 @@ export class CBillingProcess {
 
   /** CBillingProcess::TwRequestRTT — billing 351: [E1 123]. */
   TwRequestRTT(): void {
-    const p = new CSendPacket(BILLING_SendPacket.TwRequestRTT, 4);
+    const p = new CBillingSendPacket(BILLING_SendPacket.TwRequestRTT);
     p.Encode1(123);
     this.Send(p);
   }
@@ -1814,6 +1786,7 @@ export class CxShop {
             s.OnReceive(new Uint8Array(data as Buffer));
           }
         },
+        drain: (t) => clientSockets.get(t)?.Flush(),
         close: (t) => clientSockets.get(t)?.Close(),
         error: (_t, err) => console.error(`[Shop] ${String(err)}`),
       },
@@ -1839,6 +1812,7 @@ export class CxShop {
         data: (t, data) => {
           webSockets.get(t)?.OnReceive(new Uint8Array(data as Buffer));
         },
+        drain: (t) => webSockets.get(t)?.Flush(),
         close: (t) => {
           const s = webSockets.get(t);
           if (s) {

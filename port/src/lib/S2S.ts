@@ -17,6 +17,10 @@ export const SVRCLASS_UTIL = 99;
  *  CxUtil.exe.c:15632, CxLogin.exe.c:4928) and CxCenter decodes it back. */
 export const SVRIDX_IDENTIFY_XOR = 0x77;
 
+/** Raw center handshake, before framed traffic (CxCenter.exe.c:14324). */
+export const CENTER_GREETING_SIZE = 2 + 2; // version, socket descriptor
+export const LOCAL_SERVER_IDENTIFICATION_SIZE = 1 + 4 + 2 + 2; // class, index, versions
+
 /** CClientSocket::FlushClientSocketSndBuffer's census gate (FxServer.exe.c
  *  :9185, FxShop.exe.c:5278) — the socket/user count line prints at most
  *  every 0x493E0 ms. */

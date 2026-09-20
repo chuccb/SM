@@ -4,13 +4,15 @@
  * table packets (200/205/213/202), the purchase path (206 → 204, the DB
  * writes) and the misc handlers (214/226/20) — against the real code paths.
  */
-import { describe, test, expect, beforeAll } from "bun:test";
+import { GetTickCount } from "../src/core/GetTickCount.ts";
+import { describe, test, expect, beforeAll, spyOn } from "bun:test";
 import { Database } from "bun:sqlite";
 import { mkdirSync, rmSync } from "node:fs";
 import { CServerConfig, CXCENTER_STR_KEYS, FXSHOP_STR_KEYS } from "../src/core/Config.ts";
 import { CDBMan } from "../src/db/DBMan.ts";
 import { CxCenter, CUser } from "../src/Center/Center.ts";
-import { CxShop } from "../src/FXSS/Shop.ts";
+import { CxShop, CLocalUserTable } from "../src/FXSS/Shop.ts";
+import { CReceivedPacket, type CSendPacket } from "../src/core/Packet.ts";
 import { CItemMan } from "../src/FXSS/CItemMan.ts";
 import { SVRCLASS_SHOP } from "../src/lib/S2S.ts";
 import { GetUserHashNo } from "../src/db/DBMan.ts";
@@ -73,9 +75,10 @@ beforeAll(async () => {
   // the login flow would have registered "tester" on the center with a
   // pending shop connection; inject it directly (the LS's ReqConnectToSvr
   // would have left the user in the "connecting to shop idx 0" state)
-  const cu = new CUser("tester", SVRCLASS_SHOP, 0, 7);
+  const cu = new CUser("tester", SVRCLASS_SHOP, 0, 7, 0, 0, center);
   center.userTable.set("tester", cu);
   center.serialTable.set(7, cu);
+  cu.m_fConnecting = 1; // fixture: the successful check already ran
   cu.SetConnectingToSvr(SVRCLASS_SHOP, 0, center);
 });
 
@@ -84,8 +87,9 @@ async function connectShopUser(name: string, serial: number, consume18 = true): 
   // re-arm the center user's "connecting to the shop" state — the real flow
   // gets it from the LS's ReqConnectToSvr on every shop entry
   const cu = center.userTable.get(name)!;
-  cu.nConnectingType = SVRCLASS_SHOP;
-  cu.nConnectingIdx = 0;
+  cu.m_fConnecting = 1;
+  cu.nConnectStamp = GetTickCount();
+  center.InsertConnectingList(serial);
   const c = new TestClient();
   await c.connect(SHOP_PORT, { sndDeg: 2, rcvDeg: 2 });
   // the accept packet 0 ([E2 3][E2 7][E4 headerType][EStr patch url]) is
@@ -336,3 +340,34 @@ describe("shop flow", () => {
 // keep the tree-shaker honest about the imports used only in type positions
 void gsEncode;
 void gsDecode;
+
+
+// A06: actual SQLite account -> encrypted Shop login -> client coupon request.
+// Capture the billing send boundary; no external billing/payment is contacted.
+test("Shop login derives the club ID from DB email and carries it into coupon billing", async () => {
+  using info = new Database(`${DB_DIR}/UserInfo${String(GetUserHashNo("tester")).padStart(2, "0")}.db`);
+  const original = info.query<{ Email: string }, []>("SELECT Email FROM FxUserAccount WHERE ID='tester'").get()!;
+  try {
+    for (const [email, clubId] of [["mailowner@nexonclub.com", "mailowner"], ["mailowner@example.com", ""]]) {
+      info.query("UPDATE FxUserAccount SET Email=? WHERE ID='tester'").run(email!);
+      const client = await connectShopUser("tester", 7);
+      const sent = Promise.withResolvers<CSendPacket>();
+      const capture = spyOn(shop.billing, "Send").mockImplementation(packet => { sent.resolve(packet); });
+      const timeout = setTimeout(() => sent.reject(new Error("coupon request did not reach billing")), 2000);
+      try {
+        expect(CLocalUserTable.ms_pInstance!.FindUserFromGlobalSerialNo(7)!.GetNexonClubId()).toBe(clubId);
+        client.send(219, e => { e.str("fixture-coupon"); e.str(""); });
+        const packet = await sent.promise;
+        const decoded = new CReceivedPacket(); decoded.SetRcvPacket(packet.m_pBlock, packet.m_uOffset);
+        expect([decoded.Decode1(), decoded.Decode1(), decoded.Decode4()]).toEqual([1, 0, 7]);
+        expect(decoded.DecodeStr()).toBe("fixture-coupon");
+        expect(decoded.DecodeStr()).toBe(clubId);
+        expect(decoded.DecodeStr()).toBe("tester");
+      } finally {
+        clearTimeout(timeout); capture.mockRestore(); client.close();
+      }
+    }
+  } finally {
+    info.query("UPDATE FxUserAccount SET Email=? WHERE ID='tester'").run(original.Email);
+  }
+});

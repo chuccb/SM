@@ -2,13 +2,14 @@
  *  link). */
 
 import { Decode1, Decode2, Decode4, Encode1, Encode2, Encode4 } from "../core/BufferManipulator.ts";
+import { CRand } from "../core/CRand.ts";
 import { CServerConfig } from "../core/Config.ts";
 import { CReceivedPacket, CSendPacket, CipherDegree, kPacketEncryptedCRC8, kPacketRaw } from "../core/Packet.ts";
 import { CDBMan } from "../db/DBMan.ts";
 import { CLocalSocket } from "../lib/CenterLink.ts";
 import { GS_ClientSend } from "../lib/PacketIDs.ts";
 import { CENTER_VERSION, CM_ReceivedPacket, CONN_HELLO_VERSION, MC_ReceivedPacket, SVRCLASS_GAME } from "../lib/S2S.ts";
-import { CDynInfoCalculator_GetLevel } from "../LS/LevelTable.ts";
+import { CDynInfoCalculator_GetLevel, CDynInfoCalculator_GetMaxExpInLevel } from "../lib/LevelTable.ts";
 import { CChannelPool } from "./Chat";
 import { CONN_PATCH_URL, SESSION_LOC_OTHER_SERVER } from "./Defs";
 import { CConnectPool } from "./Pools";
@@ -21,6 +22,13 @@ import { CClientSocket } from "./User";
 /** CMainSystem — config-derived globals + the client dispatch hook. */
 export class CMainSystem {
   static ms_pInstance: CMainSystem | null = null;
+
+  /** TS execution-context state, not an original CMainSystem field.
+   * CThread::ProcEntry (00436E00) seeds each worker with time(NULL), in
+   * epoch SECONDS. Bun has one logical request worker, shared by its rooms;
+   * other services and the normal timer must not consume this stream.
+   * Native IOCP worker scheduling is not emulated (see the RNG audit). */
+  readonly m_WorkerRandom = new CRand(Math.floor(Date.now() / 1000));
 
   m_nGameDomain = 0; // +4
   m_nChannelType = 0; // +8 (MainSystem+8 — chByteType[ServerIndex])
@@ -339,8 +347,9 @@ export class CCenterProcess {
         p.Encode4(info.draw);
         p.Encode4(info.lose);
         p.Encode4(info.exp);
-        p.Encode4(0x7fffffff);
-        p.Encode2(CDynInfoCalculator_GetLevel(info.exp));
+        const level = CDynInfoCalculator_GetLevel(info.exp);
+        p.Encode4(CDynInfoCalculator_GetMaxExpInLevel(level));
+        p.Encode2(level);
         p.Encode4(info.money);
         p.Encode1(type);
         p.Encode4(sessionIdx);

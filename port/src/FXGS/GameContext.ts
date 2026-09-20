@@ -5,7 +5,7 @@ import { Decode1, Decode2, Decode4, Encode1, Encode2, Encode4, EncodeBuffer } fr
 import { CReceivedPacket, CSendPacket, CipherDegree, kPacketEncryptedCRC8 } from "../core/Packet.ts";
 import { GS_ClientSend } from "../lib/PacketIDs.ts";
 import { timeGetTime } from "../core/timeGetTime.ts";
-import { CDynInfoCalculator_GetLevel, CDynInfoCalculator_GetMaxExpInLevel } from "../LS/LevelTable.ts";
+import { CDynInfoCalculator_GetLevel, CDynInfoCalculator_GetMaxExpInLevel, LEVEL_EXP_SENTINEL } from "../lib/LevelTable.ts";
 import { MAX_SESSION_SLOTS, SLOTSTATE_COLOR_MASK, UDP_REGULATE_DELAY } from "./Defs";
 import { CGameSession } from "./Session";
 import { CGameSessionTable } from "./SessionTable";
@@ -184,11 +184,13 @@ export class CDynInfoCalculator {
 
   /** CDynInfoCalculator::GetExpPercentage (40B29E) — cur exp ‰ inside its level. */
   static GetExpPercentage(nCur: number): number {
+    nCur |= 0;
     const level = CDynInfoCalculator_GetLevel(nCur);
     const nMaxExp = CDynInfoCalculator_GetMaxExpInLevel(level);
     const nLowExp = CDynInfoCalculator_GetMaxExpInLevel(level - 1);
-    if (nLowExp === 0x7fffffff) return 0;
-    return Math.trunc(((nCur - nLowExp) * 1000) / (nMaxExp - nLowExp));
+    if (nLowExp === LEVEL_EXP_SENTINEL || nMaxExp === LEVEL_EXP_SENTINEL) return 0;
+    // 0040B2C7..0040B2D2: signed sub, 32-bit imul, signed idiv.
+    return Math.trunc(Math.imul((nCur - nLowExp) | 0, 1000) / (nMaxExp - nLowExp)) | 0;
   }
 
   /** CDynInfoCalculator::IsPremiumRewardCondition (40B2FD). */

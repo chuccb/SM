@@ -11,9 +11,14 @@
     "verbatimModuleSyntax": false,
     "noEmit": true,
     "allowImportingTsExtensions": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "lib": [
+      "ESNext"
+    ]
   },
   "include": [
-    "src/**/*.ts"
+    "src/**/*.ts",
+    "test/**/*.ts",
+    "tools/**/*.ts"
   ]
 }

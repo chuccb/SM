@@ -26,7 +26,7 @@ import { CDBMan, EncodePassword } from "../db/DBMan.ts";
 import { CMultiServer, inet_addr } from "./MultiServer.ts";
 import { MTUDPServer, SetLocalUserTableFinder } from "./MTUDPServer.ts";
 import { CChannelCache } from "./ChannelCache.ts";
-import { CDynInfoCalculator_GetLevel } from "./LevelTable.ts";
+import { CDynInfoCalculator_GetLevel } from "../lib/LevelTable.ts";
 import { CLocalSocket } from "../lib/CenterLink.ts";
 import { MC_ReceivedPacket, CENTER_VERSION, CONN_HELLO_VERSION, SVRCLASS_GAME, SVRCLASS_LOGIN } from "../lib/S2S.ts";
 import {
@@ -256,18 +256,13 @@ export class CClientSocket extends CPacketSocket {
       return true;
     }
 
-  PostClosePacket(): void {
-    this.Close();
-  }
-
   /** CClientSocket::SafeFree — pool cleanup + center unregistration. */
-  Close(): void {
-    if (!this.m_bConnected) return;
+  protected OnClose(): void {
     for (const u of this.m_apUser) if (u) CLoginPool.ms_pInstance?.DelUser(u);
-    super.Close();
     CLoginPool.ms_pInstance?.DelSocket(this);
     CClientSocket.ms_tblSN2Obj.delete(this.m_nLocalSerialNo);
     CCenterProcess.ms_pInstance?.UnregisterConnection(this.m_nDeleteUserSN);
+    super.OnClose();
   }
 }
 
@@ -764,7 +759,8 @@ function CDBMan_InitUser(db: CDBMan, user: CUser, id: string, pw: string): numbe
   return 0;
 }
 
-/** CDBMan::RegisterNewUser (CxLogin.exe.c:11465) — 0 ok, 1 fail. */
+/** CDBMan::RegisterNewUser (0040A700) — 0 on successful SQL execution,
+ *  1 on SQL error. prCreateUser's SQLite adapter returns -1 on such errors. */
 function CDBMan_RegisterNewUser(
   db: CDBMan,
   id: string,
@@ -1341,6 +1337,7 @@ export async function main(cfgFile: string, dbDir: string): Promise<void> {
         }
         clientSockets.get(t)?.OnReceive(new Uint8Array(data as Buffer));
       },
+      drain: (t) => clientSockets.get(t)?.Flush(),
       close: (t) => {
         clientSockets.get(t)?.Close();
       },

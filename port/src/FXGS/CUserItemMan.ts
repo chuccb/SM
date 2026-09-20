@@ -129,16 +129,6 @@ export interface _USERACCOUNT {
   GuildSn: number;
 }
 
-/** _USERDYNINFO — money/exp/win/draw/lose (+ the id). */
-export interface _USERDYNINFO {
-  strID: string;
-  money: number;
-  exp: number;
-  win: number;
-  draw: number;
-  lose: number;
-}
-
 /** UserInventory — one owned item (84 bytes in the original). */
 export class UserInventory {
   ItemSN = 0; // +0

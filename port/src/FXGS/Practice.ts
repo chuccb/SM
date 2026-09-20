@@ -4,13 +4,23 @@ import { Encode1, Encode2 } from "../core/BufferManipulator.ts";
 import { CReceivedPacket, CSendPacket, CipherDegree, kPacketEncryptedCRC8 } from "../core/Packet.ts";
 import { GS_ClientSend, GS_INPLAY_SendInventory, SESSION_ReceivedPacket } from "../lib/PacketIDs.ts";
 import { timeGetTime } from "../core/timeGetTime.ts";
-import { AI_LEVEL_BAND, AI_LEVEL_BAND_TOP, MAX_SESSION_SLOTS, SLOTSTATE_BOMBER_MASK, SLOTSTATE_CHIEF, SLOTSTATE_CHIEF_CLEAR, SLOTSTATE_COLOR_MASK, SLOTSTATE_GROUP_CLEAR } from "./Defs";
+import {
+  AI_LEVEL_BAND,
+  AI_LEVEL_BAND_TOP,
+  MAP_IDX_RANDOM,
+  MAX_SESSION_SLOTS,
+  SLOTSTATE_BOMBER_MASK,
+  SLOTSTATE_CHIEF,
+  SLOTSTATE_CHIEF_CLEAR,
+  SLOTSTATE_COLOR_MASK,
+  SLOTSTATE_GROUP_CLEAR,
+  SLOTSTATE_GROUP_MASK,
+} from "./Defs.ts";
 import { CGameSession } from "./Session";
 import { CClientSocket, CUser, GetInfoStr } from "./User";
 import { CBomberAttr, CGameMapTmplList } from "./GameData";
 import { CMainSystem } from "./System";
 import { CDynInfoCalculator } from "./GameContext";
-import { SLOTSTATE_GROUP_MASK } from "./Defs";
 
 // ============================ CPracticeSession ============================
 
@@ -50,11 +60,11 @@ export class CPracticeSession extends CGameSession {
     this.m_nGamePhase = 0; // +984
     for (const host of this.m_rgUdpHost) host.fill(0); // memset(+988, 0, 0xC0)
     this.m_nGameSerial = this.m_nSerialNo; // +12572 = +148
-    this.m_nGameVersion = Math.floor(Math.random() * 0x7fffffff); // +12568 = rand()
+    this.m_nGameVersion = CMainSystem.ms_pInstance!.m_WorkerRandom.rand(); // +12568 = rand()
     this.m_nGhostCount = 0; // +936
     this.m_rgSlotGhost.fill(-1); // memset(+872, -1, 0x20)
     this.m_rgGhostSlot.fill(-1); // memset(+904, -1, 0x20)
-    this.m_nMapIdx = -1; // +850 (u16) — the random-map mark
+    this.m_nMapIdx = MAP_IDX_RANDOM; // +850 (signed i16) — the random-map mark
     this.m_nGameTypeMod = 0; // +948
     this.m_fPlaying = 0; // +852
     this.m_nCurPlayerNum = 0; // +832

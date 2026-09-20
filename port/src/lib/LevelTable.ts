@@ -3,7 +3,8 @@
  *
  * Dumped verbatim from the initialized .data of CxLogin.exe
  * (g_nLevel2ExpTable @ .data:0048E160, kLevelTableSize @ .data:0048E868 = 0x1C2).
- * CDynInfoCalculator::GetLevel binary-searches this table.
+ * All 450 entries also match FXGS @004A84B8 and FXSS @00492180.
+ * Shared here so GS/Shop do not depend on the Login service implementation.
  */
 export const g_nLevel2ExpTable: readonly number[] = [
   0, 3000, 6000, 10500, 13500, 16500, 21000, 24000, 27000, 31500,
@@ -54,26 +55,28 @@ export const g_nLevel2ExpTable: readonly number[] = [
 ];
 
 export const kLevelTableSize = g_nLevel2ExpTable.length; // 0x1C2
+/** Native INT_MAX marker for a level outside the table, not an exp clamp. */
+export const LEVEL_EXP_SENTINEL = 0x7fffffff;
 
 /**
  * CDynInfoCalculator::GetMaxExpInLevel (FxServer.exe.lst:40B284) — the
- * cumulative exp that finishes level `nLevel`; out-of-range levels give 0.
+ * cumulative exp that finishes level `nLevel`; out-of-range levels give INT_MAX (0040B298).
  */
 export function CDynInfoCalculator_GetMaxExpInLevel(nLevel: number): number {
-  if (nLevel < 0 || nLevel >= kLevelTableSize) return 0;
+  nLevel |= 0; // native signed int argument
+  if (nLevel < 0 || nLevel >= kLevelTableSize) return LEVEL_EXP_SENTINEL;
   return g_nLevel2ExpTable[nLevel]!;
 }
 
 /** CDynInfoCalculator::GetLevel — the binary search from CxLogin.exe.c:11524. */
 export function CDynInfoCalculator_GetLevel(nExp: number): number {
+  nExp |= 0; // native signed int argument
   let hi = kLevelTableSize;
   let lo = 0;
-  if (kLevelTableSize !== 1) {
-    do {
-      const mid = (hi + lo) >> 1;
-      if (nExp >= g_nLevel2ExpTable[mid]!) lo = mid;
-      else hi = mid;
-    } while (lo + 1 !== hi);
+  while (lo + 1 < hi) {
+    const mid = (hi + lo) >> 1;
+    if (nExp >= g_nLevel2ExpTable[mid]!) lo = mid;
+    else hi = mid;
   }
   return hi;
 }

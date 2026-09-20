@@ -11,11 +11,17 @@ export const ACCOUNTING_LOG_CHANNEL_TYPE = 99;
  *  by a trap or by the UDP-loss sweep (:33026, two Encode2(9999)). */
 export const DEATH_COORD = 9999;
 /** the map-template version floor — the loader clamps file dwords < 1000 up
- *  to it (CGameMapTmplList::Load). */
+ *  to it (CGameMapTmpl::LoadMap). */
 export const MAP_VERSION_MIN = 1000;
-/** negative map indexes pick the theme table counting down from here
- *  (CGameMapTmplList dword 321 = the m_apTheme base). */
-export const THEME_IDX_BASE = 321;
+/** Signed i16 map selections (0041C497 / 0041C9C4): -1 = any map,
+ * -2 = theme 0, -3 = theme 1, etc. */
+export const MAP_IDX_RANDOM = -1;
+export const MAP_IDX_THEME_BASE = -2;
+
+/** Convert a themed wire selection to its zero-based theme index. */
+export function GetThemeIdxFromMapIdx(mapIdx: number): number {
+  return MAP_IDX_THEME_BASE - mapIdx;
+}
 /** Every 32-bit stamp in the original is a winmm timeGetTime() uptime
  *  dword — the port routes those through core/timeGetTime (performance.now
  *  wrapped at 2^32); the mask remains for the few raw-epoch leftovers. */
@@ -40,8 +46,10 @@ export const RTT_HASH = 0x11221122;
 export const RTT_HASH_INV = 0xdf1a2e51;
 /** CUserPool::DisconnectTimeoutSocket — 0x9C40 ms without RTT. */
 export const SOCKET_TIMEOUT = 0x9c40;
-/** CUser::DeferFlushModifiedInfo — burst flush threshold (0x19). */
+/** CUser::DeferFlushModifiedInfo — completed-game threshold, not timer ticks. */
 export const DYN_FLUSH_BURST = 0x19;
+/** CUser::IncDecMoney (004090EC) — balance cap after signed int32 addition. */
+export const USER_MONEY_MAX = 1_000_000;
 
 /**
  * CBaseSession m_rgSlotState triple (+68+3·slot) bit fields — byte0: bits 2-4

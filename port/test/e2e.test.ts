@@ -5,6 +5,8 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { CServerConfig, CXCENTER_STR_KEYS } from "../src/core/Config.ts";
 import { CxCenter, CUser as CenterCUser } from "../src/Center/Center.ts";
+import { CONNECTION_TIMEOUT_MS, CONNECTING_LIST_BUCKET_COUNT } from "../src/Center/Defs.ts";
+import { GetTickCount } from "../src/core/GetTickCount.ts";
 import { main as loginMain } from "../src/LS/Login.ts";
 import { inet_addr } from "../src/LS/MultiServer.ts";
 import {
@@ -20,11 +22,13 @@ import {
   main as gameMain,
 } from "../src/FXGS/GameServer.ts";
 import { UpdateCRC32 } from "../src/core/CRC.ts";
+import { RAND_MAX } from "../src/core/CRand.ts";
 import { CLocalSocket } from "../src/lib/CenterLink.ts";
 import { SVRCLASS_UTIL, MC_ReceivedPacket } from "../src/lib/S2S.ts";
 import { CReceivedPacket, CSendPacket, CipherDegree } from "../src/core/Packet.ts";
 import { GS_ClientSend } from "../src/lib/PacketIDs.ts";
 import { CA_CONFIG_SEED_IP } from "../src/db/CAConfigBak.ts";
+import { EncodePassword, GetUserHashNo } from "../src/db/DBMan.ts";
 import { SimpleStreamEncrypt3, SimpleStreamDecrypt3 } from "../src/core/StreamCipher.ts";
 import { copyFileSync, mkdirSync, rmSync } from "node:fs";
 import { Database } from "bun:sqlite";
@@ -165,7 +169,7 @@ afterAll(() => {
 describe("center link", () => {
   test("LS attached and received channel info", () => {
     expect(center.GetSvr(1, 0)?.socket).not.toBeNull();
-    expect(center.GetSvr(1, 0)!.socket!.fGreeted).toBe(true);
+    expect(Reflect.get(center.GetSvr(1, 0)!.socket!, "fGreeted")).toBe(true);
   });
 });
 
@@ -214,17 +218,18 @@ describe("login flow", () => {
     // CAString row (CxLogin.exe.c:29957 "type = 0 or type = 1")
     expect(notice[0]!).toBe(1); // count
     expect(notice[1]!).toBe(0); // type
-    const nstr = () => {
-      const len = notice[o2!]! | (notice[o2! + 1]! << 8) | (notice[o2! + 2]! << 16) | (notice[o2! + 3]! << 24);
-      o2! += 4;
-      let t = "";
-      for (let i = 0; i < len; i++) t += String.fromCharCode(notice[o2++!]!);
-      return t;
+    const noticeView = new DataView(notice.buffer, notice.byteOffset, notice.byteLength);
+    let noticeOffset = 2;
+    const readNoticeString = () => {
+      const length = noticeView.getUint32(noticeOffset, true);
+      noticeOffset += 4;
+      const value = Buffer.from(notice.subarray(noticeOffset, noticeOffset + length)).toString("latin1");
+      noticeOffset += length;
+      return value;
     };
-    let o2 = 2;
-    expect(nstr()).toBe("ChargeUrl");
-    expect(nstr()).toBe("http://www.digicell.com.tw/opencard/money.aspx");
-    expect(o2).toBe(notice.length);
+    expect(readNoticeString()).toBe("ChargeUrl");
+    expect(readNoticeString()).toBe("http://www.digicell.com.tw/opencard/money.aspx");
+    expect(noticeOffset).toBe(notice.length);
   });
 
   test("AskFirstInfo returns the nexonclub URLs", async () => {
@@ -254,7 +259,6 @@ describe("login flow", () => {
       e.str("900101"); // s6 Birthday
       e.str("tester01"); // s7 Name
       e.str("tester01@mail.nexonclub.com"); // s8 Email
-      e.u16be ? null : null;
       e.u8(1); // EmailRcv
       e.u8(1); // Gender
       e.str("Taipei"); // Address
@@ -338,7 +342,7 @@ describe("login flow", () => {
   test("RequestEnterChannelStage returns the cached channel packets", async () => {
     // the game-server attach re-broadcast landed in the pending queue; drop
     // the stale copies before asking for a fresh set
-    client.pending.length = 0;
+    client.discardPending();
     // hash 0 → mismatch → full info variant
     client.send(9, (e) => {
       e.u32be(0);
@@ -573,7 +577,7 @@ describe("game server entry flow (FXGS)", () => {
     expect(r4(p)).toBe(0); // draw
     expect(r4(p)).toBe(0); // lose
     expect(r4(p)).toBe(0); // exp
-    expect(r4(p)).toBe(0x7fffffff); // max exp at the top level
+    expect(r4(p)).toBe(3000); // native table: upper threshold for level 1
     expect(r2(p)).toBe(1); // level 1
     expect(r4(p)).toBe(0); // money
     expect(r1(p)).toBe(10);
@@ -668,32 +672,35 @@ function encStrInto(e: Encoder, s: string, key: number): void {
 /** Register + log in through the LS, then walk the full GS entry path.
  *  opts.gsIdx/gsPort pick the game server (the packet-6 E4 is the
  *  small-loaded index the center routes by), guildSn is the guild serial the
- *  GS entry reads, mid runs between the LS login and the GS connect. */
+ *  GS entry reads, mid runs between the LS login and the GS connect;
+ *  existingAccount skips registration when exercising a real re-login. */
 async function enterGame(
   name: string,
-  opts: { gsIdx?: number; gsPort?: number; guildSn?: number; mid?: () => void | Promise<void> } = {},
+  opts: { gsIdx?: number; gsPort?: number; guildSn?: number; existingAccount?: boolean; mid?: () => void | Promise<void> } = {},
 ): Promise<{ ls: TestClient; gs: TestClient; sn: number }> {
   const ls = new TestClient();
   await ls.connect(13838, { sndDeg: CipherDegree.kPacketEncryptedCRC8, rcvDeg: CipherDegree.kPacketEncryptedCRC8 });
-  ls.pending.length = 0;
-  ls.send(5, (e) => {
-    e.str(name); // s1 = ID
-    e.str(name); // s2 = Password
-    e.str("q");
-    e.str("a");
-    e.str("123456-1234567");
-    e.str("900101");
-    e.str(name);
-    e.str(name + "@mail.nexonclub.com");
-    e.u8(1); // EmailRcv
-    e.u8(1); // Gender
-    e.str("Taipei");
-    e.str("02-12345678");
-    e.str("profile");
-    e.u8(0); // Reveal
-  });
-  const created = await ls.recv(5);
-  expect(r1(created)).toBe(0);
+  ls.discardPending();
+  if (!opts.existingAccount) {
+    ls.send(5, (e) => {
+      e.str(name); // s1 = ID
+      e.str(name); // s2 = Password
+      e.str("q");
+      e.str("a");
+      e.str("123456-1234567");
+      e.str("900101");
+      e.str(name);
+      e.str(name + "@mail.nexonclub.com");
+      e.u8(1); // EmailRcv
+      e.u8(1); // Gender
+      e.str("Taipei");
+      e.str("02-12345678");
+      e.str("profile");
+      e.u8(0); // Reveal
+    });
+    const created = await ls.recv(5);
+    expect(r1(created)).toBe(0);
+  }
   ls.send(3, (e) => {
     e.u8(1);
     encStrInto(e, name, 0x11223344);
@@ -744,6 +751,7 @@ let roomChief: TestClient | null = null;
 let roomMember: TestClient | null = null;
 let roomLobby: TestClient | null = null; // tester02, parked in the lobby
 let roomSerial = 0; // the room's +148 serial (the UDP check echoes it)
+let roomGameVersion = -1; // CRT rand value recovered from the first kickoff
 let roomMemberSN = 0; // tester03's global serial
 let testMapCrc = 0; // the CRC32 the GS computed over the test map blob
 
@@ -755,7 +763,7 @@ describe("game server room flow (FXGS)", () => {
     await gs.recv(15);
     // no rooms: PutAllSessionInfo's loop writes no 83 packet at all
     await Bun.sleep(150);
-    expect(gs.pending.find((p) => p.id === 83)).toBeUndefined();
+    expect(gs.hasPending(83)).toBe(false);
     gs.send(20, (e) => {
       e.u32be(0x1234);
       e.u32be(0x11221122);
@@ -903,21 +911,22 @@ describe("game server room flow (FXGS)", () => {
     expect(rbuf(p107b, 3)[0]).toBe(0x04);
   });
 
-  test("select map (97) broadcasts 112 and re-issues the slot states", async () => {
+  test("select map (97): random, theme and explicit choices broadcast 112 + 107 to both clients", async () => {
     const chief = roomChief!;
     const member = roomMember!;
-    chief.send(97, (e) => {
-      e.u16(0); // map 0
-    });
-    const p112 = await chief.recv(112);
-    expect(r2(p112)).toBe(0); // the chosen map
-    // case 8: every seated slot's state is re-sent (colors unchanged)
-    for (let i = 0; i < 2; i++) {
-      const p107 = await chief.recv(107);
-      expect(r1(p107)).toBe(i);
+    // The fixture has one 8-team map in theme 0. Negative selections must
+    // reach the same colour fold as map 0, not unsigned map 65535/65534.
+    for (const selection of [0xffff, 0xfffe, 0]) {
+      chief.send(97, (e) => e.u16(selection));
+      for (const client of [chief, member]) {
+        expect(r2(await client.recv(112))).toBe(selection);
+        for (let slot = 0; slot < 2; slot++) {
+          const packet = await client.recv(107);
+          expect(r1(packet)).toBe(slot);
+          expect(Array.from(rbuf(packet, 3))).toEqual(slot === 0 ? [2, 0, 0] : [4, 1, 1]);
+        }
+      }
     }
-    const p112b = await member.recv(112);
-    expect(r2(p112b)).toBe(0);
   });
 
   test("select color (98) → 108, select bomber (99) → 109", async () => {
@@ -1089,8 +1098,8 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
   test("the MTUDP launch handshake: type 1 (mapCRC+attrs) then type 11 (peer info) → 150 + 120", async () => {
     const chief = roomChief!;
     const member = roomMember!;
-    chief.pending.length = 0;
-    member.pending.length = 0;
+    chief.discardPending();
+    member.discardPending();
     const udp = await Bun.udpSocket({});
     const sendCheck = async (gserial: number, type: number): Promise<void> => {
       // the type-1 body: [type][E4 gserial][E2 idx][E4 serial][2×(E4 ip][E2 port)]
@@ -1164,7 +1173,10 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
       // share it, so only pin non-zero
       expect(r4(p150)).toBeGreaterThan(0);
       const seq = r4(p150);
-      expect(seq).toBeGreaterThan(0); // serial ^ version
+      const version = (seq ^ roomSerial) >>> 0;
+      expect(version).toBeLessThanOrEqual(RAND_MAX); // CRT rand is 15-bit; XOR may legitimately be zero
+      if (roomGameVersion === -1) roomGameVersion = version;
+      expect(version).toBe(roomGameVersion);
       expect(r4(p150)).toBe(0); // ghostStart (tmpl+60, RAW seconds on the wire)
       expect(r4(p150)).toBe(0); // ghostFreq (tmpl+64, RAW seconds on the wire)
     }
@@ -1294,8 +1306,8 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
   test("kill + finish → 163 GameResult faithful, and 164 waits the full 8 s", async () => {
     const chief = roomChief!;
     const member = roomMember!;
-    chief.pending.length = 0;
-    member.pending.length = 0;
+    chief.discardPending();
+    member.discardPending();
     // slot0 (the chief) reports being killed by slot 1: event 4 —
     // [E1 slotcode][E2 x][E2 y][E1 killer][E1 drops]
     chief.send(146, (e) => {
@@ -1352,6 +1364,14 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
       expect(serials[0]).not.toBe(serials[1]);
       expect(res.off).toBe(res.buf.length); // nothing trailing
     }
+    // The same mutated _USERDYNINFO must be visible on the live encrypted
+    // detail path, even though fewer than 25 games have been completed.
+    member.send(67, (e) => e.str("tester03"));
+    const detail = await member.recv(71);
+    expect(r1(detail)).toBe(1);
+    expect(rstr(detail)).toBe("tester03"); rstr(detail); rstr(detail); r1(detail);
+    expect([r4(detail), r4(detail), r4(detail)]).toEqual([1, 0, 0]);
+    expect(r4(detail)).toBe(0); expect(r4(detail)).toBe(3000); expect(r2(detail)).toBe(1);
     // the 164 return-to-stage must NOT ride an early tick: the official
     // gate is timeGetTime() - m_dwEndTime > 0x1F40 (8 s) in the u32 stamp
     // domain — a result screen cut short after one tick crashed clients
@@ -1379,8 +1399,8 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
     // This is the path a crash-free client finally reaches; replay the
     // whole launch (106 → 115/116 → the UDP type-1 re-arms the launch-ok
     // bits → the kickoff 150) and prove the round is live once more.
-    chief.pending.length = 0;
-    member.pending.length = 0;
+    chief.discardPending();
+    member.discardPending();
     member.send(96, (e) => {
       e.u8(1); // re-ready — DoReturnPrepareStage wiped the group codes
     });
@@ -1420,8 +1440,10 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
     // the kickoff 150s — DoStartGame on the round-2 launch
     const p150c2 = await chief.recv(150, 4000);
     expect(r4(p150c2)).toBeGreaterThan(0);
+    expect((r4(p150c2) ^ ((roomSerial + 1) >>> 0)) >>> 0).toBe(roomGameVersion);
     const p150m2 = await member.recv(150, 4000);
     expect(r4(p150m2)).toBeGreaterThan(0);
+    expect((r4(p150m2) ^ ((roomSerial + 1) >>> 0)) >>> 0).toBe(roomGameVersion);
     // the round is live: a kill relays again
     chief.send(146, (e) => {
       e.u8(0x40);
@@ -1445,7 +1467,7 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
     expect(r4(p106)).toBeGreaterThan(0); // the member's serial
     // SetNewChief(-1) has no one left to crown — no 107s
     // drop tester02's stale lobby broadcasts so the 87 below is the destroy
-    roomLobby!.pending.length = 0;
+    roomLobby!.discardPending();
     // the chief leaving destroys the room; the lobby learns via the timer 87
     chief.close();
     const lobby = await enterGame("tester04");
@@ -1453,12 +1475,31 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
     await lobby.gs.recv(15);
     // no rooms left: PutAllSessionInfo's loop writes no 83 packet at all
     await Bun.sleep(150);
-    expect(lobby.gs.pending.find((p) => p.id === 83)).toBeUndefined();
+    expect(lobby.gs.hasPending(83)).toBe(false);
     // the destroyed-room flag turns into an 87 on the next timer tick,
     // fanned out to the lobby-stage sockets (CChatPool::SendAll(a2, 1))
     const p87 = await roomLobby!.recv(87, 3000);
     expect(r2(p87)).toBe(0);
     expect(r4(p87)).toBeGreaterThan(0);
+  });
+
+  test("game win and active-game leave survive actual LS/GS re-login", async () => {
+    // tester03 won round one, then left the active second round. The
+    // socket teardown force-flushes one win and one loss, even at exp=0.
+    const stored = new Database(DB_DIR + "/UserInfo02.db", { readonly: true });
+    try {
+      expect(stored.query("SELECT WIN, DRAW, LOSE, EXP FROM FxUserDynamic WHERE ID='tester03'").get())
+        .toEqual({ Win: 1, Draw: 0, Lose: 1, Exp: 0 });
+    } finally { stored.close(); }
+    const again = await enterGame("tester03", { existingAccount: true });
+    try {
+      again.gs.send(67, (e) => e.str("tester03"));
+      const p = await again.gs.recv(71);
+      expect(r1(p)).toBe(1); expect(rstr(p)).toBe("tester03");
+      rstr(p); rstr(p); r1(p);
+      expect([r4(p), r4(p), r4(p)]).toEqual([1, 0, 1]);
+      expect(r4(p)).toBe(0); expect(r4(p)).toBe(3000); expect(r2(p)).toBe(1);
+    } finally { again.gs.close(); again.ls.close(); }
   });
 });
 
@@ -1498,7 +1539,7 @@ describe("audit regression: 82 auto-join, before-join ring, BomberAttr map", () 
     expect(attr.IsValidSelectIdx(1)).toBe(true); // the random index (== total)
   });
 
-  test("CUser::CheckConnectingToSvr (4151B0): the freed/twice/same/unregistered/shutdown/premium table", () => {
+  test("CUser::CheckConnectingToSvr (4153B0): the freed/twice/same/unregistered/shutdown/premium table", () => {
     // three configured game servers: a normal one, a socket-less one and a
     // type-41 premium one (the center.cfg T41 entry)
     const svrs = [
@@ -1516,7 +1557,7 @@ describe("audit regression: 82 auto-join, before-join ring, BomberAttr map", () 
     freed.fFree = 1;
     expect(freed.CheckConnectingToSvr(man, 10, 0)).toBe(0); // Set-freed
     const twice = mk();
-    twice.nConnectingType = 10;
+    twice.m_fConnecting = 1;
     expect(twice.CheckConnectingToSvr(man, 10, 0)).toBe(0); // still connecting
     const same = mk();
     same.nSvrIdx = 0;
@@ -1534,7 +1575,7 @@ describe("audit regression: 82 auto-join, before-join ring, BomberAttr map", () 
   test("CheckConnectionEstablished (415570): match/mismatch/not-connecting", () => {
     const u = new CenterCUser("tester", 10, -0x80000000, 1, 1, 0x7f000001);
     expect(u.CheckConnectionEstablished(10, 0)).toBe(0); // not connecting → report
-    u.nConnectingType = 10;
+    u.m_fConnecting = 1;
     u.nChannel = 10;
     u.nSvrIdx = 0;
     expect(u.CheckConnectionEstablished(10, 0)).toBe(1); // the match
@@ -1809,4 +1850,144 @@ describe("guild channel end to end (T77, the game3.cfg subprocess)", () => {
     gs.close();
     lobby.close();
   });
+});
+
+
+// A03: real LS protocol, with a DB fault visible to the server's connection.
+describe("atomic registration over the encrypted LS connection", () => {
+  function sendRegistration(client: TestClient, id: string) {
+    client.send(5, (e) => {
+      e.str(id);
+      e.str("fixture-pw");
+      e.str("question");
+      e.str("answer");
+      e.str("identity");
+      e.str("2000-01-01");
+      e.str("display");
+      e.str("mail");
+      e.u8(1);
+      e.u8(1);
+      e.str("address");
+      e.str("tel");
+      e.str("profile");
+      e.u8(1);
+    });
+  }
+  function sendLogin(client: TestClient, id: string, password = "fixture-pw") {
+    client.send(3, (e) => {
+      e.u8(1);
+      encStrInto(e, id, 0x11223344);
+      encStrInto(e, password, 0x44332211);
+      e.u32be(0);
+    });
+  }
+  function rows(db: Database, id: string) {
+    return ["FxUserAccount", "FxUserDynamic", "TxUserDynamic"].map((table) =>
+      db.query<{ n: number }, [string]>(`SELECT COUNT(*) AS n FROM ${table} WHERE ID=?`).get(id)!.n,
+    );
+  }
+  for (const autoRegister of [false, true]) {
+    test(`creation failure, clean retry and credential preservation; auto=${autoRegister}`, async () => {
+      const id = autoRegister ? "atomiclogin" : "atomicnew";
+      const file = `UserInfo${String(GetUserHashNo(id)).padStart(2, "0")}.db`;
+      const info = new Database(`${DB_DIR}/${file}`);
+      const client = new TestClient();
+      const opcode = autoRegister ? 3 : 5;
+      const send = () => autoRegister ? sendLogin(client, id) : sendRegistration(client, id);
+      try {
+        await client.connect(13838, { sndDeg: CipherDegree.kPacketEncryptedCRC8, rcvDeg: CipherDegree.kPacketEncryptedCRC8 });
+        // Last companion INSERT fails AFTER making its row. All prior writes
+        // must roll back too. This trigger is persistent so LS sees it.
+        info.exec(`CREATE TRIGGER wire_registration_fault AFTER INSERT ON TxUserDynamic
+          WHEN NEW.ID='${id}' BEGIN SELECT RAISE(FAIL,'registration fixture'); END`);
+        send();
+        const failure = await client.recv(opcode);
+        expect(r1(failure)).toBe(1); // registration failure, or invalid-login result
+        if (autoRegister) expect(r1(failure)).toBe(0); // failing user index
+        expect(failure.off).toBe(failure.buf.length);
+        expect(rows(info, id)).toEqual([0, 0, 0]);
+        info.exec("DROP TRIGGER wire_registration_fault");
+
+        send();
+        const success = await client.recv(opcode);
+        expect(r1(success)).toBe(0);
+        expect(rows(info, id)).toEqual([1, 1, 1]);
+        expect(info.query("SELECT Password,TotalConn FROM FxUserAccount WHERE ID=?").get(id))
+          .toEqual({ Password: EncodePassword("fixture-pw"), TotalConn: autoRegister ? 1 : 0 });
+
+        if (autoRegister) {
+          sendLogin(client, id, "wrong-pw");
+          const denied = await client.recv(3);
+          expect([r1(denied), r1(denied)]).toEqual([1, 0]);
+          expect(denied.off).toBe(denied.buf.length);
+        } else {
+          sendRegistration(client, id);
+          const duplicate = await client.recv(5);
+          expect(r1(duplicate)).toBe(1);
+          expect(duplicate.off).toBe(duplicate.buf.length);
+        }
+        expect(rows(info, id)).toEqual([1, 1, 1]);
+        expect(info.query("SELECT Password,TotalConn FROM FxUserAccount WHERE ID=?").get(id))
+          .toEqual({ Password: EncodePassword("fixture-pw"), TotalConn: autoRegister ? 1 : 0 });
+      } finally {
+        info.exec("DROP TRIGGER IF EXISTS wire_registration_fault");
+        client.close();
+        info.close();
+      }
+    });
+  }
+});
+
+
+// A04: real encrypted LS -> Center transfer, then an overdue real GS report.
+// Backdate only this user's deadline; do not wait 18 seconds or change the
+// global clock while the rest of the live suite is running.
+test("expired transfer rejects a late GS establishment without resurrecting the Center user", async () => {
+  const name = "tdeadline";
+  const ls = new TestClient();
+  const gs = new TestClient();
+  try {
+    await ls.connect(13838, { sndDeg: CipherDegree.kPacketEncryptedCRC8, rcvDeg: CipherDegree.kPacketEncryptedCRC8 });
+    ls.send(3, e => {
+      e.u8(1);
+      encStrInto(e, name, 0x11223344);
+      encStrInto(e, name, 0x44332211);
+      e.u32be(0);
+    });
+    const login = await ls.recv(3);
+    expect(r1(login)).toBe(0); // retained auto-registration requirement
+    expect(r2(login)).toBe(1); rstr(login); expect(r1(login)).toBe(1);
+    const serial = r4(login);
+    ls.send(6, e => { e.u8(10); e.u32be(0); e.u16(7); });
+    const transfer = await ls.recv(6);
+    expect([r1(transfer), r1(transfer), r4(transfer), r4(transfer), r2(transfer)])
+      .toEqual([1, 10, 0, 0x7f000001, 14848]);
+    const user = center.serialTable.get(serial)!;
+    expect(user.m_strName).toBe(name);
+    expect([user.m_fConnecting, user.nChannel, user.nSvrIdx]).toEqual([1, 10, 0]);
+    const target = center.GetSvr(10, 0)!;
+    const before = target.nConnNo;
+    user.nConnectStamp = (GetTickCount() - CONNECTION_TIMEOUT_MS - 1) >>> 0;
+    for (let i = 0; i < CONNECTING_LIST_BUCKET_COUNT; i++) center.DeleteConnectionTimeoutUser();
+    expect([user.fFree, target.nConnNo]).toEqual([1, before - 1]);
+    expect(center.serialTable.has(serial)).toBe(false);
+    expect(center.userTable.has(name)).toBe(false);
+
+    await gs.connect(14848, { sndDeg: CipherDegree.kPacketEncryptedCRC8, rcvDeg: CipherDegree.kPacketEncryptedCRC8 });
+    await gs.recv(0);
+    const admission = gs.recv(210, 3000).then(() => null, (error: unknown) => error);
+    gs.send(7, e => {
+      e.u8(1); e.str(name); e.u32be(serial); e.u32be(0);
+      e.u32be(0x11221122); e.u32be(0); e.u8(1);
+    });
+    const failure = await admission;
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toBe("socket closed by peer");
+    expect(gs.closed).toBe(true);
+    expect(center.serialTable.has(serial)).toBe(false);
+    expect(center.userTable.has(name)).toBe(false);
+    expect(target.nConnNo).toBe(before - 1);
+  } finally {
+    ls.close(); gs.close();
+  }
 });

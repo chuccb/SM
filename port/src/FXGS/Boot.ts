@@ -132,6 +132,7 @@ export async function main(cfgFile: string, dbDir: string): Promise<void> {
           s.OnReceive(new Uint8Array(data as Buffer));
         }
       },
+      drain: (t) => clientSockets.get(t)?.Flush(),
       close: (t) => {
         clientSockets.get(t)?.Close();
       },

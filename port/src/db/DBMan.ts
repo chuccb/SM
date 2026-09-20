@@ -21,6 +21,16 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { LocateCAConfigBak, ParseCAConfigBak, CA_CONFIG_SEED_IP } from "./CAConfigBak.ts";
 import { join } from "node:path";
 
+/** _USERDYNINFO — money/exp/win/draw/lose (+ the id). */
+export interface _USERDYNINFO {
+  strID: string;
+  money: number;
+  exp: number;
+  win: number;
+  draw: number;
+  lose: number;
+}
+
 /** CDBMan::GetUserHashNo — lower(name[0]) % 6. */
 export function GetUserHashNo(id: string): number {
   const c = id.length > 0 ? id.toLowerCase().charCodeAt(0) & 0xff : 0;
@@ -47,6 +57,11 @@ export function EncodePassword(pw: string): string {
   }
   return out;
 }
+
+/** Bounded SQLite writer-lock wait on the six UserInfo connections. This
+ * storage policy avoids failing ordinary concurrent registrations immediately;
+ * it is not an emulation of SQL Server's command timeout or thread scheduling. */
+export const USER_DB_BUSY_TIMEOUT_MS = 5_000;
 
 const SCHEMA_USERINFO = `
 CREATE TABLE IF NOT EXISTS FxUserAccount (
@@ -294,7 +309,9 @@ export class CDBMan {
   constructor(dbDir: string, nUserDB = 6) {
     mkdirSync(dbDir, { recursive: true });
     for (let i = 0; i < nUserDB; i++) {
-      this.userInfo.push(this.open(join(dbDir, `UserInfo${String(i).padStart(2, "0")}.db`), SCHEMA_USERINFO));
+      const db = this.open(join(dbDir, `UserInfo${String(i).padStart(2, "0")}.db`), SCHEMA_USERINFO);
+      db.exec(`PRAGMA busy_timeout = ${USER_DB_BUSY_TIMEOUT_MS}`);
+      this.userInfo.push(db);
     }
     for (let i = 0; i < nUserDB; i++) {
       this.inventory.push(this.open(join(dbDir, `UserInventory${String(i).padStart(2, "0")}.db`), SCHEMA_INVENTORY));
@@ -463,22 +480,22 @@ export class CDBMan {
     SID: number;
   } {
     const db = this.userInfo[GetUserHashNo(id)]!;
-    let acc = db
-      .query("SELECT SID, Email, GuildSn, CommunitySvr FROM FxUserAccount WHERE ID = ? AND Password = ?")
-      .get(id, pwd) as
-      | { SID: number; Email: string; GuildSn: number; CommunitySvr: number }
-      | undefined;
+    const accountQuery = db.query<
+      { SID: number; Email: string; GuildSn: number; CommunitySvr: number },
+      [string, string]
+    >("SELECT SID, Email, GuildSn, CommunitySvr FROM FxUserAccount WHERE ID = ? AND Password = ?");
+    let acc = accountQuery.get(id, pwd);
     if (!acc) {
-      // Auto-registration: a login with an ID that was never registered
-      // creates the account with the entered credentials (name = ID).
-      // Intentional deviation from the original, which answers retval -1
-      // for unknown IDs exactly like for a wrong password.
-      const known = db.query("SELECT 1 AS x FROM FxUserAccount WHERE ID = ?").get(id);
-      if (!known && this.prCreateUser(id, id, pwd, "", 0, 0, "", "", 0, "", "", "", "", "") === 0) {
-        acc = db
-          .query("SELECT SID, Email, GuildSn, CommunitySvr FROM FxUserAccount WHERE ID = ? AND Password = ?")
-          .get(id, pwd) as typeof acc;
+      // Required extension: unknown-account login creates an account. Never
+      // replace an existing account or its password, even after a create race.
+      const known = db.query("SELECT 1 FROM FxUserAccount WHERE ID = ?").get(id);
+      if (!known) {
+        this.prCreateUser(id, id, pwd, "", 0, 0, "", "", 0, "", "", "", "", "");
       }
+      // A competing process can win before the existence check OR our INSERT.
+      // Re-authenticate the committed row, including its password; never treat
+      // a failed INSERT or an existing ID by itself as successful authentication.
+      acc = accountQuery.get(id, pwd);
     }
     if (!acc) return { retval: -1, Fxexp: 0, Txexp: 0, FxMoney: 0, Email: "", CommunitySvr: 0, GuildSn: 0, SID: 0 };
     db.query("UPDATE FxUserAccount SET TotalConn = TotalConn + 1, LastConn = ? WHERE ID = ?").run(
@@ -514,10 +531,14 @@ export class CDBMan {
   }
 
   /**
-   * prCreateUser — the account insert (+ the dynamic rows).  The shipped
-   * proc relies on the FxUserAccount.SN identity; SQLite has no per-column
-   * identity beside the rowid, so SN is assigned as MAX(SN)+1 with SID = SN
-   * (matching the original identity semantics).
+   * prCreateUser — all account/dynamic inserts commit together, or none do.
+   * The supplied SQL surrounds its inserts with BEGIN/ROLLBACK/COMMIT TRAN.
+   * BEGIN IMMEDIATE takes SQLite's writer lock BEFORE reading MAX(SN), so
+   * concurrent processes cannot choose the same shard-local serial.
+   *
+   * Keep the existing SQLite SN/SID allocation and TxUserDynamic companion
+   * row. MAX(SN)+1 is NOT proof of SQL Server IDENTITY parity (e.g. deletion
+   * or rollback gaps); the backup fragments do not establish those defaults.
    */
   prCreateUser(
     id: string,
@@ -537,16 +558,19 @@ export class CDBMan {
   ): number {
     const db = this.userInfo[GetUserHashNo(id)]!;
     try {
-      const sn = (db.query("SELECT MAX(SN) AS m FROM FxUserAccount").get() as { m: number | null }).m ?? 0;
-      db.query(
-        `INSERT INTO FxUserAccount
-           (ID, SN, SID, Name, Password, Email, EmailRcv, Gender, Address, Tel, Reveal, Profile,
-            PasswordQ, PasswordA, IdentityNo, Birthday, ShopCardNo)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,? ,1)`,
-      ).run(id, sn + 1, sn + 1, name, password, email, emailRcv, gender, address, tel, reveal, profile, passwordQ, passwordA, identityNo, birthday);
-      db.query("INSERT INTO FxUserDynamic (ID) VALUES (?)").run(id);
-      db.query("INSERT INTO TxUserDynamic (ID) VALUES (?)").run(id);
-      return 0;
+      return db.transaction(() => {
+        const previousSerial = (db.query("SELECT MAX(SN) AS m FROM FxUserAccount").get() as { m: number | null }).m ?? 0;
+        const serial = previousSerial + 1;
+        db.query(
+          `INSERT INTO FxUserAccount
+             (ID, SN, SID, Name, Password, Email, EmailRcv, Gender, Address, Tel, Reveal, Profile,
+              PasswordQ, PasswordA, IdentityNo, Birthday, ShopCardNo)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,? ,1)`,
+        ).run(id, serial, serial, name, password, email, emailRcv, gender, address, tel, reveal, profile, passwordQ, passwordA, identityNo, birthday);
+        db.query("INSERT INTO FxUserDynamic (ID) VALUES (?)").run(id);
+        db.query("INSERT INTO TxUserDynamic (ID) VALUES (?)").run(id);
+        return 0;
+      }).immediate();
     } catch {
       return -1;
     }
@@ -660,6 +684,18 @@ export class CDBMan {
       )
       .run(name, gender, address, reveal, profile, birthday, id);
     return info.changes === 1 ? 0 : -1;
+  }
+
+  /** CDBMan::WriteUserDynInfo (FXGS 00408FD2). The BOOL reports SQL
+   *  execution success, NOT the stored procedure's return value. The native
+   *  caller has already cleared its dirty flags and does not retry failure. */
+  WriteUserDynInfo(info: Readonly<_USERDYNINFO>): boolean {
+    try {
+      this.prUpdateUserDynamic(info.strID, info.money, info.exp, info.win, info.draw, info.lose);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /** prUpdateUserDynamic */

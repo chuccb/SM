@@ -11,6 +11,8 @@
  *  - the relays 25/26/31/32/64/66 and the center-side answers
  *    (CM 8 / CM 13 / CM 14 / CM 1→11 / CM 7→10→64)
  */
+import { CONNECTION_TIMEOUT_MS, CONNECTING_LIST_BUCKET_COUNT } from "../src/Center/Defs.ts";
+import { GetTickCount } from "../src/core/GetTickCount.ts";
 import { beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -18,7 +20,7 @@ import { join } from "node:path";
 import { CxCenter, CUser } from "../src/Center/Center.ts";
 import { CServerConfig, CXCENTER_STR_KEYS, CXLOGIN_STR_KEYS } from "../src/core/Config.ts";
 import { CSendPacket } from "../src/core/Packet.ts";
-import { CDBMan, GetUserHashNo } from "../src/db/DBMan.ts";
+import { CDBMan } from "../src/db/DBMan.ts";
 import { CLocalSocket } from "../src/lib/CenterLink.ts";
 import { SVRCLASS_GAME, SVRCLASS_UTIL } from "../src/lib/S2S.ts";
 import {
@@ -43,7 +45,7 @@ const TOOL_PORT = 8128; // CListenThread::Proc's literal 0x1FC0
 
 let center: CxCenter;
 /** every CM packet the fake game-server link receives. */
-const linkInbox: { id: number; n: CReceived }[] = [];
+const linkInbox: { id: number; n: CReceivedPacket }[] = [];
 let fakeGs: CLocalSocket | null = null;
 
 async function waitLink(wantId: number, timeoutMs = 4000): Promise<CReceivedPacket> {
@@ -265,13 +267,14 @@ describe("center timer machinery (CTimerThread)", () => {
     const before = linkInbox.filter((p) => p.id === 4).length;
     linkInbox.length = 0;
     void before;
-    // the ctor's SetSvrIdx carries the conn counters (CxCenter 21590)
+    // the ctor's SetSvrIdx carries the conn counters (CxCenter 00415640)
     const svr = center.GetSvr(SVRCLASS_GAME, 0)!;
     const connBefore = svr.nConnNo;
     const cu = new CUser("timerop", SVRCLASS_GAME, 0, 7003, 0, 0, center);
     center.userTable.set("timerop", cu);
     center.serialTable.set(7003, cu);
     expect(svr.nConnNo).toBe(connBefore + 1); // the ctor's IncConn
+    cu.m_fConnecting = 1; // fixture: successful check arms flag before the move
     cu.SetConnectingToSvr(SVRCLASS_GAME, 0, center);
     expect(svr.nConnNo).toBe(connBefore + 1); // the same-server move nets zero
     const cm4 = await waitLink(4, 2500);
@@ -279,18 +282,18 @@ describe("center timer machinery (CTimerThread)", () => {
     expect(cm4.Decode4()).toBe(svr.nConnNo); // the live conn count
   });
 
-  test("the timeout sweep processes one %6 shard per call (0x445C stamp)", async () => {
+  test("the timeout sweep processes one serial %6 bucket per call (0x445C stamp)", async () => {
     const cu = center.userTable.get("timerop")!;
     const connBefore = center.GetSvr(SVRCLASS_GAME, 0)!.nConnNo;
-    cu.nConnectStamp = (Date.now() & 0x7fffffff) - 0x5000; // 20 s > 0x445C → overdue
+    cu.nConnectStamp = (GetTickCount() - CONNECTION_TIMEOUT_MS - 1) >>> 0; // strictly overdue
     // six calls cover every shard exactly once
-    for (let i = 0; i < 6; i++) center.DeleteConnectionTimeoutUser();
+    for (let i = 0; i < CONNECTING_LIST_BUCKET_COUNT; i++) center.DeleteConnectionTimeoutUser();
     expect(center.userTable.has("timerop")).toBe(false);
     expect(center.serialTable.has(7003)).toBe(false);
     // SetFree's DecConn undoes exactly the ctor's IncConn
     expect(center.GetSvr(SVRCLASS_GAME, 0)!.nConnNo).toBe(connBefore - 1);
-    // and the shard placement really is GetUserHashNo
-    expect(GetUserHashNo("timerop")).toBeLessThan(6);
+    // Connecting-list placement is by serial, NOT the account name/DB hash.
+    expect(cu.fFree).toBe(1);
   });
 });
 

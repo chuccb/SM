@@ -7,6 +7,13 @@ import { UpdateCRC8 } from "../src/core/CRC.ts";
 import { CipherDegree, type CipherDegree as TCipherDegree } from "../src/core/Packet.ts";
 import { gsConvertTableEncode, gsConvertTableDecode } from "../src/core/PacketHeaderConverter.ts";
 
+interface PacketWaiter {
+  wantId: number;
+  resolve: (packet: CReceived) => void;
+  reject: (error: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
+
 /** A minimal game client implementing the CClientSocket wire protocol. */
 export class TestClient {
   name = "?";
@@ -21,17 +28,15 @@ export class TestClient {
   private fTypeSet = false;
   private sndSeq = 40; // the client-link sequence starts at 40 and rolls by 3 (lst:4098C9)
   private rcvSeq = 40;
-  private waiters: { wantId: number; resolve: (n: CReceived) => void; timer: ReturnType<typeof setTimeout> }[] = [];
+  private waiters: PacketWaiter[] = [];
 
   /**
    * Cipher degrees of the link AFTER the accept packet 0 (the hello is always
    * CSendPacket(0, 0) — plain — on every server).  The framing is
    * [code][(len^a569)][SimpleStreamEncrypt3(seq)][crc8].
-   *  - the shop (FXSS) and the login server (FXLS) arm CClientSocket
-   *    SetCipherDegree(2) on accept → both directions are cipher 2;
-   *  - the game server (FXGS) leaves the socket at 0 (client frames plain)
-   *    but builds every client-bound packet with the degree-2 CSendPacket
-   *    ctor → plain out, cipher 2 in.
+   * LS, FXGS and FXSS arm degree 2 on accepted client links. Fixtures
+   * specify their post-hello degrees explicitly; the accept packet itself
+   * remains plain. Other test peers may select raw framing.
    */
   sndDeg: TCipherDegree = CipherDegree.kPacketRaw;
   rcvDeg: TCipherDegree = CipherDegree.kPacketRaw;
@@ -55,12 +60,10 @@ export class TestClient {
       socket: {
         data: (_t, data) => this.onData(new Uint8Array(data as Buffer)),
         close: () => {
-          this.fClosed = true;
-          for (const w of this.waiters.splice(0)) w.reject(new Error("socket closed by peer"));
+          this.rejectWaiters(new Error("socket closed by peer"));
         },
         error: (_t, err) => {
-          this.fClosed = true;
-          for (const w of this.waiters.splice(0)) w.reject(new Error(`socket error: ${err}`));
+          this.rejectWaiters(new Error(`socket error: ${err}`));
         },
       },
     });
@@ -74,8 +77,17 @@ export class TestClient {
 
   /** A plain client-side disconnect (the server sees OnClose). */
   close(): void {
+    this.rejectWaiters(new Error("client closed"));
     this.sock?.end();
     this.sock = null;
+  }
+
+  private rejectWaiters(error: Error): void {
+    this.fClosed = true;
+    for (const waiter of this.waiters.splice(0)) {
+      clearTimeout(waiter.timer);
+      waiter.reject(error);
+    }
   }
 
   private onData(data: Uint8Array): void {
@@ -133,6 +145,14 @@ export class TestClient {
   }
 
   private pending: { id: number; n: CReceived }[] = [];
+
+  discardPending(): void {
+    this.pending.length = 0;
+  }
+
+  hasPending(id: number): boolean {
+    return this.pending.some((packet) => packet.id === id);
+  }
 
   private dispatch(id: number, payload: Uint8Array, off: number, deg = 0): void {
     const item = { id, n: { buf: payload, off, deg } as CReceived };
@@ -247,12 +267,19 @@ export class TestClient {
     const idx = this.pending.findIndex((p) => p.id === wantId);
     if (idx >= 0) return this.pending.splice(idx, 1)[0]!.n;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        const wi = this.waiters.findIndex((w) => w.wantId === wantId);
-        if (wi >= 0) this.waiters.splice(wi, 1);
-        reject(new Error(`timeout waiting for packet ${wantId}`));
-      }, timeoutMs);
-      this.waiters.push({ wantId, resolve: (n) => resolve(n), timer });
+      const waiter: PacketWaiter = {
+        wantId,
+        resolve,
+        reject,
+        timer: setTimeout(() => {
+          // Two callers may await the same opcode with different deadlines.
+          // Expire this waiter, not the first waiter with a matching opcode.
+          const index = this.waiters.indexOf(waiter);
+          if (index >= 0) this.waiters.splice(index, 1);
+          reject(new Error(`timeout waiting for packet ${wantId}`));
+        }, timeoutMs),
+      };
+      this.waiters.push(waiter);
     });
   }
 }

@@ -16,7 +16,11 @@
  */
 import { CServerConfig } from "../core/Config.ts";
 import { PacketLog } from "../core/PacketLog.ts";
-import { GetUserHashNo } from "../db/DBMan.ts";
+import { GetTickCount } from "../core/GetTickCount.ts";
+import {
+  CONNECTION_TIMEOUT_MS, CONNECTING_LIST_BUCKET_COUNT, SERVER_IDX_NONE,
+  TIMER_INTERVAL_MS, TIMEOUT_SWEEP_TICKS, SERVER_STATE_BROADCAST_TICKS,
+} from "./Defs.ts";
 import { CPacketSocket } from "../core/CPacketSocket.ts";
 import { CReceivedPacket, CSendPacket, enSocket, type enSocket as EnSocket } from "../core/Packet.ts";
 import {
@@ -27,6 +31,8 @@ import {
   SVRCLASS_SHOP,
   SVRCLASS_UTIL,
   CENTER_VERSION,
+  CENTER_GREETING_SIZE,
+  LOCAL_SERVER_IDENTIFICATION_SIZE,
   SVRIDX_IDENTIFY_XOR,
 } from "../lib/S2S.ts";
 import { MONITOR_ClientSend, MONITOR_ReceivedPacket, PACKET_NAME_TABLES } from "../lib/PacketIDs.ts";
@@ -55,20 +61,20 @@ export function U32ToIp(v: number): string {
 /** CGlobalUserTable entry (CUser of CxCenter, 0x74 bytes). */
 export class CUser {
   m_strName: string;
-  nServerClass: number;
   nSvrIdx: number;
-  nSID: number; // +80 — CUser::GetSID: the account SID the login server sent in MC 0
+  // Legacy port key also used by serialTable. Native global serial (+28) and
+  // account SID (+80) are distinct; their allocation/protocol chain needs its
+  // own audit, not an allocator change hidden inside timeout handling.
+  nSID: number;
   nAuthencode = 0; // CUser::GetAuthencode / SetAuthenCode
   nLocalSerialNo: number; // the LS socket's local serial (p0 tail)
   nIP: number; // +32 — the CM 0 head D4: the client's in_addr (CUser::GetIP, CxCenter.exe.c:15124)
   nCommunitySvr = 0; // +76 (byte)
   nChannel = 0; // +60 (byte): the server class the user currently sits on
-  nSessionIdx = 0; // +64: the session slot on that server (0 = none)
-  nConnectStamp = 0; // +72 (GetTickCount at SetConnectingToSvr)
+  nSessionIdx = 0; // legacy query field; native +64 is nSvrIdx (audit B)
+  nConnectStamp: number; // +72 (DWORD); refreshed by successful CheckConnectingToSvr
   fFree = 0; // +20 (CSafeObject: freed by SetFree)
-  fConnectionEstablished = 0;
-  nConnectingType = -1;
-  nConnectingIdx = -1;
+  m_fConnecting = 0; // +68 (DWORD); descriptive TS name for the native flag
 
   constructor(
     strName: string,
@@ -80,12 +86,11 @@ export class CUser {
     man?: CxCenter,
   ) {
     this.m_strName = strName;
-    this.nServerClass = nServerClass;
-    this.nSvrIdx = -0x80000000; // +64 sentinel before the ctor's SetSvrIdx
+    this.nSvrIdx = SERVER_IDX_NONE; // +64 sentinel before the ctor's SetSvrIdx
     this.nSID = nSN;
     this.nLocalSerialNo = nLocalSerialNo;
     this.nIP = nIP;
-    // CUser::CUser (CxCenter.exe.c:21590) runs SetSvrIdx — the ctor's move
+    // CUser::CUser (00415640) runs SetSvrIdx — the ctor's move
     // carries the Inc/DecConn bookkeeping.  (Tests may skip the table move
     // by omitting the manager.)
     if (man) this.SetSvrIdx(nServerClass, nSvrIdx, man);
@@ -93,6 +98,7 @@ export class CUser {
       this.nChannel = nServerClass;
       this.nSvrIdx = nSvrIdx;
     }
+    this.nConnectStamp = GetTickCount();
   }
 
   GetAuthencode(): number {
@@ -105,7 +111,7 @@ export class CUser {
   }
 
   /**
-   * CUser::CheckConnectingToSvr (CxCenter.exe.c:4151B0) — the full gate: a
+   * CUser::CheckConnectingToSvr (004153B0) — the full gate: a
    * freed user, a second request while still connecting and a re-enter of
    * the currently attached server all answer 0 with their report; the index
    * must sit inside the type's configured count ("unregistered"); the
@@ -117,7 +123,7 @@ export class CUser {
       console.error("[Center] Set-freed user try to connect to selected server");
       return 0;
     }
-    if (this.nConnectingType !== -1) {
+    if (this.m_fConnecting !== 0) {
       console.error("[Center] User try to connect to selected server twice");
       return 0;
     }
@@ -140,11 +146,15 @@ export class CUser {
       return 0;
     }
     // the enterable-type-41 premium gate: CUser+56 is the LS premium ticket
-    if (svr.nType !== 41 || this.nAuthencode === 1) return 1;
-    return 2;
+    if (svr.nType === 41 && this.nAuthencode !== 1) return 2;
+    // The check itself arms the deadline (00415512..00415520). A later
+    // member's refusal does not undo this flag, even when no move follows.
+    this.m_fConnecting = 1;
+    this.nConnectStamp = GetTickCount();
+    return 1;
   }
 
-  /** CUser::SetSvrIdx (CxCenter.exe.c:21164) — move the user and the
+  /** CUser::SetSvrIdx (00415340) — move the user and the
    *  conn counters; no connecting bookkeeping. */
   SetSvrIdx(nServerType: number, SmallLoadedSvrIdx: number, man: CxCenter): void {
     const oldSvr = man.GetSvr(this.nChannel, this.nSvrIdx);
@@ -155,22 +165,15 @@ export class CUser {
     if (newSvr) newSvr.nConnNo++; // CLocalServer::IncConn
   }
 
-  /**
-   * CUser::SetConnectingToSvr (CxCenter.exe.c:415540) — the move plus the
-   * port's connecting bookkeeping (the +68 marker/stamp live in the port's
-   * nConnectingType/Idx/nConnectStamp; the original sets them in
-   * CheckConnectingToSvr — the observable state machine is the same).
-   * InsertConnectingList is covered by the serial table.
-   */
+  /** CUser::SetConnectingToSvr (00415540) — move and enqueue the serial.
+   * The preceding successful check, NOT this method, sets flag/time. */
   SetConnectingToSvr(nServerType: number, SmallLoadedSvrIdx: number, man: CxCenter): void {
     this.SetSvrIdx(nServerType, SmallLoadedSvrIdx, man);
-    this.nConnectingType = nServerType;
-    this.nConnectingIdx = SmallLoadedSvrIdx;
-    this.nConnectStamp = Date.now() & 0x7fffffff;
+    man.InsertConnectingList(this.nSID);
   }
 
   /**
-   * CUser::CheckConnectionEstablished (CxCenter.exe.c:415570) — the
+   * CUser::CheckConnectionEstablished (00415570) — the
    * connecting state must match the server that reported in; SetConnecting
    * already moved nChannel/nSvrIdx, so the match reads the live fields.
    */
@@ -179,7 +182,7 @@ export class CUser {
       console.error("[Center] Set-Freed user connected to server");
       return 0;
     }
-    if (this.nConnectingType !== -1) {
+    if (this.m_fConnecting !== 0) {
       if (nServerType === this.nChannel && SmallLoadedSvrIdx === this.nSvrIdx) return 1;
       if (SmallLoadedSvrIdx !== this.nSvrIdx) console.error("[Center] User connected to server mismatched");
       return 0;
@@ -190,14 +193,13 @@ export class CUser {
 
   /** CUser::SetConnectionEstablished — clears the connecting state (+68). */
   SetConnectionEstablished(): void {
-    this.nConnectingType = -1;
-    this.nConnectingIdx = -1;
+    this.m_fConnecting = 0;
   }
 
   /** CUser::DeferDisconnectTimeout — 0x445C ms without the established call. */
   DeferDisconnectTimeout(man: CxCenter): boolean {
-    if (this.nConnectingType === -1) return false;
-    if ((Date.now() & 0x7fffffff) - this.nConnectStamp > 0x445c) {
+    if (this.m_fConnecting === 0) return false;
+    if (((GetTickCount() - this.nConnectStamp) >>> 0) > CONNECTION_TIMEOUT_MS) {
       this.SetFree(man);
       return true;
     }
@@ -210,7 +212,7 @@ export class CUser {
       this.fFree = 1;
       const svr = man.GetSvr(this.nChannel, this.nSvrIdx);
       if (svr) svr.nConnNo--; // CLocalServer::DecConn
-      this.nSvrIdx = -0x80000000;
+      this.nSvrIdx = SERVER_IDX_NONE;
     }
   }
 }
@@ -304,18 +306,18 @@ export class CenterClientSocket extends CPacketSocket {
   SendGreeting(): void {
     if (this.fGreeted) return;
     // CxCenter.exe.c:14324: Encode2(3 /* version */); Encode2(sd);
-    const greeting = new Uint8Array(4);
+    const greeting = new Uint8Array(CENTER_GREETING_SIZE);
     greeting[0] = (CENTER_VERSION >>> 8) & 0xff;
     greeting[1] = CENTER_VERSION & 0xff;
     const sd = (this.bunSocket?.localPort ?? 0) & 0xffff;
     greeting[2] = (sd >>> 8) & 0xff;
     greeting[3] = sd & 0xff;
-    this.bunSocket?.write(greeting);
-    this.fGreeted = true;
+    this.fGreeted = this.SendBuffer(greeting) === enSocket.kioOk;
   }
 
   OnData(data: Uint8Array): void {
     this.SendGreeting();
+    if (!this.m_bConnected) return;
     if (this.fIdentified) {
       this.OnReceive(data);
       return;
@@ -323,7 +325,7 @@ export class CenterClientSocket extends CPacketSocket {
     const all = new Uint8Array(this.pending.length + data.length);
     all.set(this.pending);
     all.set(data, this.pending.length);
-    if (all.length < 9) {
+    if (all.length < LOCAL_SERVER_IDENTIFICATION_SIZE) {
       this.pending = all;
       return;
     }
@@ -335,11 +337,7 @@ export class CenterClientSocket extends CPacketSocket {
     const nGameVersion = all[5]! | (all[6]! << 8);
     const nClientVersion = all[7]! | (all[8]! << 8);
     this.center.RegisterLocalServer(this, nServerClass, nSvrIdx, nGameVersion, nClientVersion);
-    if (all.length > 9) this.OnReceive(all.subarray(9));
-  }
-
-  PostClosePacket(): void {
-    this.Close();
+    if (all.length > LOCAL_SERVER_IDENTIFICATION_SIZE) this.OnReceive(all.subarray(LOCAL_SERVER_IDENTIFICATION_SIZE));
   }
 }
 
@@ -453,6 +451,7 @@ export class CxCenter {
         data: (t, data) => {
           this.clientSockets.get(t)?.OnData(new Uint8Array(data as Buffer));
         },
+        drain: (t) => this.clientSockets.get(t)?.Flush(),
         close: (t) => {
           this.clientSockets.get(t)?.Close();
         },
@@ -520,10 +519,10 @@ export class CxCenter {
 
   /** CGlobalUserTable::DeleteAllUserOnSvr */
   DeleteAllUserOnSvr(nServerClass: number, nSvrIdx: number): void {
-    for (const [name, u] of [...this.userTable]) {
-      if (u.nServerClass === nServerClass && u.nSvrIdx === nSvrIdx) {
-        this.serialTable.delete(u.nSID);
-        this.userTable.delete(name);
+    for (const u of [...this.userTable.values()]) {
+      if (u.nChannel === nServerClass && u.nSvrIdx === nSvrIdx) {
+        u.SetFree(this);
+        this.ExtractUser(u.nSID);
       }
     }
   }
@@ -707,8 +706,7 @@ export class CxCenter {
     // no residency check here (unlike the serial-keyed base handler) — the
     // util's delete means "kick the user from the world"
     u.SetFree(this);
-    this.serialTable.delete(u.nSID);
-    this.userTable.delete(u.m_strName);
+    this.ExtractUser(u.nSID);
     console.log(`[Center] Delete user by utilserver\`s rerquest[${name}].`);
   }
 
@@ -847,12 +845,11 @@ export class CxCenter {
       console.error(`[Center] Try to delete nonresident user[${owner.nServerClass}:${owner.nSvrIdx}:${serial}]`);
       return;
     }
-    // CUser::SetFree only when the user really sits on this server (+60/+16)
+    // CUser::SetFree only when the user really sits on this server (+60/+64)
     if (u.nChannel === owner.nServerClass && u.nSvrIdx === owner.nSvrIdx) {
       u.SetFree(this);
-      this.serialTable.delete(serial);
-      this.userTable.delete(u.m_strName);
     }
+    if (u.fFree !== 0) this.ExtractUser(serial);
   }
 
   /** CLocalServer::OnReqConnectToSvr (center side). */
@@ -865,11 +862,18 @@ export class CxCenter {
     if (serverType === SVRCLASS_SHOP) smallLoadedSvrIdx = this.GetSmallLoadedSvrIdx(SVRCLASS_SHOP);
     let result = 0;
     const users: (CUser | undefined)[] = serials.map((s) => this.serialTable.get(s));
-    if (users.every((u) => u !== undefined && u.nSvrIdx === owner.nSvrIdx)) {
-      // the official keeps the LAST user's CheckConnectingToSvr result — a
-      // premium-needed 2 on the final serial rides out as the answer
-      for (const u of users) result = u!.CheckConnectingToSvr(this, serverType, smallLoadedSvrIdx);
-      if (result === 1) for (const u of users) u!.SetConnectingToSvr(serverType, smallLoadedSvrIdx, this);
+    if (users.every((u): u is CUser => u !== undefined)) {
+      // 004097B0: resolve all serials first, then check residency in order.
+      // Preserve earlier checks' side effects if a later residency check fails.
+      for (const user of users) {
+        if (user.nSvrIdx !== owner.nSvrIdx) {
+          result = 0;
+          break;
+        }
+        // Native keeps the LAST result, even if an earlier check refused.
+        result = user.CheckConnectingToSvr(this, serverType, smallLoadedSvrIdx);
+      }
+      if (result === 1) for (const user of users) user.SetConnectingToSvr(serverType, smallLoadedSvrIdx, this);
     }
     const packet = new CSendPacket(CM_ReceivedPacket.OnCenterResConnectToSvr);
     packet.Encode1(count);
@@ -965,28 +969,53 @@ export class CxCenter {
   StartTimer(): void {
     let n = 0;
     const timer = setInterval(() => {
-      n++;
-      if (n % 4 === 0) this.DeleteConnectionTimeoutUser();
-      if (n % 2 === 0) this.SendLocalSvrStatePacket(0);
-    }, 400);
+      n = (n + 1) >>> 0;
+      if (n % TIMEOUT_SWEEP_TICKS === 0) this.DeleteConnectionTimeoutUser();
+      if (n % SERVER_STATE_BROADCAST_TICKS === 0) this.SendLocalSvrStatePacket(0);
+    }, TIMER_INTERVAL_MS);
     timer.unref?.();
   }
 
-  /** CGlobalUserTable::DeleteConnectionTimeoutUser (CxCenter.exe.c:9415) —
-   *  each call processes ONE shard of the %6 name-hash table (the same
-   *  GetUserHashNo sharding the DB layer uses) and drops the users whose
-   *  connecting stamp is older than 0x445C ms. */
+  /** The native connecting lists are separate from both name and serial
+   * lookup tables. Keep insertion order and duplicates (std::list), not a Set. */
+  private m_connectingLists: number[][] = Array.from({ length: CONNECTING_LIST_BUCKET_COUNT }, () => []);
   m_nSweepCounter = 0;
 
+  /** CGlobalUserTable::InsertConnectingList (00408360). */
+  InsertConnectingList(serial: number): void {
+    serial >>>= 0;
+    this.m_connectingLists[serial % CONNECTING_LIST_BUCKET_COUNT]!.push(serial);
+  }
+
+  /** CGlobalUserTable::ExtractUser (00408640). List entries are removed
+   * lazily by the sweep. Extraction alone does not call SetFree or send CM11. */
+  ExtractUser(serial: number): CUser | undefined {
+    const user = this.serialTable.get(serial);
+    if (!user) return undefined;
+    this.serialTable.delete(serial);
+    this.userTable.delete(user.m_strName);
+    return user;
+  }
+
+  /** CGlobalUserTable::DeleteConnectionTimeoutUser (00408940): increment
+   * first, then sweep one unsigned-serial bucket (1,2,3,4,5,0). No DB hash. */
   DeleteConnectionTimeoutUser(): void {
-    const shard = this.m_nSweepCounter++ % 6;
-    for (const u of [...this.userTable.values()]) {
-      if (GetUserHashNo(u.m_strName) !== shard) continue;
-      if (u.DeferDisconnectTimeout(this)) {
-        this.serialTable.delete(u.nSID);
-        this.userTable.delete(u.m_strName);
+    this.m_nSweepCounter = (this.m_nSweepCounter + 1) >>> 0;
+    const index = this.m_nSweepCounter % CONNECTING_LIST_BUCKET_COUNT;
+    const remove = new Set<number>();
+    for (const serial of [...this.m_connectingLists[index]!]) {
+      const user = this.serialTable.get(serial);
+      if (!user) {
+        remove.add(serial);
+      } else if (user.DeferDisconnectTimeout(this)) {
+        this.ExtractUser(serial);
+        remove.add(serial);
+      } else if (user.m_fConnecting === 0) {
+        remove.add(serial);
       }
     }
+    // Native list.remove erases every entry of each marked serial.
+    this.m_connectingLists[index] = this.m_connectingLists[index]!.filter((serial) => !remove.has(serial));
   }
 
   /**
@@ -1083,13 +1112,15 @@ export class CxCenter {
           sock.bunSocket = t as Bun.Socket<any>;
           sock.m_bConnected = true;
           this.monitorSockets.add(sock);
+          sock.hooks.onClose = () => { this.monitorSockets.delete(sock); };
         },
         data: (t, data) => {
           this.monitorBySock.get(t)?.OnReceive(new Uint8Array(data as Buffer));
         },
+        drain: (t) => this.monitorBySock.get(t)?.Flush(),
         close: (t) => {
           const sock = this.monitorBySock.get(t);
-          if (sock) this.monitorSockets.delete(sock);
+          sock?.Close();
         },
         error: (_t, err) => console.error(`[Center:monitor] ${String(err)}`),
       },
@@ -1144,10 +1175,6 @@ export class MonitorSocket extends CPacketSocket {
     this.m_szLogTable = "MON";
     this.SetHeaderCode(102, 102, 231);
     this.SetSequence(0, 0, 0, 0);
-  }
-
-  PostClosePacket(): void {
-    this.Close();
   }
 
   OnPacket(n: CReceivedPacket): void {

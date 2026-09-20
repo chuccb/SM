@@ -6,7 +6,28 @@ import { Decode1, Decode2, Decode4, Encode1, Encode2, Encode4, EncodeBuffer } fr
 import { CReceivedPacket, CSendPacket, CipherDegree, kPacketEncryptedCRC8 } from "../core/Packet.ts";
 import { GS_ClientSend, SESSION_ReceivedPacket } from "../lib/PacketIDs.ts";
 import { timeGetTime } from "../core/timeGetTime.ts";
-import { ACCOUNTING_LOG_CHANNEL_TYPE, CHANNEL_TYPE_GUILD, DEATH_COORD, IS_LADDER_GAME, MAX_SESSION_SLOTS, RETURN_STAGE_DELAY, SLOTSTATE_BOMBER_CLEAR, SLOTSTATE_BOMBER_MASK, SLOTSTATE_CHIEF, SLOTSTATE_COLOR_CLEAR, SLOTSTATE_COLOR_MASK, SLOTSTATE_GROUP_CLEAR, SLOTSTATE_GROUP_MASK, SLOTSTATE_LAUNCH_OK, SLOTSTATE_READY, STR_BIG_LUCK_MSG, SUPREME_ROOM_SWAP_COUNT, THEME_IDX_BASE } from "./Defs";
+import {
+  ACCOUNTING_LOG_CHANNEL_TYPE,
+  CHANNEL_TYPE_GUILD,
+  DEATH_COORD,
+  GetThemeIdxFromMapIdx,
+  IS_LADDER_GAME,
+  MAP_IDX_RANDOM,
+  MAX_SESSION_SLOTS,
+  RETURN_STAGE_DELAY,
+  SLOTSTATE_BOMBER_CLEAR,
+  SLOTSTATE_BOMBER_MASK,
+  SLOTSTATE_CHIEF,
+  SLOTSTATE_CHIEF_CLEAR,
+  SLOTSTATE_COLOR_CLEAR,
+  SLOTSTATE_COLOR_MASK,
+  SLOTSTATE_GROUP_CLEAR,
+  SLOTSTATE_GROUP_MASK,
+  SLOTSTATE_LAUNCH_OK,
+  SLOTSTATE_READY,
+  STR_BIG_LUCK_MSG,
+  SUPREME_ROOM_SWAP_COUNT,
+} from "./Defs.ts";
 import { CBanChief, CDynInfoCalculator, CGameClock, CGameContext, CSyncGameObjMan, CUdpLossRegulator } from "./GameContext";
 import { CBomberAttr, CGameMapTmplList, CItemAttr } from "./GameData";
 import { UserInventory } from "./CUserItemMan";
@@ -15,7 +36,6 @@ import { CGameSessionStrategy, CGuildSessionStrategy } from "./Strategy";
 import { CCenterProcess, CMainSystem } from "./System";
 import { CClientSocket, CUser, GetInfoStr } from "./User";
 import { CChannelPool } from "./Chat";
-import { SLOTSTATE_CHIEF_CLEAR } from "./Defs";
 import { CGuildDynInfoCalculator } from "./Strategy";
 import { readFileSync } from "node:fs";
 import { HOSTHANDLE } from "./MTUDP.ts";
@@ -51,7 +71,7 @@ export class CGameSession {
   m_nLevelLimit = 0; // +840
   m_nGameType = 0; // +844 (CGameSession::Init writes it)
   m_fHasPassword = 0; // +848 (byte; set when the password is non-empty)
-  m_nMapIdx = -1; // +850 (u16; -1 = random, -2-theme = theme random)
+  m_nMapIdx = MAP_IDX_RANDOM; // +850 (signed i16; -1 = random, -2-theme = theme random)
   m_fPlaying = 0; // +852
   m_fModified = 0; // +856 (1 playing / 2 map / 4 cur / 8 max / 0x10 title)
   m_dwCreateTime = 0; // +860 (timeGetTime)
@@ -139,7 +159,7 @@ export class CGameSession {
     if (gameType !== undefined) {
       this.m_szPassword = password ?? "";
       this.m_fHasPassword = this.m_szPassword.length > 0 ? 1 : 0;
-      this.m_nMapIdx = -1;
+      this.m_nMapIdx = MAP_IDX_RANDOM;
       this.m_nCurPlayerNum = 0;
       this.m_nMaxPlayerNum = this.m_nMaxSlot;
       this.m_fPlaying = 0;
@@ -150,7 +170,7 @@ export class CGameSession {
       for (const host of this.m_rgUdpHost) host.fill(0); // memset(+988, 0, 0xC0)
       this.m_nGameMapIdx = -1; // +295
       this.m_nGameType = gameType; // +211
-      this.m_nGameVersion = Math.floor(Math.random() * 0x7fffffff); // +3142
+      this.m_nGameVersion = CMainSystem.ms_pInstance!.m_WorkerRandom.rand(); // +3142
       this.m_nGameSerial = this.m_nSerialNo; // +3143
       this.m_aBomberIdx.fill(-1); // memset(+11572, -1, 0x20)
       this.m_nGameTypeMod = 0; // +948
@@ -206,9 +226,15 @@ export class CGameSession {
   /** CGameSession::DoSelectColor (:41B197) — CListSession::DoSelectColor,
    *  then the strategy's same-guild colour drag. */
   SetColor(slot: number, color: number): void {
-    const p = slot * 3 + 2;
-    this.m_rgSlotState[p] = (this.m_rgSlotState[p]! & SLOTSTATE_COLOR_CLEAR) | (color & SLOTSTATE_COLOR_MASK);
+    this.SetColorBits(slot, color);
     this.m_pStrategy.OnSelectColor(slot, color); // strategy vtbl+8
+  }
+
+  /** Shared packed-state write, WITHOUT the game-strategy colour hook.
+   * Original: dst ^= (dst ^ color) & 0x1F (AddUser / map fold / start). */
+  private SetColorBits(slot: number, color: number): void {
+    const at = slot * 3 + 2;
+    this.m_rgSlotState[at] = (this.m_rgSlotState[at]! & SLOTSTATE_COLOR_CLEAR) | (color & SLOTSTATE_COLOR_MASK);
   }
 
   GetBomber(slot: number): number {
@@ -484,8 +510,8 @@ export class CGameSession {
     if (used === 1) {
       const mapIdx = this.m_nMapIdx;
       let teams: number;
-      if (mapIdx === -1) teams = 0;
-      else if (mapIdx < 0) teams = CGameMapTmplList.ms_pInstance?.m_apTheme[THEME_IDX_BASE - mapIdx]?.m_nMaxTeam ?? 0;
+      if (mapIdx === MAP_IDX_RANDOM) teams = 0;
+      else if (mapIdx < 0) teams = CGameMapTmplList.ms_pInstance?.GetThemeMaxMaxPlayer(GetThemeIdxFromMapIdx(mapIdx)) ?? 0;
       else teams = CGameMapTmplList.ms_pInstance?.GetMapMaxTeam(mapIdx) ?? 0;
       if (teams < 2 || teams > 4) {
         if (counts[want]! > 0) return want === 0 ? 1 : 0;
@@ -501,8 +527,8 @@ export class CGameSession {
   /** CBaseSession::AddUser(slot, user, bomber, color) + the CListSession tail. */
   AddUser(slot: number, user: CUser, bomber: number, color: number): void {
     if (this.m_rgPlayer[slot]) {
+      // CBaseSession::AddUser (FxServer.exe.c:30544): report, but continue replacing the seat ("not return").
       console.error("[GS] m_rgPlayer[slotidx], CBaseSession::AddUser(int slotidx, CUser* pUser), not return");
-      return;
     }
     this.m_rgPlayer[slot] = user;
     user.SetSessionIdx(this.m_nIdx);
@@ -510,9 +536,9 @@ export class CGameSession {
     this.SetSlotidx(user, slot);
     user.SetPoolType(2); // user->socket +468 = 2
     const p = slot * 3;
-    this.m_rgSlotState[p + 1] = (this.m_rgSlotState[p + 1]! ^ (bomber ^ this.m_rgSlotState[p + 1]!)) & SLOTSTATE_BOMBER_MASK;
+    this.SetBomber(slot, bomber);
     this.m_rgSlotState[p] = this.m_rgSlotState[p]! & 0xe1; // keep closed + 0xE0
-    this.m_rgSlotState[p + 2] = (this.m_rgSlotState[p + 2]! ^ (color ^ this.m_rgSlotState[p + 2]!)) & SLOTSTATE_COLOR_MASK;
+    this.SetColorBits(slot, color);
     this.m_nCurPlayerNum++;
     this.m_fModified |= 4;
     // CGameSession::AddUser tail (41AF4B)
@@ -701,12 +727,12 @@ export class CGameSession {
   DeleteUser(slot: number): void {
     const user = this.m_rgPlayer[slot];
     if (this.fValid !== 0) {
-      // CGameSession::DeleteUser — in-play: the captain's death cascade and
-      // the loss count (+12276, the results-unit gate, is 0 until then).
+      // CGameSession::DeleteUser — the in-play loss is gated by +12276
+      // after the captain's death cascade. Phase 0 has no reward gate.
       let incLose: boolean;
       if (this.m_nGamePhase === 1) {
         this.OnBomberDie(slot);
-        incLose = true;
+        incLose = this.m_fSkipExpReward === 0;
       } else {
         incLose = this.m_nGamePhase === 0;
       }
@@ -1414,7 +1440,7 @@ export class CGameSession {
    * flag]; per user [E1 1][E4 serial] then [E1 result][E1 +12048][E1 +12016]
    * [E2 exp‰][E2 exp‰ re-read][E2 look-level][E1 got-exp][E1 detail]; empty
    * slots send [E1 0].  IncDecExp feeds the DB dyn rows, IncWin/IncLose/
-   * IncDraw the user counters, and level-ups re-sort the lobby rank list.
+   * IncDraw the same persistent dyn block, and level-ups re-sort the lobby rank list.
    */
   SendGameResult(winTeam: number): void {
     const packet = new CSendPacket(GS_ClientSend.OnGameResult, CipherDegree.kPacketEncryptedCRC8);
@@ -1597,9 +1623,9 @@ export class CGameSession {
     this.FlushPacket();
   }
 
-  /** CGameSession::OnSelectMap (FxServer.exe.c:33211). */
-  OnSelectMap(n: CReceivedPacket, socket: CClientSocket): void {
-    const mapIdx = n.Decode2() | 0;
+  /** CGameSession::OnSelectMap (0041C47D..0041C782). */
+  OnSelectMap(n: CReceivedPacket, _socket: CClientSocket): void {
+    const mapIdx = (n.Decode2() << 16) >> 16; // 0041C497: movsx edi, ax
     if (this.m_fPlaying === 0) {
       this.m_fModified |= 2;
       this.m_nMapIdx = mapIdx;
@@ -1607,125 +1633,67 @@ export class CGameSession {
     const packet = new CSendPacket(GS_ClientSend.OnSessionMapIdx, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode2(this.m_nMapIdx & 0xffff);
     this.PutPacket(packet);
+    if (this.m_fPlaying === 0) this.FoldColorsForMap(mapIdx);
+    // The map response and all slot updates are queued before the ONE flush.
     this.FlushPacket();
-    if (this.m_fPlaying !== 0) return;
-    // the team count of the chosen map (321 - mapIdx indexes m_apTheme)
-    let teams: number;
-    if (mapIdx === -1) teams = 8;
-    else if (mapIdx >= 0) teams = CGameMapTmplList.ms_pInstance?.GetMapMaxTeam(mapIdx) ?? 0;
-    else teams = CGameMapTmplList.ms_pInstance?.m_apTheme[THEME_IDX_BASE - mapIdx]?.m_nMaxTeam ?? 0;
-    // The color -> target-color map (:33264).  memset(0xFF) leaves every
-    // entry at -1 (untouched); each color actually in use gets the marker
-    // 0x11111111 (286331153).  For team counts the fold switch does not
-    // cover (5/6/7) the marker survives into the apply step, whose `& 0xff`
-    // then yields the original's quirky 0x11 — kept verbatim.
-    const colorMap = new Int32Array(8).fill(-1);
+  }
+
+  /** The OnSelectMap colour fold. Do not call SetColor: the original writes
+   * the packed state directly, without the strategy's OnSelectColor hook. */
+  private FoldColorsForMap(mapIdx: number): void {
+    const maps = CGameMapTmplList.ms_pInstance;
+    const teams = mapIdx === MAP_IDX_RANDOM ? MAX_SESSION_SLOTS
+      : mapIdx >= 0 ? maps?.GetMapMaxTeam(mapIdx) ?? 0
+      : maps?.GetThemeMaxMaxPlayer(GetThemeIdxFromMapIdx(mapIdx)) ?? 0;
+    const IN_USE = 0x11111111;
+    const colorMap = new Int32Array(MAX_SESSION_SLOTS).fill(-1);
+    const teamColors = [0, 3, 5, 6]; // OnSelectMap: the 2..4-team palette
     let usedColors = 0;
     for (let slot = 0; slot < MAX_SESSION_SLOTS; slot++) {
-      if (this.IsPlayerSet(slot) && colorMap[this.GetColor(slot)]! === -1) {
+      if (this.IsPlayerSet(slot) && colorMap[this.GetColor(slot)] === -1) {
         usedColors++;
-        colorMap[this.GetColor(slot)] = 0x11111111;
+        colorMap[this.GetColor(slot)] = IN_USE;
       }
     }
-    const IN_USE = 0x11111111;
+
+    const applyColor = (slot: number, color: number): void => {
+      this.SetColorBits(slot, color);
+      const packet = new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8);
+      this.MakeSetSlotStatePacket(slot, packet);
+      this.PutPacket(packet);
+    };
+
     if (teams < usedColors) {
-      // round-robin re-assignment onto {0,3,5,6} for 2..4 team maps
-      let k = 0;
-      const teamColorPool = [0, 3, 5, 6];
-      if (teams >= 2 && teams <= 4) {
+      if (teams >= 2 && teams <= teamColors.length) {
+        let next = 0;
         for (let slot = 0; slot < MAX_SESSION_SLOTS; slot++) {
-          if (!this.IsPlayerSet(slot)) continue;
-          const p = slot * 3 + 2;
-          const want = teamColorPool[k % teams]!;
-          this.m_rgSlotState[p] = (this.m_rgSlotState[p]! ^ (want ^ this.m_rgSlotState[p]!)) & SLOTSTATE_COLOR_MASK;
-          k++;
-          const sp = new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8);
-          this.MakeSetSlotStatePacket(slot, sp);
-          this.PutPacket(sp);
+          if (this.IsPlayerSet(slot)) applyColor(slot, teamColors[next++ % teams]!);
         }
       }
-    } else {
-      switch (teams) {
-        case 2:
-          if (colorMap[0] === IN_USE) colorMap[0] = 0;
-          if (colorMap[3] === IN_USE) colorMap[3] = 3;
-          for (let i = 0; i < MAX_SESSION_SLOTS; i++) {
-            if (colorMap[i] === IN_USE) {
-              if (colorMap[0] !== 0) {
-                colorMap[i] = 0;
-                colorMap[0] = 0;
-              } else if (colorMap[3] !== 3) {
-                colorMap[i] = 3;
-                colorMap[3] = 3;
-              }
-            }
-          }
-          break;
-        case 3:
-          if (colorMap[0] === IN_USE) colorMap[0] = 0;
-          if (colorMap[3] === IN_USE) colorMap[3] = 3;
-          if (colorMap[5] === IN_USE) colorMap[5] = 5;
-          for (let j = 0; j < MAX_SESSION_SLOTS; j++) {
-            if (colorMap[j] === IN_USE) {
-              if (colorMap[0] !== 0) {
-                colorMap[j] = 0;
-                colorMap[0] = 0;
-              } else if (colorMap[3] === 3) {
-                if (colorMap[5] !== 5) {
-                  colorMap[j] = 5;
-                  colorMap[5] = 5;
-                }
-              } else {
-                colorMap[j] = 3;
-                colorMap[3] = 3;
-              }
-            }
-          }
-          break;
-        case 4:
-          if (colorMap[0] === IN_USE) colorMap[0] = 0;
-          if (colorMap[3] === IN_USE) colorMap[3] = 3;
-          if (colorMap[5] === IN_USE) colorMap[5] = 5;
-          if (colorMap[6] === IN_USE) colorMap[6] = 6;
-          for (let m = 0; m < MAX_SESSION_SLOTS; m++) {
-            if (colorMap[m] === IN_USE) {
-              if (colorMap[0] !== 0) {
-                colorMap[m] = 0;
-                colorMap[0] = 0;
-              } else if (colorMap[3] === 3) {
-                if (colorMap[5] === 5) {
-                  if (colorMap[6] !== 6) {
-                    colorMap[m] = 6;
-                    colorMap[6] = 6;
-                  }
-                } else {
-                  colorMap[m] = 5;
-                  colorMap[5] = 5;
-                }
-              } else {
-                colorMap[m] = 3;
-                colorMap[3] = 3;
-              }
-            }
-          }
-          break;
-        case 8:
-          for (let k = 0; k < MAX_SESSION_SLOTS; k++) colorMap[k] = k;
-          break;
-        default:
-          break;
-      }
-      for (let slot = 0; slot < MAX_SESSION_SLOTS; slot++) {
-        if (!this.IsPlayerSet(slot)) continue;
-        const p = slot * 3 + 2;
-        const want = colorMap[this.GetColor(slot)]! & 0xff;
-        this.m_rgSlotState[p] = (this.m_rgSlotState[p]! ^ (want ^ this.m_rgSlotState[p]!)) & SLOTSTATE_COLOR_MASK;
-        const sp = new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8);
-        this.MakeSetSlotStatePacket(slot, sp);
-        this.PutPacket(sp);
-      }
+      return;
     }
-    this.FlushPacket();
+
+    if (teams >= 2 && teams <= teamColors.length) {
+      const palette = teamColors.slice(0, teams);
+      for (const color of palette) {
+        if (colorMap[color] === IN_USE) colorMap[color] = color;
+      }
+      for (let color = 0; color < MAX_SESSION_SLOTS; color++) {
+        if (colorMap[color] !== IN_USE) continue;
+        const target = palette.find((entry) => colorMap[entry] !== entry);
+        if (target !== undefined) {
+          colorMap[color] = target;
+          colorMap[target] = target;
+        }
+      }
+    } else if (teams === MAX_SESSION_SLOTS) {
+      for (let color = 0; color < MAX_SESSION_SLOTS; color++) colorMap[color] = color;
+    }
+    // For 5/6/7 teams (and the other switch defaults), the official leaves
+    // IN_USE intact: its low five bits become 0x11. Do not "correct" it.
+    for (let slot = 0; slot < MAX_SESSION_SLOTS; slot++) {
+      if (this.IsPlayerSet(slot)) applyColor(slot, colorMap[this.GetColor(slot)]!);
+    }
   }
 
   /** CBaseSession::OnSelectColor — 98 → 108 (FxServer.exe.c:30993). */
@@ -2188,10 +2156,10 @@ export class CGameSession {
   /** CGameSession::SetMapIdxPlayingByLevel (FxServer.exe.c:41C9C4). */
   SetMapIdxPlayingByLevel(level: number, gm: number, premiumTicket: number): void {
     let mapIdx = this.m_nMapIdx;
-    if (mapIdx === -1) {
+    if (mapIdx === MAP_IDX_RANDOM) {
       mapIdx = CGameMapTmplList.ms_pInstance!.GetRandomMapIdx(this.m_nCurPlayerNum, level, -1, 0, gm, premiumTicket);
     } else if (mapIdx < 0) {
-      mapIdx = CGameMapTmplList.ms_pInstance!.GetRandomMapIdx(this.m_nCurPlayerNum, level, -2 - mapIdx, 0, gm, premiumTicket);
+      mapIdx = CGameMapTmplList.ms_pInstance!.GetRandomMapIdx(this.m_nCurPlayerNum, level, GetThemeIdxFromMapIdx(mapIdx), 0, gm, premiumTicket);
     }
     this.m_nGameMapIdx = mapIdx;
   }
@@ -2321,13 +2289,11 @@ export class CGameSession {
     packet.Encode2(this.m_nGameMapIdx & 0xffff);
     packet.Encode1(this.m_nCurPlayerNum); // +832 — GetPlayerNo(), not the max
     const tmpl = CGameMapTmplList.ms_pInstance!.m_apGameMapTmpl[this.m_nGameMapIdx];
-    const spawns = Math.min(tmpl ? tmpl.m_nMaxPlayer : 8, 8);
+    const spawns = Math.min(tmpl ? tmpl.m_nMaxPlayer : MAX_SESSION_SLOTS, MAX_SESSION_SLOTS);
     const order: number[] = [];
     for (let i = 0; i < spawns; i++) order.push(i);
-    for (let i = order.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [order[i], order[j]] = [order[j]!, order[i]!];
-    }
+    const random = CMainSystem.ms_pInstance!.m_WorkerRandom;
+    random.random_shuffle(order); // forward STL swaps, before any bomber draws
     let next = 0;
     const attr = CBomberAttr.ms_pInstance!;
     for (let slot = 0; slot < MAX_SESSION_SLOTS; slot++) {
@@ -2335,10 +2301,10 @@ export class CGameSession {
       if (!this.IsPlayerSet(slot)) continue;
       let bomber = this.GetBomber(slot);
       if (bomber === attr.GetTotalCount() && attr.GetNormalCount() > 0) {
-        if (Math.floor(Math.random() * 30) !== 0) {
-          bomber = Math.floor(Math.random() * attr.GetNormalCount());
+        if ((random.rand() % 30) !== 0) {
+          bomber = random.rand() % attr.GetNormalCount();
         } else {
-          bomber = attr.GetNormalCount() + (Math.floor(Math.random() * 3) !== 0 ? 1 : 0);
+          bomber = attr.GetNormalCount() + ((random.rand() % 3) !== 0 ? 1 : 0);
         }
       }
       this.m_aBomberIdx[slot] = bomber;
@@ -2366,8 +2332,8 @@ export class CGameSession {
     this.m_nGhostCount = 0; // +936
     this.m_dwLastGhostTime = 0; // +940
     this.m_dwLaunchTime = timeGetTime();
-    this.m_nGhostStart = tmpl ? tmpl.m_nArg60 : 0; // +12560 ← tmpl+60 (seconds; ×1000 at DoStartGame)
-    this.m_nGhostFreq = tmpl ? tmpl.m_nArg64 : 0; // +12564 ← tmpl+64
+    this.m_nGhostStart = tmpl ? tmpl.m_nGhostStart : 0; // +12560 ← tmpl+60 (seconds; ×1000 at DoStartGame)
+    this.m_nGhostFreq = tmpl ? tmpl.m_nGhostFreq : 0; // +12564 ← tmpl+64
     this.m_dwAirplaneItemProb = tmpl ? tmpl.m_dwAirplaneItemProb : 0; // +12776 ← tmpl+72
     this.m_dwArg76 = tmpl ? tmpl.m_dwArg76 : 0; // +12780 ← tmpl+76
     // MissionInfo::operator= (+12748 ← tmpl+108..+120) — the server never
@@ -2426,7 +2392,9 @@ export class CGameSession {
     if (colorMap[2] !== -1) claimMain(2);
     if (colorMap[4] !== -1) claimMain(4);
     if (colorMap[7] !== -1) claimMain(7);
-    this.SetMapIdxPlayingByLevel(chiefUser.dyn.exp, CClientSocket.HasAuthority(23), chiefUser.m_fPremiumTicket);
+    // OnRequestStartGame (FxServer.exe.c:37595): user+1984 is LEVEL, not exp (+212). The ticket argument
+    // is a BOOL produced by comparing the byte at +2004 with exactly 1.
+    this.SetMapIdxPlayingByLevel(chiefUser.m_nLevel, CClientSocket.HasAuthority(23), chiefUser.m_fPremiumTicket === 1 ? 1 : 0);
     const can = this.CanStartGame(0);
     const res = new CSendPacket(GS_ClientSend.OnStartGameRes, CipherDegree.kPacketEncryptedCRC8);
     res.Encode1(can);
@@ -2439,8 +2407,7 @@ export class CGameSession {
         if (!this.IsPlayerSet(slot)) continue;
         const want = colorMap[this.GetColor(slot)]!;
         if (this.GetColor(slot) !== want) {
-          const p = slot * 3 + 2;
-          this.m_rgSlotState[p] = (this.m_rgSlotState[p]! ^ (want ^ this.m_rgSlotState[p]!)) & SLOTSTATE_COLOR_MASK;
+          this.SetColorBits(slot, want);
           changed = true;
           this.MakeSetSlotStatePacket(slot, packet);
           this.PutPacket(packet);
@@ -2679,7 +2646,7 @@ export class CGameSession {
     packet.Encode1(item);
     if (itemAttr.m_vtEffect[item] === 99) {
       let count = 1;
-      if (eater && (eater.m_fPremiumTicket & 0xff) === 1) count = Math.floor(Math.random() * 2) + 1; // user+2004 byte
+      if (eater && (eater.m_fPremiumTicket & 0xff) === 1) count = (CMainSystem.ms_pInstance!.m_WorkerRandom.rand() % 2) + 1; // user+2004 byte
       packet.Encode1(count);
       const lucci = count * itemAttr.m_vtAmount[item]!;
       if (lucci > 10000) console.error(`[GS] suspicious on lucci amount ${lucci}`);
@@ -3291,7 +3258,7 @@ export class CGameSession {
   DoStartGame(): void {
     this.m_SyncGameObjMan.Init(this);
     const tmpl = this.m_nGameMapIdx >= 0 ? CGameMapTmplList.ms_pInstance!.m_apGameMapTmpl[this.m_nGameMapIdx] : undefined;
-    this.m_SyncGameObjMan.SetInitialObjNo(tmpl ? tmpl.m_nArg84 : 0);
+    this.m_SyncGameObjMan.SetInitialObjNo(tmpl ? tmpl.m_nSyncGameObjCount : 0);
     this.m_nObj0 = -1; // +11612
     this.m_nObj1 = -1; // +11616
     this.m_GameClock.StartGame();

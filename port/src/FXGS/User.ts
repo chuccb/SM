@@ -4,14 +4,14 @@
 import { Encode1, Encode2, Encode4, EncodeBuffer } from "../core/BufferManipulator.ts";
 import { CPacketSocket } from "../core/CPacketSocket.ts";
 import { CSendPacket, enSocket, type enSocket as EnSocket } from "../core/Packet.ts";
-import { CDBMan } from "../db/DBMan.ts";
+import { CDBMan, type _USERDYNINFO } from "../db/DBMan.ts";
 import { CLIENTSOCKET_HEADER_CODE_MODIFIER, CLIENTSOCKET_HEADER_CODE_RCV, CLIENTSOCKET_HEADER_CODE_SND, CLIENTSOCKET_SEQ, CLIENTSOCKET_SEQ_DELTA } from "../lib/PacketIDs.ts";
-import { CDynInfoCalculator_GetLevel, kLevelTableSize } from "../LS/LevelTable.ts";
+import { CDynInfoCalculator_GetLevel, kLevelTableSize } from "../lib/LevelTable.ts";
 import { timeGetTime } from "../core/timeGetTime.ts";
 import { CChannelPool } from "./Chat";
-import { CHANNEL_TYPE_GUILD, DYN_FLUSH_BURST, SESSION_IDX_NONE } from "./Defs";
+import { CHANNEL_TYPE_GUILD, DYN_FLUSH_BURST, SESSION_IDX_NONE, USER_MONEY_MAX } from "./Defs";
 import { CConnectPool } from "./Pools";
-import { CUserItemMan, GetVariantTime, PreInventory, UserInventory, _USERACCOUNT, _USERDYNINFO } from "./CUserItemMan";
+import { CUserItemMan, GetVariantTime, PreInventory, UserInventory, _USERACCOUNT } from "./CUserItemMan";
 import { CGameSessionTable } from "./SessionTable";
 import { CCenterProcess, CMainSystem } from "./System";
 import { CGuildTable, CLocalUserTable } from "./Tables";
@@ -22,24 +22,22 @@ import { CGuildTable, CLocalUserTable } from "./Tables";
 export class CUser {
   m_strName: string;
   account: _USERACCOUNT;
-  dyn: _USERDYNINFO;
+  dyn: _USERDYNINFO; // +196; numeric members start at byte +208
   m_pSocket: CClientSocket | null;
   m_nFree = 0; // +20 (CSafeObject::m_nFree — 0 while the user object is live)
-  m_nSlotIdx = -1; // +490
-  m_nGlobalSerialNo = 0; // +491 (CUser::SetGlobalSerialNo)
-  m_nGuildSN = 0; // +493 (CUser::SetGuildSerialNo; filled from the p7 tail)
-  m_fMoneyModified = 0; // +494
-  m_nWinCount = 0; // +216
-  m_nDrawCount = 0; // +220
-  m_nLoseCount = 0; // +224
-  m_fExpModified = 0; // +495
-  m_nLevel = 0; // +496
-  m_nBonusLevel = 0; // +497
-  m_nPremiumSvrId = 0; // +498
-  m_nPremiumSvrIdx = 0; // +499
-  m_nFlushCount = 0; // +500 (DeferFlushModifiedInfo burst counter)
+  m_nSlotIdx = -1; // byte +1960
+  m_nGlobalSerialNo = 0; // byte +1964 (CUser::SetGlobalSerialNo)
+  m_nGuildSN = 0; // byte +1972 (CUser::SetGuildSerialNo; filled from the p7 tail)
+  // Descriptive TS dirty-flag names; offsets here are bytes, not DWORD indices.
+  m_fDynInfoModified = 0; // +1976: money/exp/win/draw/lose, not just money
+  m_fLevelModified = 0; // +1980: level changed, not every exp change
+  m_nLevel = 0; // byte +1984
+  m_nBonusLevel = 0; // byte +1988
+  m_nPremiumSvrId = 0; // byte +1992
+  m_nPremiumSvrIdx = 0; // byte +1996
+  private m_nGame = 0; // +2000: unsigned IncGame/GetGame counter
   m_fPremiumTicket = 0; // +2004 byte
-  m_fModifiedClient = 0; // +2008 (the p7 tail byte)
+  private m_fClientInitialized = 0; // +2008: IsClientInitialized, independent of games
   m_vtInventory: UserInventory[] = [];
   m_apPreInventory: (PreInventory | null)[] = new Array(30).fill(null);
   m_nPreInventoryCount = 0; // +1920
@@ -134,30 +132,43 @@ export class CUser {
    *  The official compares directly against the same 450 the level table
    *  is sized by (FxServer.exe.c:26980, `if (n450 > 450) return 450;`). */
   GetLookLevel(): number {
-    const n = this.m_nLevel + this.m_nBonusLevel;
+    const n = (this.m_nLevel + this.m_nBonusLevel) | 0;
     if (n < 1) return 1;
     if (n > kLevelTableSize) return kLevelTableSize;
     return n;
   }
 
-  /** CUser::IncDecMoney — clamps into 0..1000000 and marks the flush flag. */
-  /** CUser::IncWin / IncDraw / IncLose (41D1C1..41D219) — count + the money flush flag. */
+  /** IncWin/Draw/Lose (0041D1C1..0041D219) mutate the SAME _USERDYNINFO
+   *  read by detail packets and WriteUserDynInfo; no parallel counters. */
   IncWin(): void {
-    this.m_nWinCount++;
-    this.m_fMoneyModified = 1;
+    this.dyn.win = (this.dyn.win + 1) | 0;
+    this.m_fDynInfoModified = 1;
   }
   IncDraw(): void {
-    this.m_nDrawCount++;
-    this.m_fMoneyModified = 1;
+    this.dyn.draw = (this.dyn.draw + 1) | 0;
+    this.m_fDynInfoModified = 1;
   }
   IncLose(): void {
-    this.m_nLoseCount++;
-    this.m_fMoneyModified = 1;
+    this.dyn.lose = (this.dyn.lose + 1) | 0;
+    this.m_fDynInfoModified = 1;
   }
 
   /** CUser::IncGame (41D245) — bumps the dyn burst counter (+2000). */
   IncGame(): void {
-    this.m_nFlushCount++;
+    this.m_nGame = (this.m_nGame + 1) >>> 0;
+  }
+
+  /** CUser::GetGame (0041691C) — unsigned games since the last flush. */
+  GetGame(): number {
+    return this.m_nGame;
+  }
+
+  /** CUser::IsClientInitialized / SetClientInitialized (00408155/0040815C). */
+  IsClientInitialized(): number {
+    return this.m_fClientInitialized;
+  }
+  SetClientInitialized(initialized: number): void {
+    this.m_fClientInitialized = initialized | 0;
   }
 
   /** CUser::GetSelfidx (FxServer.exe.c:26610) — this user's index inside its socket. */
@@ -168,37 +179,36 @@ export class CUser {
     return -1;
   }
 
+  /** CUser::IncDecMoney — native signed add first, then clamp. */
   IncDecMoney(value: number): void {
-    this.dyn.money += value;
-    this.dyn.money = Math.max(0, Math.min(1000000, this.dyn.money));
-    this.m_fMoneyModified = 1;
+    const money = (this.dyn.money + value) | 0;
+    this.dyn.money = Math.max(0, Math.min(USER_MONEY_MAX, money));
+    this.m_fDynInfoModified = 1;
   }
 
   /** CUser::IncDecExp — returns +1 levelup / -1 leveldown / 0. */
   IncDecExp(value: number): number {
     const old = this.m_nLevel;
-    this.dyn.exp = Math.max(0, this.dyn.exp + value);
-    this.m_fMoneyModified = 1;
+    this.dyn.exp = Math.max(0, (this.dyn.exp + value) | 0);
+    this.m_fDynInfoModified = 1;
     this.SetLevel();
     if (this.m_nLevel !== old) {
-      this.m_fExpModified = 1;
+      this.m_fLevelModified = 1;
       return this.m_nLevel > old ? 1 : -1;
     }
     return 0;
   }
 
-  /** CUser::DeferFlushModifiedInfo — prUpdateUserDynamic when forced or bursty. */
+  /** CUser::DeferFlushModifiedInfo (00417603) — snapshot/reset under the
+   *  native lock, then write outside it. JS execution here is synchronous.
+   *  The original clears dirty state even when WriteUserDynInfo fails. */
   DeferFlushModifiedInfo(db: CDBMan, fForce: number): void {
-    if (fForce !== 0 || this.m_nFlushCount >= DYN_FLUSH_BURST) {
-      this.m_nFlushCount = 0;
-      if (this.m_fMoneyModified !== 0) {
-        db.prUpdateUserDynamic(this.dyn.strID, this.dyn.money, this.dyn.exp, this.dyn.win, this.dyn.draw, this.dyn.lose);
-        this.m_fMoneyModified = 0;
-      }
-      this.m_fExpModified = 0;
-    } else {
-      this.m_nFlushCount++;
-    }
+    if (fForce === 0 && this.GetGame() < DYN_FLUSH_BURST) return;
+    const info = this.m_fDynInfoModified !== 0 ? { ...this.dyn } : null;
+    this.m_nGame = 0;
+    this.m_fDynInfoModified = 0;
+    this.m_fLevelModified = 0;
+    if (info) db.WriteUserDynInfo(info);
   }
 
   /** CUser::AddInventory */
@@ -470,13 +480,8 @@ export class CClientSocket extends CPacketSocket {
     this.Close();
   }
 
-  PostClosePacket(): void {
-    this.Close();
-  }
-
   /** CClientSocket::SafeFree — session teardown, pool removal, user frees. */
-  Close(): void {
-    if (!this.m_bConnected) return;
+  protected OnClose(): void {
     const db = CCenterProcess.ms_pInstance?.db ?? null;
     // CGameSessionTable::DestroyPlayer when seated
     CGameSessionTable.ms_pInstance?.DestroyPlayer(this, 0);
@@ -500,8 +505,9 @@ export class CClientSocket extends CPacketSocket {
     }
     this.m_apUser = [];
     this.m_nUserCount = 0;
+    this.m_pendingPackets = [];
     CClientSocket.ms_tblSN2Obj.delete(this.m_nLocalSerialNo);
-    super.Close();
+    super.OnClose();
   }
 }
 

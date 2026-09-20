@@ -4,8 +4,9 @@
  *   CClientSocket : server ↔ game client      (rolling header code + packet-type table + seq key)
  *   CLocalSocket  : server ↔ center/relays    (static header code, no rolling)
  *
- * Framing: [headerCode:1][length:2 BE][payload...] where length is the TOTAL
- * packet size and payload[0] is the (table-converted) packet type.
+ * Framing: [headerCode:1][length:2 BE][payload and optional CRC]. Length
+ * encoding and packet-type conversion depend on the cipher degree (Packet.ts).
+ * This layer owns the bounded byte queues and connection lifecycle.
  */
 import { CipherDegree,
   CReceivedPacket,
@@ -292,7 +293,7 @@ export abstract class CPacketSocket {
   /** CPacketSocket::PutBuffer — raw bytes into the send buffer. */
   PutBuffer(pBuf: Uint8Array, len: number): EnSocket {
     if (!this.m_bConnected) return enSocket.kioNotConnected;
-    if (len <= 0) return enSocket.kioInvalidPacket;
+    if (!Number.isInteger(len) || len <= 0 || len > pBuf.length) return enSocket.kioInvalidPacket;
     if (this.m_nSndCnt + len > this.m_mbSndBuffer.length) {
       this.ReportSendOverflow();
       this.PostClosePacket();
@@ -303,13 +304,39 @@ export abstract class CPacketSocket {
     return enSocket.kioOk;
   }
 
-  /** CPacketSocket::Flush */
+  /** A transport write failure may be fatal for specialized native links. */
+  protected ReportSendFailure(): void {}
+
+  /** CPacketSocket::Flush / CServerSocket::IssueSend — consume only bytes
+   *  accepted by the transport (FxServer 0043B530, 0042EE9D, 0042EFCF).
+   *  Bun.write is synchronous and unbuffered: its return value replaces the
+   *  IOCP completion byte count. A short/zero write leaves the encoded suffix
+   *  in this same bounded FIFO; drain calls Flush again, without re-encoding
+   *  packets or advancing their cipher sequence a second time. */
   Flush(): void {
-    if (this.m_nSndCnt > 0 && this.bunSocket) {
-      const out = this.m_mbSndBuffer.subarray(0, this.m_nSndCnt).slice();
-      this.m_nSndCnt = 0;
-      this.bunSocket.write(out);
+    if (!this.m_bConnected || !this.bunSocket || this.m_nSndCnt === 0) return;
+    let written: number;
+    try {
+      written = this.bunSocket.write(this.m_mbSndBuffer.subarray(0, this.m_nSndCnt));
+    } catch {
+      this.ReportSendFailure();
+      this.PostClosePacket();
+      return;
     }
+    if (written < 0) {
+      this.ReportSendFailure();
+      this.PostClosePacket();
+      return;
+    }
+    this.m_mbSndBuffer.copyWithin(0, written, this.m_nSndCnt);
+    this.m_nSndCnt -= written;
+  }
+
+  /** Raw greetings/replies share the packet FIFO, including backpressure. */
+  SendBuffer(buffer: Uint8Array): EnSocket {
+    const err = this.PutBuffer(buffer, buffer.length);
+    if (err === enSocket.kioOk) this.Flush();
+    return err;
   }
 
   /** CPacketSocket::SendPacket */
@@ -323,6 +350,7 @@ export abstract class CPacketSocket {
   OnReceive(data: Uint8Array): void {
     if (!this.m_bConnected) return;
     if (this.m_fReceiveFloodGuard) this.CheckReceiveFlood();
+    if (!this.m_bConnected) return;
     if (this.m_nRcvCnt + data.length > this.m_mbRcvBuffer.length) {
       this.ReportReceiveOverflow();
       this.PostClosePacket();
@@ -436,30 +464,35 @@ export abstract class CPacketSocket {
     }
   }
 
-  /** CServerSocket::PostClosePacket — schedule this socket for disconnection. */
+  /** CServerSocket::PostClosePacket — abort this connection, not a drain
+   *  request. Native explicit close also discards the unsent suffix. */
   PostClosePacket(): void {
-    if (this.bunSocket) {
-      try {
-        this.bunSocket.end();
-      } catch {
-        /* already closed */
-      }
-    }
     this.Close();
   }
 
+  /** Detach before user/pool cleanup, so a failed send during cleanup cannot
+   *  recursively close the same connection or send old bytes on a new one.
+   *  Both local close and Bun's eventual close callback enter here. */
   Close(): void {
     if (!this.m_bConnected) return;
     this.m_bConnected = false;
-    try {
-      this.bunSocket?.end();
-    } catch {
-      /* ignore */
-    }
+    const socket = this.bunSocket;
     this.bunSocket = null;
+    this.m_nSndCnt = 0;
+    this.m_nRcvCnt = 0;
+    try {
+      socket?.end();
+    } catch {
+      /* already closed */
+    }
+    this.OnClose();
+  }
+
+  /** Connection-specific cleanup runs once, with the transport detached. */
+  protected OnClose(): void {
     this.hooks.onClose(this);
   }
 
-  /** kPacketRaw — every shipped link runs unencrypted. */
+  /** Initial/default degree; client links select their negotiated degree. */
   static readonly defaultCipherDegree = kPacketRaw;
 }

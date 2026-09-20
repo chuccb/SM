@@ -214,7 +214,7 @@ export class CConnectPool extends CUserPool {
       console.error(`[GS] Red Alert: Modified FxClient (${socket.GetUser(0)!.GetName()}: 0x${hash.toString(16).padStart(8, "0")})!`);
       socket.m_fImpPoint = 1;
     }
-    socket.GetUser(0)!.m_fModifiedClient = n.Decode1() === 0 ? 1 : 0;
+    socket.GetUser(0)!.SetClientInitialized(n.Decode1() === 0 ? 1 : 0);
 
     // → center p3 OnConnEstablished [E1 n][n×(EStr, E4 gSN)]
     const p = new CSendPacket(MC_ReceivedPacket.OnConnEstablished);
@@ -328,7 +328,7 @@ export class CConnectPool extends CUserPool {
     socket.SendPacket(p210);
     if (this.DeleteSocket(socket) !== 0 && CChannelPool.ms_pInstance!.AddNewSocket(socket) !== 0) {
       let sent = false;
-      if (users[0]!.m_nFlushCount === 0) {
+      if (users[0]!.IsClientInitialized() === 0) {
         const p202 = new CSendPacket(GS_ClientSend.OnUserItemList, CipherDegree.kPacketEncryptedCRC8);
         CUserItemMan.ms_pInstance!.PutUserItemList(p202);
         socket.SendPacket(p202);

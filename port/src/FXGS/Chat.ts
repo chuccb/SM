@@ -6,6 +6,7 @@ import { CServerConfig } from "../core/Config.ts";
 import { CReceivedPacket, CSendPacket, CipherDegree, kPacketEncryptedCRC8 } from "../core/Packet.ts";
 import { CDBMan } from "../db/DBMan.ts";
 import { GS_ClientSend, GS_ReceivedPacket } from "../lib/PacketIDs.ts";
+import { CDynInfoCalculator_GetMaxExpInLevel } from "../lib/LevelTable.ts";
 import { MC_ReceivedPacket } from "../lib/S2S.ts";
 import { SESSION_IDX_NONE } from "./Defs";
 import { CUserPool } from "./Pools";
@@ -662,7 +663,7 @@ export class CChannelPool extends CChatPool {
     packet.Encode4(user.dyn.draw);
     packet.Encode4(user.dyn.lose);
     packet.Encode4(user.dyn.exp);
-    packet.Encode4(0x7fffffff); // GetMaxExpInLevel (the top level)
+    packet.Encode4(CDynInfoCalculator_GetMaxExpInLevel(user.m_nLevel));
     packet.Encode2(user.m_nLevel);
     packet.Encode4(user.dyn.money);
     packet.Encode1(10);

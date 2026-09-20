@@ -110,6 +110,7 @@ export class CClientSocket extends CPacketSocket {
     super(CPacketSocket.dwRcvBufferSize, CPacketSocket.dwSndBufferSize, {
       // the vtable routes completed packets into CMainPool::OnPacket
       onPacket: (_sock, packet) => CMainPool.ms_pInstance?.OnPacket(packet, this),
+      onClose: () => CMainPool.ms_pInstance?.DelSocket(this),
     });
     this.m_szLogTag = "FXUS";
     this.m_fClientLink = true;
@@ -512,15 +513,8 @@ export async function main(cfgFile: string): Promise<void> {
       data: (t, data) => {
         socketOf.get(t)?.OnReceive(new Uint8Array(data as Buffer));
       },
-      close: (t) => {
-        const socket = socketOf.get(t);
-        if (socket) {
-          // CUserPool::OnClose — drop the socket's users, then the socket
-          // itself (the pool only ever holds packet-7 logins).
-          CMainPool.ms_pInstance?.DelSocket(socket);
-          socket.Close();
-        }
-      },
+      drain: (t) => socketOf.get(t)?.Flush(),
+      close: (t) => socketOf.get(t)?.Close(),
       error: (_t, err) => console.error(`[FXUS] ${String(err)}`),
     },
   });
