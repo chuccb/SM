@@ -279,6 +279,9 @@ function sqliteNowPlus(days: number): string {
 }
 
 export class CDBMan {
+  // The original also runs CDBMan::SyncLocalTimeFromDB (:408CC1, prGetTime →
+  // SetLocalTime) — it sets the MACHINE CLOCK from the DB server.  The six TS
+  // servers share the host clock, so there is nothing to sync.
   userInfo: Database[] = [];
   inventory: Database[] = [];
   config!: Database;

@@ -788,11 +788,22 @@ export class CLocalUserTable {
     return 1;
   }
 
-  /** CLocalUserTable::Remove */
+  /** CLocalUserTable::Remove — the original looks the name up first and
+   *  operates on whatever sits under it, reporting whichever second lookup
+   *  misses (:20311). */
   Remove(user: CUser): void {
     const key = user.GetName().toLowerCase();
-    if (this.byName.get(key) === user) this.byName.delete(key);
-    if (this.bySN.get(user.m_nGlobalSerialNo) === user) this.bySN.delete(user.m_nGlobalSerialNo);
+    const found = this.byName.get(key);
+    if (!found) {
+      console.error(`[GS] Remove failed (User Id:${user.GetName()})`);
+      return;
+    }
+    this.byName.delete(key);
+    if (this.bySN.get(found.m_nGlobalSerialNo) === found) {
+      this.bySN.delete(found.m_nGlobalSerialNo);
+    } else {
+      console.error(`[GS] Remove failed (User GlobalSerialNo:${found.m_nGlobalSerialNo})`);
+    }
   }
 
   /** CLocalUserTable::FindUserFromId */
@@ -940,10 +951,20 @@ export class CUserPool {
     this.m_setSocket.delete(socket);
   }
 
-  /** CUserPool::AddNewSocket — seat the users, then OnAddNewSocket. */
+  /** CUserPool::AddNewSocket — seat the users, then OnAddNewSocket.  The
+   *  set insert failing on an already-resident user aborts the whole seat:
+   *  the users added so far are erased and the socket is refused (:29641). */
   AddNewSocket(socket: CClientSocket): number {
+    const added: CUser[] = [];
     for (const user of socket.m_apUser) {
-      if (user) this.m_setUser.add(user);
+      if (!user) continue;
+      if (this.m_setUser.has(user)) {
+        console.error(`[GS] Try to insert already resident user in user room`);
+        for (const u of added) this.m_setUser.delete(u);
+        return 0;
+      }
+      this.m_setUser.add(user);
+      added.push(user);
     }
     this.AddSocket(socket);
     this.OnAddNewSocket(socket);
