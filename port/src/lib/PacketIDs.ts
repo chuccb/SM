@@ -322,7 +322,7 @@ export const SC_SendPacket = {
   OnReqPurchaseRes: 206, // CMainPool::OnRequestCharge — [E1 attr][E4 sn][E4 cash]
   OnPreInventory: 207, // [E1 n][n×(nothing)] — CUser::MakePreInventoryPacket is empty
   OnUseCouponRes: 208, // CMainPool::OnRequestUseCoupon — [E1 code]
-  OnDigiQAuthenRes: 209, // CBillingProcess::OnDigiQAuthen — [E1 12][E4][E4] then RequestRemainCashTw | [E1 13][EStr msg] (billing stub path)
+  OnDigiQAuthenRes: 209, // CBillingProcess::OnDigiQAuthen — [E1 12][E4][E4] then RequestRemainCashTw | [E1 13][EStr msg]
   OnTranxData: 211, // CMainPool::OnRequestTranxData
   OnShopSvrInfo: 212, // CCenterProcess::MakeShopInfoPacket — [E4 n][n×(E4 ip, E2 port)]
   OnPackageMap: 213, // CItemMan cached packet (UpdatePackageMapPacket)

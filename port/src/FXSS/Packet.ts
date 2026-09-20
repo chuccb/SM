@@ -95,3 +95,16 @@ export function DecodePacketTw(packet: CReceivedPacket, source: Uint8Array, leng
   packet.m_nPacketType = packet.Decode4At(0);
   return true;
 }
+
+/** Billing's [E1 byte count][raw ANSI bytes], NOT the client's EStr/u16.
+ * Native uses DecodeBuffer into stack storage. Bound the read and preserve
+ * every byte (including NUL), without reproducing stack overflow/overread UB.
+ */
+export function DecodeBillingString(packet: CReceivedPacket): string | null {
+  if (packet.IsEOS()) return null;
+  const length = packet.Decode1();
+  if (packet.m_uLength - packet.m_uOffset < length) return null;
+  const start = packet.m_uOffset;
+  packet.m_uOffset += length;
+  return Buffer.from(packet.m_pBlock.subarray(start, packet.m_uOffset)).toString("latin1");
+}

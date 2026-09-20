@@ -8,8 +8,9 @@
 另有 [A04 Center 逾時與狀態清理](center-timeout-compatibility-fix.md)、
 [A16 Taiwan billing transport](billing-transport-compatibility-fix.md)、
 [A06 NexonClub ID](nexonclub-id-compatibility-fix.md) 已完成報告列明差異。
-目前已列 A 待辦 **15 組**、兩輪 probes 合計 **25 GAP／13 MATCH**；全套 **437 pass／0 fail**。
+目前已列 A 待辦 **15 組**、兩輪 probes 合計 **24 GAP／14 MATCH**；全套 **465 pass／0 fail**。
 另完成 [GS ↔ Shop 轉服修復](shop-transfer-compatibility-fix.md)：回覆 opcode、Shop request 寬度與整組使用者檢查；新增雙向 TCP 回歸。
+另完成 [DigiQ 授權／餘額回覆](digiq-authorization-compatibility-fix.md) 的 224→341/342→209→301/302→203；A08／A17 其餘購買交易仍待修。
 工具鏈統一與尚未取得的 GitHub Bun canary 限制見 [port README](../README.md)。
 Center 全域 serial／SID、其餘建立回報與位置查詢另列第一輪 B，不含於上述完成範圍。
 以下除已修項目的註記外，保留第二輪清點當時的結果。A16–A23 中 A16 transport 與 A21 個人資料範圍完成；
@@ -44,6 +45,11 @@ Center 全域 serial／SID、其餘建立回報與位置查詢另列第一輪 B�
   codec 能收送正確外框，不等於購買成功、餘額回覆或整個 billing 系統已相容。
 
 ## A17 · P0 · Billing 302 解碼、成功／失敗語意及 311 correlation 欄位
+
+**後續部分修復：** 302 精確 byte 解碼、結果分支、錯誤字串及獨立 user+3104 cache 已修；
+probe `A17.billing-302-serial` 已為 MATCH，另有正反 wire／cash guard 與 TCP 回歸。
+詳見 [DigiQ 授權與餘額修復](digiq-authorization-compatibility-fix.md)。
+311 correlation 及 312／321／322 購買鏈仍未修，A17 保留待辦。以下保留原始清點。
 
 - TS `OnRemainCashTw` 讀完名字長度後使用 `DecodeRest()`；該函式會消耗**整個剩餘 body**，
   不是只取名字。因此後續 serial、balance、result 全從 EOF 讀成 0。
@@ -187,7 +193,7 @@ Center 全域 serial／SID、其餘建立回報與位置查詢另列第一輪 B�
 
 ## 保留的未完成核對與排除項
 
-1. **302錯誤／成功wire與cache**本輪是靜態確認，動態probe只覆蓋吞body及311欄位；
+1. **302錯誤／成功wire與cache**清點當時只有靜態確認，後續已補回歸並修復（見 A17 更新）；
    A19的zero/default、Addable／return10、A20混合400邊界也未各自執行。沒有灌水成probe數。
 2. 購物車的未完成handler仍歸A08/A09；普通遊戲金錢套裝的實際給物問題歸A18，
    framing歸A16。這是分層定位，不是把同一個錯誤重新編號。

@@ -32,7 +32,7 @@ import { CM_ReceivedPacket, CENTER_VERSION, CONN_HELLO_VERSION, MC_ReceivedPacke
 import { CDynInfoCalculator_GetLevel } from "../lib/LevelTable.ts";
 import { CItemMan, type ShopItem } from "./CItemMan.ts";
 import { NEXONCLUB_EMAIL_DOMAIN } from "./Defs.ts";
-import { CSendPacket as CBillingSendPacket } from "./Packet.ts";
+import { CSendPacket as CBillingSendPacket, DecodeBillingString } from "./Packet.ts";
 import { CBillingSocketTw } from "./CBillingSocketTw.ts";
 export { CBillingSocketTw } from "./CBillingSocketTw.ts";
 
@@ -135,7 +135,6 @@ export class CUser {
   m_strName = ""; // CNamedObject (lowercased index key)
   m_nGlobalSerialNo = 0;
   m_pSocket: CClientSocket | null = null; // +3092
-  m_fConnEstablished = 0; // +20 — set once CM 2 confirms the user
   m_nAuthenCode = 0; // +3116 (byte) — the CM 2 authencode (1 → [E1 1][E1 101])
   m_nSID = -1; // +3108 — CUser::GetSID/SetSID (the account SID); set from the
   // client's p7 third dword (FxShop.exe.c:19013) and echoed in MC 3
@@ -144,7 +143,8 @@ export class CUser {
   m_strCouponId = ""; // +3032 — the client 219 registered id
   m_strTranxInfo = ""; // +2900 — the per-user transaction string (ResetTranxInfo clears it)
   m_nUserAccountHiword = 0; // +152 = _USERACCOUNT+128 — the billing tail E2 (HIWORD)
-  m_nCash = 0; // +128 — the cached FxUserDynamic.Money
+  m_nCash = 0; // cached FxUserDynamic.Money (game currency, NOT billing cash)
+  m_nBillingCash = 0; // +3104 — CUser::SetCash, independent of FxUserDynamic.Money
   m_nSelectedUserIdx = 0; // socket-side selection
   m_nLevel = 0; // +3100 — CUser::SetLevel (CDynInfoCalculator::GetLevel(Exp))
   m_strNexonClubId = ""; // +0xBC — CUser::SetNexonClubId
@@ -170,6 +170,11 @@ export class CUser {
 
   SetGlobalSerialNo(n: number): void {
     this.m_nGlobalSerialNo = n;
+  }
+
+  /** CUser::SetCash (00401460) — signed DWORD at +3104. */
+  SetCash(cash: number): void {
+    this.m_nBillingCash = cash | 0;
   }
 
   /** CUser::SetLevel — CDynInfoCalculator::GetLevel(dyninfo Exp). */
@@ -518,8 +523,8 @@ export class CMainPool extends CUserPool {
    *  the GS (:10250) there is NO 1|2 count gate here: any count byte is
    *  accepted (0 still consumes the trailing selection byte and reports an
    *  empty list to the center).  Each user carries THREE dwords — the global
-   *  serial (+3096, what Insert indexes and CM 3 echoes), a dword the
-   *  original stores at +3104 and never reads back, and the billing SID
+   *  serial (+3096, what Insert indexes and CM 3 echoes), cached billing cash
+   *  (+3104, CUser::SetCash), and the billing SID
    *  (+3108, CUser::GetSID) — then [E1 selectedIdx] lands on socket+464.
    *  The answer is center MC 3, the shop's 2-columns-per-user variant
    *  [E1 n][n×(EStr, E4 serial, E4 SID)]. */
@@ -532,7 +537,7 @@ export class CMainPool extends CUserPool {
       const user = socket.GetUser(i)!;
       const name = n.DecodeStr();
       const sn = n.Decode4();
-      n.Decode4(); // +3104 — write-only in the original
+      user.SetCash(n.Decode4()); // +3104 — billing cash, not game currency
       const sid = n.Decode4(); // +3108 — the SID the center matches (==1 skips)
       user.SetName(name);
       user.SetGlobalSerialNo(sn);
@@ -1044,14 +1049,17 @@ export class CMainPool extends CUserPool {
     }
   }
 
-  /** CMainPool::OnReqDigiQAuthorization — client 224 [EStr][Estr]. */
+  /** CMainPool::OnReqDigiQAuthorization (00416B80) — client 224.
+   * Check selected user/+20 BEFORE reading the two client EStr fields.
+   * The third billing string is copied from the character's C-string name.
+   */
   OnReqDigiQAuthorization(n: CReceivedPacket, socket: CClientSocket): void {
-    const a = n.DecodeStr();
-    const b = n.DecodeStr();
     const user = socket.GetUser(socket.m_nSelectedUserIdx);
-    if (!user) return;
-    // the third buffer is the user's own name (FxShop.exe.c 19824-19832)
-    CBillingProcess.ms_pInstance?.RequestDigiQAuthorization(user, a, b, user.GetName());
+    if (!user || user.m_fTranxInProgress !== 0) return;
+    const account = n.DecodeStr();
+    const password = n.DecodeStr();
+    const name = user.GetName().split("\0", 1)[0]!;
+    CBillingProcess.ms_pInstance?.RequestDigiQAuthorization(account, password, name);
   }
 
   /** CMainPool::OnRequestTranxData — client 225 [E2][E2][E2][E4] → CTranxCtrl
@@ -1375,7 +1383,7 @@ export class CBillingProcess {
     if (this.m_fConnected === 0) return;
     if (!user.m_pSocket) return;
     const ip = user.m_pSocket.m_strPeerAddress;
-    const name = user.GetName();
+    const name = user.GetName().split("\0", 1)[0]!;
     const p = new CBillingSendPacket(BILLING_SendPacket.RequestRemainCashTw);
     p.Encode4(user.m_nSID);
     p.Encode4(user.m_nBID);
@@ -1436,13 +1444,18 @@ export class CBillingProcess {
 
   /** CBillingProcess::RequestDigiQAuthorization — billing 341:
    *  [E1 len][Ebuf]×3 (three length-prefixed ANSI strings). */
-  RequestDigiQAuthorization(_user: CUser, a: string, b: string, c: string): void {
+  RequestDigiQAuthorization(account: string, password: string, name: string): void {
     const p = new CBillingSendPacket(BILLING_SendPacket.RequestDigiQAuthorization);
-    for (const s of [a, b, c]) {
+    for (const s of [account, password, name]) {
       const buf = Buffer.from(s, "latin1");
       p.Encode1(buf.length);
       p.EncodeBuffer(buf);
     }
+    if (!this.m_pSocket?.m_bConnected) {
+      console.warn("[Shop] DigiQ authorization: billing link is unavailable; check CAConfig BillingSvr and connection logs.");
+    }
+    // Native still attempts PutPacket/Flush while disconnected. Never invent
+    // an authorization result or log these credential-bearing strings here.
     this.Send(p);
   }
 
@@ -1477,34 +1490,32 @@ export class CBillingProcess {
     this.Send(p);
   }
 
-  /** CBillingProcess::OnRemainCashTw — billing 302:
-   *  [E4 ?][E1 len][Ebuf msg][E4 serial][E4 cash][E4 result]
-   *  [result==1: E1 len][Ebuf msg2].
-   *  fail → client 203 [E1 0][EStr msg]; ok → client 203 [E1 1][E4 cash]. */
+  /** CBillingProcess::OnRemainCashTw (004039F0) — billing 302.
+   * [E4 ignored][E1 length + name bytes][E4 serial][E4 cash][E4 result].
+   * ONLY result 1 is an error, followed by an E1-length message; every
+   * other result updates user+3104 and returns client 203 [E1 1][E4 cash].
+   */
   OnRemainCashTw(n: CReceivedPacket): void {
-    n.Decode4(); // ?
-    const len = n.Decode1();
-    const buf = n.DecodeRest();
-    const msg = new TextDecoder().decode(buf.subarray(0, Math.min(len, buf.length)));
+    if (n.m_uLength - n.m_uOffset < 4) return;
+    n.Decode4();
+    if (DecodeBillingString(n) === null || n.m_uLength - n.m_uOffset < 12) return;
     const serial = n.Decode4();
     const cash = n.Decode4();
     const result = n.Decode4();
     const user = CLocalUserTable.ms_pInstance!.FindUserFromGlobalSerialNo(serial);
-    if (!user || user.m_fConnEstablished !== 0) return;
-    void msg;
+    if (!user || user.m_fTranxInProgress !== 0) return;
+    const p = new CSendPacket(SC_SendPacket.OnRemainCash, CipherDegree.kPacketEncryptedCRC8);
     if (result === 1) {
-      const len2 = n.Decode1();
-      n.DecodeRest();
-      const p = new CSendPacket(SC_SendPacket.OnRemainCash, CipherDegree.kPacketEncryptedCRC8);
+      const message = DecodeBillingString(n);
+      if (message === null) return;
+      p.Encode1(0);
+      p.EncodeStr(message);
+    } else {
+      user.SetCash(cash);
       p.Encode1(1);
       p.Encode4(cash);
-      user.m_pSocket?.SendPacket(p);
-    } else {
-      const p = new CSendPacket(SC_SendPacket.OnRemainCash, CipherDegree.kPacketEncryptedCRC8);
-      p.Encode1(0);
-      p.EncodeStr("");
-      user.m_pSocket?.SendPacket(p);
     }
+    user.m_pSocket?.SendPacket(p);
   }
 
   /** CBillingProcess::OnPurchaseOKTw — billing 312 (fail paths verified;
@@ -1538,9 +1549,35 @@ export class CBillingProcess {
     // digicell confirm — needs a live billing server
   }
 
-  /** CBillingProcess::OnDigiQAuthen — billing 342. */
-  OnDigiQAuthen(_n: CReceivedPacket): void {
-    // digicell auth response — needs a live billing server
+  /** CBillingProcess::OnDigiQAuthen (004044C0) — billing 342.
+   * [E4 SID][E4 BID][E1 length + character name][E4 result].
+   * Zero succeeds: client 209/12, then query cash using the EXISTING user
+   * SID/BID (native does not assign the returned pair to the user).
+   * Nonzero fails: client 209/13 with the following E1-length message.
+   */
+  OnDigiQAuthen(n: CReceivedPacket): void {
+    if (n.m_uLength - n.m_uOffset < 8) return;
+    const sid = n.Decode4();
+    const bid = n.Decode4();
+    const name = DecodeBillingString(n);
+    if (name === null || n.m_uLength - n.m_uOffset < 4) return;
+    const result = n.Decode4();
+    const user = CLocalUserTable.ms_pInstance!.FindUser(name);
+    if (!user || user.m_fTranxInProgress !== 0) return;
+    const p = new CSendPacket(SC_SendPacket.OnDigiQAuthenRes, CipherDegree.kPacketEncryptedCRC8);
+    if (result !== 0) {
+      const message = DecodeBillingString(n);
+      if (message === null) return;
+      p.Encode1(13);
+      p.EncodeStr(message);
+      user.m_pSocket?.SendPacket(p);
+    } else {
+      p.Encode1(12);
+      p.Encode4(sid);
+      p.Encode4(bid);
+      user.m_pSocket?.SendPacket(p);
+      this.RequestRemainCashTw(user);
+    }
   }
 
   /** the CBillingSocketTw IssueSend path (vtbl+108 PutPacket, vtbl+64 Flush). */

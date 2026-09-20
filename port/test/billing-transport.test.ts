@@ -288,7 +288,7 @@ describe("billing builders and four-byte dispatch integration", () => {
       [() => billing.RequestRemainCashTw(user), "0000012d0000001100000022000000040000000901610000003307312e322e332e34"],
       // A17's correlation and response semantics remain separate defects.
       [() => billing.RequestPurchaseTw(user, item), "00000137"],
-      [() => billing.RequestDigiQAuthorization(user, "a", "b", "c"), "00000155016101620163"],
+      [() => billing.RequestDigiQAuthorization("a", "b", "c"), "00000155016101620163"],
       [() => billing.RequestGift(user, "b", 6, 7), "0007"],
       [() => billing.RequestCheckCoupon(user), "0100"],
       [() => billing.RequestUseCoupon(user), "0101"],

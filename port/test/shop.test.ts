@@ -371,3 +371,118 @@ test("Shop login derives the club ID from DB email and carries it into coupon bi
     info.query("UPDATE FxUserAccount SET Email=? WHERE ID='tester'").run(original.Email);
   }
 });
+
+// Local test peer only, NOT an offline-authorization mode for production.
+for (const [authResult, cashResult] of [[0, 0], [5, 0], [0, 1]] as const) {
+  test(`DigiQ TCP 224 -> 341/342 -> 209 -> 301/302 -> 203; auth=${authResult}, cash=${cashResult}`, async () => {
+    const { CSendPacket: BillingPacket } = await import("../src/FXSS/Packet.ts");
+    const peers = new Set<Bun.Socket<Uint8Array>>();
+    const errors = Promise.withResolvers<never>();
+    void errors.promise.catch(() => {});
+    const ids: number[] = [];
+    const message = "\xa4\xa4 authorization denied";
+    function string8(p: CSendPacket, value: string) {
+      p.Encode1(value.length); p.EncodeBuffer(Buffer.from(value, "latin1"));
+    }
+    function readString8(n: CReceivedPacket) {
+      const length = n.Decode1();
+      const start = n.m_uOffset; n.m_uOffset += length;
+      return Buffer.from(n.m_pBlock.subarray(start, n.m_uOffset)).toString("latin1");
+    }
+    function respond(peer: Bun.Socket<Uint8Array>, p: CSendPacket) {
+      // Independent Tw framing: BE DWORD length, marker 7, raw payload.
+      const frame = Buffer.alloc(8 + p.m_uOffset);
+      frame.writeUInt32BE(p.m_uOffset); frame.writeUInt32BE(7, 4);
+      frame.set(p.m_pBlock.subarray(0, p.m_uOffset), 8);
+      peer.write(frame);
+    }
+    const server = Bun.listen<Uint8Array>({
+      hostname: "127.0.0.1", port: 0,
+      socket: {
+        open(peer) { peers.add(peer); peer.data = new Uint8Array(); },
+        close(peer) { peers.delete(peer); },
+        data(peer, chunk) {
+          try {
+            peer.data = Buffer.concat([peer.data, chunk]);
+            while (peer.data.length >= 8) {
+              const frame = Buffer.from(peer.data);
+              const length = frame.readUInt32BE();
+              expect(frame.readUInt32BE(4)).toBe(7);
+              if (frame.length < length + 8) break;
+              const n = new CReceivedPacket(); n.SetRcvPacket(frame.subarray(8, length + 8), length);
+              peer.data = frame.subarray(length + 8);
+              const id = n.Decode4(); ids.push(id);
+              if (id === 331) {
+                expect([n.Decode4(), n.Decode4()]).toEqual([4, 0]);
+              } else if (id === 341) {
+                expect([readString8(n), readString8(n), readString8(n)])
+                  .toEqual(["fixture-id", "fixture-pw", "tester"]);
+                const p = new BillingPacket(342);
+                p.Encode4(0x11223344); p.Encode4(0xaabbccdd);
+                string8(p, "tester"); p.Encode4(authResult);
+                if (authResult !== 0) string8(p, message);
+                respond(peer, p);
+              } else if (id === 301) {
+                expect(authResult).toBe(0);
+                expect([n.Decode4(), n.Decode4(), n.Decode4(), n.Decode4()])
+                  .toEqual([0xffffffff, 0xffffffff, 4, 0]);
+                expect(readString8(n)).toBe("tester");
+                expect(n.Decode4()).toBe(7); expect(readString8(n)).toBe("127.0.0.1");
+                const p = new BillingPacket(302);
+                p.Encode4(0); string8(p, "tester");
+                p.Encode4(7); p.Encode4(750); p.Encode4(cashResult);
+                if (cashResult === 1) string8(p, message);
+                respond(peer, p);
+              } else {
+                throw new Error(`Unexpected billing opcode ${id}`);
+              }
+              expect(n.m_uOffset).toBe(n.m_uLength);
+            }
+          } catch (error) { errors.reject(error); }
+        },
+      },
+    });
+    const billing = shop.billing;
+    const previous = { servers: billing.m_aBillingSvr, socket: billing.m_pSocket, connected: billing.m_fConnected };
+    let client: TestClient | undefined;
+    try {
+      billing.m_aBillingSvr = [{ SN: 0, ip: "127.0.0.1", port: server.port }];
+      await Promise.race([errors.promise, (async () => {
+        expect(await billing.ConnectToSvr()).toBe(1);
+        client = await connectShopUser("tester", 7);
+        const user = shop.userTable.FindUser("tester")!;
+        const currency = user.m_nCash;
+        expect(user.m_nBillingCash).toBe(-1); // client 7's second DWORD, SetCash
+        client.send(224, e => { e.str("fixture-id"); e.str("fixture-pw"); });
+        const response = await client.recv(209);
+        if (authResult !== 0) {
+          expect(r1(response)).toBe(13); expect(rstr(response)).toBe(message);
+          expect(ids).toEqual([331, 341]);
+          expect(client.hasPending(203)).toBe(false);
+        } else {
+          expect([r1(response), r4(response), r4(response)]).toEqual([12, 0x11223344, 0xaabbccdd]);
+          const cash = await client.recv(203);
+          if (cashResult === 1) {
+            expect(r1(cash)).toBe(0); expect(rstr(cash)).toBe(message);
+            expect(user.m_nBillingCash).toBe(-1);
+          } else {
+            expect([r1(cash), r4(cash)]).toEqual([1, 750]);
+            expect(user.m_nBillingCash).toBe(750);
+          }
+          expect(cash.off).toBe(cash.buf.length);
+          expect(ids).toEqual([331, 341, 301]);
+        }
+        expect(response.off).toBe(response.buf.length);
+        expect(user.m_nCash).toBe(currency);
+      })()]);
+    } finally {
+      client?.close();
+      billing.m_pSocket?.Close();
+      billing.m_pSocket = previous.socket;
+      billing.m_fConnected = previous.connected;
+      billing.m_aBillingSvr = previous.servers;
+      for (const peer of peers) peer.end();
+      server.stop(true);
+    }
+  });
+}
