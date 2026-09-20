@@ -53,7 +53,7 @@ if (!only || only === "center") {
   cfg.Init(join(import.meta.dir, "..", "..", "Center", "Center_000.cfg"));
   CServerConfig.ms_pInstance = cfg;
   const center = new CxCenter(cfg);
-  center.InitServerTable();
+  center.Init();
   await center.Listen();
   center.ListenMonitor();
   center.StartTimer();

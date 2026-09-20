@@ -562,7 +562,7 @@ export class CLoginPool {
       for (let i = 0; i < userCount; i++) packet.Encode4(socket.GetUser(i)!.GetGlobalSerialNo());
       packet.Encode1(nServerType);
       packet.Encode4(nSvrIdx);
-      this.m_center.SendPacketToCenter(packet);
+      this.m_center.SendFrPacketToCenter(packet);
     } else {
       const packet = new CSendPacket(LS_SendPacket.OnReqConnectToSvrRes, CipherDegree.kPacketEncryptedCRC8);
       packet.Encode1(gate);
@@ -842,8 +842,8 @@ export class CCenterProcess {
     console.log(`[LS] attached to center ${host}:${port}`);
   }
 
-  /** CCenterProcess::SendPacketToCenter */
-  SendPacketToCenter(packet: CSendPacket): void {
+  /** CCenterProcess::SendFrPacketToCenter */
+  SendFrPacketToCenter(packet: CSendPacket): void {
     this.m_pCenterSocket?.SendPacket(packet);
   }
 
@@ -901,7 +901,7 @@ export class CCenterProcess {
       packet.Encode1(user.nCommunitySvr);
     }
     packet.Encode4(socket.GetLocalSerialNo());
-    this.SendPacketToCenter(packet);
+    this.SendFrPacketToCenter(packet);
   }
 
   /** CCenterProcess::UnregisterConnection (CxLogin.exe.c:1380) — center packet 1. */
@@ -909,13 +909,13 @@ export class CCenterProcess {
     if (sn === 0) return;
     const packet = new CSendPacket(MC_ReceivedPacket.OnDeleteUser); // MC
     packet.Encode4(sn);
-    this.SendPacketToCenter(packet);
+    this.SendFrPacketToCenter(packet);
   }
 
   /** CCenterProcess::DestructCenterSvr (CxLogin.exe.c:1406) — center packet 100. */
   DestructCenterSvr(): void {
     const packet = new CSendPacket(MC_ReceivedPacket.OnDestructCenterSvr);
-    this.SendPacketToCenter(packet);
+    this.SendFrPacketToCenter(packet);
   }
 
   /** CCenterProcess::CheckEnterGame (CxLogin.exe.c:5964) */

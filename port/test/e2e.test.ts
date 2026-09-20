@@ -143,7 +143,7 @@ beforeAll(async () => {
   cfg.Init(DIR + "/center.cfg");
   CServerConfig.ms_pInstance = cfg;
   center = new CxCenter(cfg);
-  center.InitServerTable();
+  center.Init();
   await center.Listen();
   center.StartTimer();
   await loginMain(DIR + "/login.cfg", DB_DIR);

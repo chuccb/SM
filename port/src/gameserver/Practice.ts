@@ -379,7 +379,7 @@ export class CPracticeSession extends CGameSession {
           const packet = new CSendPacket(GS_INPLAY_SendInventory.OnChangeAILevel, CipherDegree.kPacketEncryptedCRC8);
           packet.Encode1(i);
           packet.Encode2(level & 0xffff);
-          socket.QueuePacket(packet);
+          socket.PutPacketQueued(packet);
         }
       }
     } else {
@@ -387,9 +387,9 @@ export class CPracticeSession extends CGameSession {
       const packet = new CSendPacket(GS_INPLAY_SendInventory.OnChangeAILevel, CipherDegree.kPacketEncryptedCRC8);
       packet.Encode1(slot);
       packet.Encode2(level & 0xffff);
-      socket.QueuePacket(packet);
+      socket.PutPacketQueued(packet);
     }
-    socket.FlushPendingPackets();
+    socket.FlushQueued();
   }
 
   /** CPracticeSession::MakeSetSlotStatePacket (FxServer.exe.c:42591C) — the
@@ -409,7 +409,7 @@ export class CPracticeSession extends CGameSession {
     for (let slot = 0; slot < this.m_nMaxSlot; slot++) {
       if (this.m_rgPlayer[slot]) this.MakeSetPlayerPacket(slot, 1, packet);
       else this.MakeSetSlotStatePacket(slot, packet);
-      socket.QueuePacket(packet);
+      socket.PutPacketQueued(packet);
     }
   }
 
@@ -417,7 +417,7 @@ export class CPracticeSession extends CGameSession {
    *  roster burst, no 112 tail (a practice room has no map packet). */
   SendSessionInfoPacket(socket: CClientSocket): void {
     this.MakeSessionInfoPacket(socket);
-    socket.FlushPendingPackets();
+    socket.FlushQueued();
   }
 
   /** CPracticeSession::CanStartGame (FxServer.exe.c:4264xx) — the game's

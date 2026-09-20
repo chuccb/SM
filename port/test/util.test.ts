@@ -96,7 +96,7 @@ beforeAll(async () => {
   ccfg.Init(join(dir, "util-center.cfg"));
   CServerConfig.ms_pInstance = ccfg;
   center = new CxCenter(ccfg);
-  center.InitServerTable();
+  center.Init();
   await center.Listen();
 
   await utilMain(join(dir, "util0.cfg"));

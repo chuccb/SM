@@ -54,7 +54,7 @@ export function U32ToIp(v: number): string {
 
 /** CGlobalUserTable entry (CUser of CxCenter, 0x74 bytes). */
 export class CUser {
-  strName: string;
+  m_strName: string;
   nServerClass: number;
   nSvrIdx: number;
   nSID: number; // +80 — CUser::GetSID: the account SID the login server sent in MC 0
@@ -80,7 +80,7 @@ export class CUser {
     nIP: number,
     man?: CxCenter,
   ) {
-    this.strName = strName;
+    this.m_strName = strName;
     this.nServerClass = nServerClass;
     this.nSvrIdx = -0x80000000; // +64 sentinel before the ctor's SetSvrIdx
     this.nSID = nSN;
@@ -182,7 +182,7 @@ export class CUser {
 
 /** One attached local server (CLocalServer, 100 bytes, on the center side). */
 export class CLocalServer {
-  strName: string;
+  m_strName: string;
   nServerClass: number; // +20 (the class byte, Init's 3rd arg)
   nSvrIdx: number; // +16 (the table slot, Init's 2nd arg)
   strIP: string;
@@ -196,7 +196,7 @@ export class CLocalServer {
   socket: CenterClientSocket | null = null; // +52
 
   constructor(strName: string, nServerClass: number, nSvrIdx: number, strIP: string, nPort: number) {
-    this.strName = strName;
+    this.m_strName = strName;
     this.nServerClass = nServerClass;
     this.nSvrIdx = nSvrIdx;
     this.strIP = strIP;
@@ -221,8 +221,8 @@ export class CenterClientSocket extends CPacketSocket {
 
   constructor(private center: CxCenter) {
     super(CPacketSocket.dwRcvBufferSize, CPacketSocket.dwSndBufferSize, {
-      onPacket: (sock, packet) => center.OnLocalPacket(sock as CenterClientSocket, packet),
-      onClose: (sock) => center.OnLocalDisconnect(sock as CenterClientSocket),
+      onPacket: (sock, packet) => center.OnPacket(sock as CenterClientSocket, packet),
+      onClose: (sock) => center.OnDisconnect(sock as CenterClientSocket),
     });
     this.m_szLogTag = "Center";
     // CServerSocket on the center side (CxCenter.exe.c:14833): mirrors CLocalSocket.
@@ -312,7 +312,7 @@ export class CxCenter {
   }
 
   /** CLocalServerMan::Init — build the server table from the cfg. */
-  InitServerTable(): void {
+  Init(): void {
     const lsNo = this.cfg.GetNumAttribute("LSNumber");
     for (let i = 0; i < lsNo; i++)
       this.servers.push(
@@ -438,7 +438,7 @@ export class CxCenter {
       this.SendLocalSvrInfoPacket(nServerClass, nSvrIdx);
       this.SendLocalSvrStatePacket(1);
     }
-    console.log(`[Center] Local server connected successfully(${expected.strName}:${addr})`);
+    console.log(`[Center] Local server connected successfully(${expected.m_strName}:${addr})`);
   }
 
   /** CGlobalUserTable::DeleteAllUserOnSvr */
@@ -475,7 +475,7 @@ export class CxCenter {
     const gsServers = this.servers.filter((s) => s.nServerClass === SVRCLASS_GAME);
     packet.Encode4(gsServers.length);
     for (const gs of gsServers) {
-      packet.EncodeStr(gs.strName);
+      packet.EncodeStr(gs.m_strName);
       packet.Encode4(gs.m_nMaxUser);
       packet.Encode1(gs.nType);
       packet.Encode1(gs.nServerClass);
@@ -630,7 +630,7 @@ export class CxCenter {
     // util's delete means "kick the user from the world"
     u.SetFree(this);
     this.serialTable.delete(u.nSID);
-    this.userTable.delete(u.strName);
+    this.userTable.delete(u.m_strName);
   }
 
   /**
@@ -638,7 +638,7 @@ export class CxCenter {
    * [E1 type][EStr] → CLocalServerMan::OnAdminNotifyGameServerMsg: CM 8
    * [EStr] to every server of that class (SendPacketServerType).
    */
-  OnAdminNotifyGameServerMsgUtil(n: CReceivedPacket): void {
+  OnAdminNotifyGameServerMsg(n: CReceivedPacket): void {
     const type = n.Decode1();
     const str = n.DecodeStr();
     const packet = new CSendPacket(CM_ReceivedPacket.OnAdminNotifyMsg);
@@ -647,7 +647,7 @@ export class CxCenter {
   }
 
   /** CLocalServer::OnPacket and friends (CxCenter.exe.c:10155+). */
-  OnLocalPacket(sock: CenterClientSocket, n: CReceivedPacket): void {
+  OnPacket(sock: CenterClientSocket, n: CReceivedPacket): void {
     const owner = sock.owner;
     if (owner === null) return;
     const id = n.Decode1();
@@ -671,12 +671,12 @@ export class CxCenter {
         // CGameServer/CUtilServer::OnAdminNotifyMsg →
         // CLocalServerMan::OnAdminNotifyMsg (CxCenter.exe.c:11182): CM 8
         // [EStr] to the login + game + shop lists.
-        this.OnAdminNotifyMsgLocal(n);
+        this.OnAdminNotifyMsg(n);
         return;
       case MC_ReceivedPacket.OnAdminNotifyGameServerMsg:
         // only CUtilServer::OnPacket routes 5 upstream (CUtilServer.exe.c
         // 21737); the other classes' dispatches ignore it.
-        if (owner.nServerClass === SVRCLASS_UTIL) this.OnAdminNotifyGameServerMsgUtil(n);
+        if (owner.nServerClass === SVRCLASS_UTIL) this.OnAdminNotifyGameServerMsg(n);
         return;
       case MC_ReceivedPacket.OnRequestUserChannel:
         // CGameServer::OnPacket routes 7 to OnRequestUserChannel, as do
@@ -691,13 +691,13 @@ export class CxCenter {
       case MC_ReceivedPacket.OnSystemMsg:
         // → CLocalServerMan::OnSystemMsg (CxCenter.exe.c:11281): CM 13 [EStr]
         // to the login + game + shop lists.
-        this.OnSystemMsgLocal(n);
+        this.OnSystemMsg(n);
         return;
       case MC_ReceivedPacket.OnSystemCmd:
         // → CLocalServerMan::OnSystemCmd (CxCenter.exe.c:11925): a leading
         // "UpdateFxItem" becomes an empty CM 14 to the game + shop lists;
         // anything else is dropped.
-        this.OnSystemCmdLocal(n);
+        this.OnSystemCmd(n);
         return;
       default:
         return;
@@ -752,7 +752,7 @@ export class CxCenter {
     owner.socket?.SendPacket(packet);
     if (!fAllAdded) {
       for (const u of users) {
-        if (this.userTable.get(u.strName) === u) this.userTable.delete(u.strName);
+        if (this.userTable.get(u.m_strName) === u) this.userTable.delete(u.m_strName);
         if (this.serialTable.get(u.nSID) === u) this.serialTable.delete(u.nSID);
       }
     }
@@ -771,7 +771,7 @@ export class CxCenter {
     if (u.nChannel === owner.nServerClass && u.nSvrIdx === owner.nSvrIdx) {
       u.SetFree(this);
       this.serialTable.delete(serial);
-      this.userTable.delete(u.strName);
+      this.userTable.delete(u.m_strName);
     }
   }
 
@@ -843,7 +843,7 @@ export class CxCenter {
     // the match and the reply carries result 0.
     const users: (CUser | undefined)[] = serials.map((sn, i) => {
       const u = this.serialTable.get(sn >>> 0);
-      return u !== undefined && u.strName.toLowerCase() === names[i]!.toLowerCase() ? u : undefined;
+      return u !== undefined && u.m_strName.toLowerCase() === names[i]!.toLowerCase() ? u : undefined;
     });
     // the per-user match flags (CShopServer::OnConnEstablished's entry[2])
     const flags: number[] = users.map(() => 0);
@@ -905,10 +905,10 @@ export class CxCenter {
   DeleteConnectionTimeoutUser(): void {
     const shard = this.m_nSweepCounter++ % 6;
     for (const u of [...this.userTable.values()]) {
-      if (GetUserHashNo(u.strName) !== shard) continue;
+      if (GetUserHashNo(u.m_strName) !== shard) continue;
       if (u.DeferDisconnectTimeout(this)) {
         this.serialTable.delete(u.nSID);
-        this.userTable.delete(u.strName);
+        this.userTable.delete(u.m_strName);
       }
     }
   }
@@ -917,7 +917,7 @@ export class CxCenter {
    * CLocalServerMan::OnAdminNotifyMsg (CxCenter.exe.c:11182) — CM 8 [EStr]
    * to every connected login, game and shop server.
    */
-  OnAdminNotifyMsgLocal(n: CReceivedPacket): void {
+  OnAdminNotifyMsg(n: CReceivedPacket): void {
     const str = n.DecodeStr();
     const packet = new CSendPacket(CM_ReceivedPacket.OnAdminNotifyMsg);
     packet.EncodeStr(str);
@@ -928,7 +928,7 @@ export class CxCenter {
    * CLocalServerMan::OnSystemMsg (CxCenter.exe.c:11281) — CM 13 [EStr] to
    * every connected login, game and shop server.
    */
-  OnSystemMsgLocal(n: CReceivedPacket): void {
+  OnSystemMsg(n: CReceivedPacket): void {
     const str = n.DecodeStr();
     const packet = new CSendPacket(CM_ReceivedPacket.OnSystemMsg);
     packet.EncodeStr(str);
@@ -940,7 +940,7 @@ export class CxCenter {
    * compared case-insensitively against "UpdateFxItem"; on a match an EMPTY
    * CM 14 goes to the game + shop lists, otherwise nothing is sent.
    */
-  OnSystemCmdLocal(n: CReceivedPacket): void {
+  OnSystemCmd(n: CReceivedPacket): void {
     const str = n.DecodeStr();
     if (!str.toLowerCase().startsWith("updatefxitem")) return;
     const packet = new CSendPacket(CM_ReceivedPacket.OnItemDBInit);
@@ -963,10 +963,10 @@ export class CxCenter {
   }
 
   /** CLocalServerMan::OnDisconnect (CxCenter.exe.c:14489). */
-  OnLocalDisconnect(sock: CenterClientSocket): void {
+  OnDisconnect(sock: CenterClientSocket): void {
     const owner = sock.owner;
     if (!owner) return;
-    console.log(`[Center] End of file, close connection(${owner.strName}:${owner.strIP})`);
+    console.log(`[Center] End of file, close connection(${owner.m_strName}:${owner.strIP})`);
     owner.socket = null;
     if (this.m_mapConnNo.has(owner.nServerClass)) {
       this.m_mapConnNo.set(owner.nServerClass, (this.m_mapConnNo.get(owner.nServerClass) ?? 1) - 1);

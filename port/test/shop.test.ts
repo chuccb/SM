@@ -56,7 +56,7 @@ beforeAll(async () => {
   ccfg.Init(DIR + "/shop-center.cfg");
   CServerConfig.ms_pInstance = ccfg;
   center = new CxCenter(ccfg);
-  center.InitServerTable();
+  center.Init();
   await center.Listen();
 
   const scfg = new CServerConfig();

@@ -19,7 +19,7 @@ import { CGuildTable, CLocalUserTable } from "./Tables";
 
 /** CUser — one logged-in player (0x7DC bytes in the original). */
 export class CUser {
-  strName: string;
+  m_strName: string;
   account: _USERACCOUNT;
   dyn: _USERDYNINFO;
   m_pSocket: CClientSocket | null;
@@ -44,7 +44,7 @@ export class CUser {
   m_nPreInventoryCount = 0; // +1920
 
   constructor(socket: CClientSocket) {
-    this.strName = "";
+    this.m_strName = "";
     this.m_pSocket = socket;
     this.account = {
       SN: 0,
@@ -70,11 +70,11 @@ export class CUser {
   }
 
   GetName(): string {
-    return this.strName;
+    return this.m_strName;
   }
 
   SetName(strName: string): void {
-    this.strName = strName;
+    this.m_strName = strName;
   }
 
   /** CUser::SetGlobalSerialNo */
@@ -235,7 +235,7 @@ export class CUser {
 
   /** CUser::AppendSimpleInfoPacket — the shared rank/guild/list entry. */
   AppendSimpleInfoPacket(packet: CSendPacket): void {
-    packet.EncodeStr(this.strName);
+    packet.EncodeStr(this.m_strName);
     packet.Encode1(this.account.Gender);
     // CUser::AppendSimpleInfoPacket (FxServer.exe.c:27122) — the look level
     // rides through vtbl+24 = Encode2 (CSendPacketBase vtable 0x492198:
@@ -417,14 +417,14 @@ export class CClientSocket extends CPacketSocket {
   /** CBaseSession::PutPacket target (CClientSocket vtbl+56) — queue a copy
    *  of the session's shared packet.  (CPacketSocket::PutPacket above is the
    *  encode-into-send-buffer primitive the base socket uses.) */
-  QueuePacket(packet: CSendPacket): void {
+  PutPacketQueued(packet: CSendPacket): void {
     const copy = new CSendPacket(packet.m_nPacketType, packet.m_nCipherDegree);
     copy.EncodeBuffer(packet.m_pBlock.subarray(1, packet.m_uOffset)); // skip the type byte
     this.m_pendingPackets.push(copy);
   }
 
   /** CClientSocket vtbl+64 — send everything the sessions queued. */
-  FlushPendingPackets(): void {
+  FlushQueued(): void {
     if (this.m_pendingPackets.length === 0) return;
     const queue = this.m_pendingPackets;
     this.m_pendingPackets = [];
@@ -432,7 +432,7 @@ export class CClientSocket extends CPacketSocket {
   }
 
   /** CClientSocket vtbl+76 — one last packet, then destroy the connection. */
-  SendPacketAndDestroy(packet: CSendPacket): void {
+  ForceSendAndClose(packet: CSendPacket): void {
     this.SendPacket(packet);
     this.Close();
   }

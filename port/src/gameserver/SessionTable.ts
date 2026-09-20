@@ -178,7 +178,7 @@ export class CGameSessionTable {
     console.error(`[GS] Fatal Revenge: Kick imp's ass [${socket.GetUser(0)?.GetName() ?? "NULL"}] !`);
     const p = new CSendPacket(GS_ClientSend.OnKickoffUser, CipherDegree.kPacketEncryptedCRC8);
     p.EncodeStr("abnormal state, disconnect user.");
-    socket.SendPacketAndDestroy(p);
+    socket.ForceSendAndClose(p);
     return 1;
   }
 

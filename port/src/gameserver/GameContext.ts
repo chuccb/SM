@@ -24,8 +24,8 @@ export class CBanChief {
   m_dwOddSlotTime = 0; // +16 (SetOddSlot)
   m_nWarnedBan = 0; // +14 (SetWarnedBan)
   m_dwWarnedBanTime = 0; // +18 (SetWarnedBan)
-  m_nWarnedBanOdd = 0; // +1C (SetWarnedBanOddSlot)
-  m_dwWarnedBanOddTime = 0; // +20 (SetWarnedBanOddSlot)
+  m_nWarnedBanOddSlot = 0; // +1C (SetWarnedBanOddSlot)
+  m_dwWarnedBanOddSlotTime = 0; // +20 (SetWarnedBanOddSlot)
 
   /** CBanChief::Init (401101) — SetOddSlot(0) then SetCanStart(0). */
   Init(): void {
@@ -34,9 +34,9 @@ export class CBanChief {
   }
 
   /** CBanChief::SetWarnedBanOddSlot (401010). */
-  SetWarnedBanOdd(n: number): void {
-    this.m_nWarnedBanOdd = n;
-    this.m_dwWarnedBanOddTime = n !== 0 ? CGameClock.Now() : 0;
+  SetWarnedBanOddSlot(n: number): void {
+    this.m_nWarnedBanOddSlot = n;
+    this.m_dwWarnedBanOddSlotTime = n !== 0 ? CGameClock.Now() : 0;
   }
 
   /**
@@ -78,8 +78,8 @@ export class CBanChief {
   SetOddSlot(n: number): void {
     this.m_nOddSlot = n;
     this.m_dwOddSlotTime = n !== 0 ? CGameClock.Now() : 0;
-    this.m_nWarnedBanOdd = 0;
-    this.m_dwWarnedBanOddTime = 0;
+    this.m_nWarnedBanOddSlot = 0;
+    this.m_dwWarnedBanOddSlotTime = 0;
   }
 }
 

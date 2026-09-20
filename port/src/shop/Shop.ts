@@ -1561,7 +1561,7 @@ export class CCenterProcess {
         this.OnAdminNotifyMsg(n);
         return;
       case CM_ReceivedPacket.OnInitialSvrAttr:
-        this.OnAttr(n);
+        this.OnInitialSvrAttr(n);
         return;
       case CM_ReceivedPacket.OnItemDBInit:
         this.OnUpdateTable(n);
@@ -1596,8 +1596,9 @@ export class CCenterProcess {
     CUserPool.SendAll(CUserPool.CreateSocketList(CMainPool.ms_pInstance!), p);
   }
 
-  /** CCenterProcess::OnAttr — CM 12 [E1 attr][E1 ?] → the FX attribute id. */
-  OnAttr(n: CReceivedPacket): void {
+  /** CMainSystem::OnInitialSvrAttr — CM 12 [E1 attr][E1 ?] → the FX
+   *  attribute id (the dispatch's case 12 callee). */
+  OnInitialSvrAttr(n: CReceivedPacket): void {
     const attr = n.Decode1();
     n.Decode1();
     CxShop.ms_pInstance!.m_nFXAttr = attr;
