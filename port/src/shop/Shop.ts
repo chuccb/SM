@@ -302,7 +302,9 @@ export class CUserPool {
   m_setSocket = new Set<CClientSocket>();
   m_setUser = new Set<CUser>();
 
+  /** CUserPool::AddSocket (:421630) — a duplicate insert reports. */
   AddSocket(socket: CClientSocket): void {
+    if (this.m_setSocket.has(socket)) console.error(`[Shop] Try to insert already resident socket in userpool`);
     this.m_setSocket.add(socket);
   }
 
@@ -310,9 +312,21 @@ export class CUserPool {
     this.m_setSocket.delete(socket);
   }
 
-  /** CUserPool::AddNewSocket */
+  /** CUserPool::AddNewSocket (:29679 shop twin of the GS guard) — a user
+   *  already resident aborts the seat: report, roll back the users seated
+   *  so far, refuse the socket. */
   AddNewSocket(socket: CClientSocket): number {
-    for (const user of socket.m_apUser) if (user) this.m_setUser.add(user);
+    const added: CUser[] = [];
+    for (const user of socket.m_apUser) {
+      if (!user) continue;
+      if (this.m_setUser.has(user)) {
+        console.error(`[Shop] Try to insert already resident user in user room`);
+        for (const u of added) this.m_setUser.delete(u);
+        return 0;
+      }
+      this.m_setUser.add(user);
+      added.push(user);
+    }
     this.AddSocket(socket);
     this.OnAddNewSocket(socket);
     return 1;
@@ -355,12 +369,20 @@ export class CUserPool {
     for (const socket of sockets) socket.SendPacket(packet);
   }
 
-  /** CUserPool::OnTimer — disconnect sockets idle past 0x9C40 ms. */
+  /** CUserPool::OnTimer (:421030) — every pool bumps the shared BSS counter
+   *  (dword_498368) and the sweep fires at %0x4B: 75 ticks × 400 ms = 30 s.
+   *  DisconnectTimeoutSocket (:29065) kicks sockets idle past 0x7530 ms —
+   *  the Shop's idle gate is 30 s, not the GS's 0x9C40. */
+  OnTimer(count: number): void {
+    if (count % 0x4b === 0) this.DisconnectTimeoutSocket();
+  }
+
+  /** CUserPool::DisconnectTimeoutSocket (:29065) — 0x7530 ms without RTT. */
   DisconnectTimeoutSocket(): void {
     const now = Date.now();
     for (const socket of [...this.m_setSocket]) {
-      if (now - socket.m_dwIdleTime > 0x9c40) {
-        console.error("[Shop] Disconnect timeout socket");
+      if (now - socket.m_dwIdleTime > 0x7530) {
+        console.error(`[Shop] Disconnect Timeout Socket [${socket.m_apUser[0]?.GetName() ?? "NULL"}]`);
         socket.Close();
       }
     }
@@ -1734,11 +1756,14 @@ export class CxShop {
     });
     console.log(`[Shop] web listener on :${webPort}`);
 
-    // the timer sweeps (CTimerThread + the billing retry)
+    // CTimerThread::Proc — one Sleep(0x190) tick: the billing retry rides
+    // every tick (its own mod gates set the cadence), the idle sweep is
+    // CUserPool::OnTimer's %0x4B gate.
+    let poolOnTimerCount = 0; // dword_498368
     setInterval(() => {
-      this.mainPool.DisconnectTimeoutSocket();
+      this.mainPool.OnTimer(++poolOnTimerCount);
       void this.billing.OnTimer();
-    }, 1000);
+    }, 0x190);
   }
 }
 

@@ -204,12 +204,33 @@ export class CMainSystem {
 export class CMainPool {
   static ms_pInstance: CMainPool | null = null;
 
-  m_setSocket = new Set<CClientSocket>(); // CUserPool::AddNewSocket / DelSocket
+  m_setUser = new Set<CUser>(); // +16 (the seat set AddNewSocket inserts into)
+  m_setSocket = new Set<CClientSocket>(); // +28
 
-  /** CUserPool::AddNewSocket. */
-  AddNewSocket(User: CClientSocket): void {
+  /** CUserPool::AddNewSocket (the CxUtil twin of the GS/Shop guard) — a
+   *  user already resident aborts the seat: report, roll back the users
+   *  seated so far, refuse the socket; a duplicate socket insert reports
+   *  but the socket is accepted. */
+  AddNewSocket(User: CClientSocket): number {
+    const added: CUser[] = [];
+    for (const u of User.m_apUser) {
+      if (!u) continue;
+      if (this.m_setUser.has(u)) {
+        console.error(`[Util] Try to insert already resident user in user room`);
+        for (const seated of added) this.m_setUser.delete(seated);
+        return 0;
+      }
+      this.m_setUser.add(u);
+      added.push(u);
+    }
+    if (this.m_setSocket.has(User)) console.error(`[Util] Try to insert already resident socket in userpool`);
     this.m_setSocket.add(User);
+    this.OnAddNewSocket(User);
+    return 1;
   }
+
+  /** CUserPool::OnAddNewSocket — a no-op in the base. */
+  OnAddNewSocket(_socket: CClientSocket): void {}
 
   /** CUserPool::DelSocket — drop the socket from the pool.  (The original's
    *  OnClose path never removes CLocalUserTable rows; stale rows stay until
@@ -263,7 +284,7 @@ export class CMainPool {
   OnConnEstablished(n: CReceivedPacket, User: CClientSocket): void {
     const nCount = n.Decode1();
     User.AddNewUsers(nCount);
-    this.AddNewSocket(User);
+    this.AddNewSocket(User); // the result gates nothing at the call site
     let i = 0;
     for (; i < nCount; i++) {
       const u = User.GetUser(i)!;

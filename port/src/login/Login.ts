@@ -90,7 +90,9 @@ export class CUser {
 
   constructor(socket: CClientSocket) {
     this.socket = socket;
-    CLoginPool.ms_pInstance?.AddNewUser(this); // CUserPool::AddNewUser (CUser ctor)
+    // CUserPool::AddNewUser (CUser ctor) — a duplicate name logs in on the
+    // same pool row in practice; the refusal return gates nothing here.
+    CLoginPool.ms_pInstance?.AddNewUser(this);
   }
 
   GetId(): string {
@@ -298,9 +300,15 @@ export class CLoginPool {
     this.m_multiServer = multiServer;
   }
 
-  /** CUserPool::AddNewUser */
-  AddNewUser(user: CUser): void {
+  /** CUserPool::AddNewUser (:418D60) — a duplicate insert reports and the
+   *  user is refused (no OnAddNewUser virtual). */
+  AddNewUser(user: CUser): number {
+    if (this.m_setUser.has(user)) {
+      console.error(`[LS] Try to insert already resident user in user room`);
+      return 0;
+    }
     this.m_setUser.add(user);
+    return 1;
   }
 
   /** CUserPool::DelUser */
@@ -313,8 +321,9 @@ export class CLoginPool {
     return this.m_setUser.has(user);
   }
 
-  /** CUserPool::AddSocket */
+  /** CUserPool::AddSocket (:418E60) — a duplicate insert reports. */
   AddSocket(socket: CClientSocket): void {
+    if (this.m_setSocket.has(socket)) console.error(`[LS] Try to insert already resident socket in userpool`);
     this.m_setSocket.add(socket);
   }
 
