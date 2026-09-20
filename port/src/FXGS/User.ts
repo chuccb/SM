@@ -129,11 +129,13 @@ export class CUser {
     this.m_nLevel = CDynInfoCalculator_GetLevel(this.dyn.exp);
   }
 
-  /** CUser::GetLookLevel — level + bonus clamped to 1..450. */
+  /** CUser::GetLookLevel — level + bonus clamped to 1..kLevelTableSize.
+   *  The official compares directly against the same 450 the level table
+   *  is sized by (FxServer.exe.c:26980, `if (n450 > 450) return 450;`). */
   GetLookLevel(): number {
     const n = this.m_nLevel + this.m_nBonusLevel;
     if (n < 1) return 1;
-    if (n > kLevelTableSize - 1) return kLevelTableSize - 1;
+    if (n > kLevelTableSize) return kLevelTableSize;
     return n;
   }
 

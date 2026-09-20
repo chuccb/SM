@@ -85,7 +85,7 @@ export class CGameSession {
   m_rgWinDetailB = new Int32Array(8); // +12048 (SendGameResult encode 2)
   m_rgDetailCount = new Int32Array(8); // +12208 (GetWinGameResult's expected-finish count)
   m_rgWinDetailA = new Int32Array(8); // +12240 (GetGameDetailResult's A)
-  m_nBombTickTime = 0; // +12552 (the last bomb-tick time)
+  m_nBombTickTime = 0; // +12552 (dword 3138 — write-once zeroed at :32898, never read)
   m_dwLastTickTime = 0; // +12548 (Update's per-tick timeGetTime marker)
   m_nGameType100 = 0; // +12728 (tmpl+100 at DoStartGame)
   m_GameClock = new CGameClock(); // +12732
@@ -1086,7 +1086,11 @@ export class CGameSession {
       this.DeferBanChief();
       return;
     }
+    // The official Update stamps +12548 once per playing tick and reads it
+    // back as the bomb-clock delta (FxServer.exe.c:34851/35056); +12552 is
+    // write-once-zeroed (:32898) and never touched again.
     const time = Date.now();
+    const prevTick = this.m_dwLastTickTime;
     this.m_dwLastTickTime = time;
     if (this.m_nGamePhase === 0) {
       // launching: kick the sockets that never completed the UDP handshake
@@ -1113,8 +1117,10 @@ export class CGameSession {
     }
     this.m_UdpLossRegulator.DeferRegulateConnection(this);
     const ctx = this.m_pCtx;
-    const elapsed = time - this.m_nBombTickTime;
-    this.m_nBombTickTime = time;
+    // epoch-domain guard: the official runs on timeGetTime (bounded since
+    // boot); Date.now() needs the 0 sentinel so the very first tick of a
+    // process contributes no delta.
+    const elapsed = prevTick === 0 ? 0 : time - prevTick;
     let exploded = 0;
     if (ctx.m_nBombCount > 0) {
       // 152 — the bomb clock: every armed bomb counts down by the elapsed ms

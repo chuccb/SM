@@ -95,10 +95,16 @@ export class CDynInfoCalculator {
   m_dwColourWeight = new Float32Array(8); // +12 (per-colour average sqrt(level+100))
   m_vtSlotWeight = new Float32Array(8); // +44 (+0x2C, per-slot sqrt(level+100))
   m_nSaveMatrix = new Int32Array(64); // +76 (+0x4C, 8×8 first-save-per-colour marks)
-  m_vtKills = new Int32Array(8); // +332 (+0x14C, SetKillerIndex)
-  m_vtSaves = new Int32Array(8); // +364 (+0x16C, SetSaverIndex)
+  // offsets first-hand: SetKillerIndex (40B1DC) = ++*(this + 4*killer + 364),
+  // SetSaverIndex (40B1EC) = ++*(this + 4*saver + 332); every exp formula
+  // (GetKillNSaveExp/GetWinExp/GetDrawExp) only ever sums the two arrays.
+  m_vtKills = new Int32Array(8); // +364 (+0x16C, dword idx 91 — SetKillerIndex)
+  m_vtSaves = new Int32Array(8); // +332 (+0x14C, dword idx 83 — SetSaverIndex)
   m_nUnk18C = new Int32Array(8); // +396 (+0x18C, zeroed only)
-  m_nUnk1AC = new Int32Array(8); // +428 (+0x1AC, zeroed only)
+  m_vtNice = new Int32Array(8); // +428 (+0x1AC, dword idx 107 — CDynInfoCalculator::SetNice :31498)
+  // +460: the official floats write NaN (0x7FC00000) into empty slots
+  // (FxServer.exe.c:12699); only dead slots' colours are ever read, so the
+  // int -1 sentinel is indistinguishable.
   m_vtColour = new Int32Array(8).fill(-1); // +460 (+0x1CC, slot → colour)
   m_vtColourCount = new Int32Array(8); // +492 (+0x1EC, players per colour)
   m_nUnk20C = new Int32Array(8); // +524 (+0x20C, zeroed only)
@@ -119,9 +125,9 @@ export class CDynInfoCalculator {
       this.m_vtColour[c] = -1;
       this.m_vtSlotWeight[c] = 0;
       this.m_vtColourCount[c] = 0;
-      this.m_vtSaves[c] = 0; // [eax-80h]
-      this.m_vtKills[c] = 0; // [eax-0A0h]
-      this.m_nUnk1AC[c] = 0; // [eax-40h]
+      this.m_vtKills[c] = 0; // [eax-80h] → +364
+      this.m_vtSaves[c] = 0; // [eax-0A0h] → +332
+      this.m_vtNice[c] = 0; // [eax-40h]
       this.m_nUnk18C[c] = 0; // [eax-60h]
       this.m_nUnk20C[c] = 0; // [eax+20h]
       this.m_nUnk22C[c] = 0; // [eax+40h]
@@ -163,8 +169,9 @@ export class CDynInfoCalculator {
 
   /**
    * CDynInfoCalculator::SetSaverIndex (40B1EC) — case 3 of OnSetBomberEvent.
-   * The first save by colour `saver` sets the 8×8 mark (row `slot`, column
-   * `saver`) and bumps that colour's save count.
+   * The first save by colour `saver` sets the 8×8 mark (row `saver`,
+   * column `slot` — the saver owns the 32-byte stride) and bumps that
+   * colour's save count (+332).
    */
   SetSaverIndex(slot: number, saver: number): void {
     const i = slot + saver * 8; // lea eax, [edx+esi*8]
