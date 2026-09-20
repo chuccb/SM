@@ -52,7 +52,7 @@
  */
 
 export * from "./Defs.ts";
-export * from "./Rows.ts";
+export * from "./CUserItemMan.ts";
 export * from "./User.ts";
 export * from "./Tables.ts";
 export * from "./Pools.ts";

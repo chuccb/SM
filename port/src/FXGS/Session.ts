@@ -8,7 +8,7 @@ import { GS_ClientSend, SESSION_ReceivedPacket } from "../lib/PacketIDs.ts";
 import { ACCOUNTING_LOG_CHANNEL_TYPE, CHANNEL_TYPE_GUILD, DEATH_COORD, IS_LADDER_GAME, MAX_SESSION_SLOTS, RETURN_STAGE_DELAY, SLOTSTATE_BOMBER_CLEAR, SLOTSTATE_BOMBER_MASK, SLOTSTATE_CHIEF, SLOTSTATE_COLOR_CLEAR, SLOTSTATE_COLOR_MASK, SLOTSTATE_GROUP_CLEAR, SLOTSTATE_GROUP_MASK, SLOTSTATE_LAUNCH_OK, SLOTSTATE_READY, STR_BIG_LUCK_MSG, SUPREME_ROOM_SWAP_COUNT, THEME_IDX_BASE, TICK_U32_MASK } from "./Defs";
 import { CBanChief, CDynInfoCalculator, CGameClock, CGameContext, CSyncGameObjMan, CUdpLossRegulator } from "./GameContext";
 import { CBomberAttr, CGameMapTmplList, CItemAttr } from "./GameData";
-import { UserInventory } from "./Rows";
+import { UserInventory } from "./CUserItemMan";
 import { CGameSessionTable } from "./SessionTable";
 import { CGameSessionStrategy, CGuildSessionStrategy } from "./Strategy";
 import { CCenterProcess, CMainSystem } from "./System";
@@ -327,10 +327,10 @@ export class CGameSession {
   /** CBaseSession::MakeSlotAccessoryPacket — the tail of packet 105. */
   MakeSlotAccessoryPacket(slot: number, packet: CSendPacket): void {
     const user = this.m_rgPlayer[slot]!;
-    let n9 = 0;
-    for (let i = 0; i < 9; i++) if (user.GetSlotDecorationLoaded(i)) n9++;
-    packet.Encode1(n9);
-    if (n9 > 0) {
+    let decorationCount = 0;
+    for (let i = 0; i < 9; i++) if (user.GetSlotDecorationLoaded(i)) decorationCount++;
+    packet.Encode1(decorationCount);
+    if (decorationCount > 0) {
       packet.Encode1(slot);
       for (let i = 0; i < 9; i++) {
         const deco = user.GetSlotDecorationLoaded(i);
@@ -340,10 +340,10 @@ export class CGameSession {
         }
       }
     }
-    let n5 = 0;
-    for (let i = 0; i < 5; i++) if (user.GetCharDecoLoaded(i)) n5++;
-    packet.Encode1(n5);
-    if (n5 > 0) {
+    let charDecoCount = 0;
+    for (let i = 0; i < 5; i++) if (user.GetCharDecoLoaded(i)) charDecoCount++;
+    packet.Encode1(charDecoCount);
+    if (charDecoCount > 0) {
       packet.Encode1(slot);
       for (let i = 0; i < 5; i++) {
         const deco = user.GetCharDecoLoaded(i);

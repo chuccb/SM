@@ -9,7 +9,7 @@ import { GS_ClientSend, GS_ReceivedPacket } from "../lib/PacketIDs.ts";
 import { MC_ReceivedPacket } from "../lib/S2S.ts";
 import { SESSION_IDX_NONE } from "./Defs";
 import { CUserPool } from "./Pools";
-import { CUserItemMan } from "./Rows";
+import { CUserItemMan } from "./CUserItemMan";
 import { CGameSessionTable } from "./SessionTable";
 import { CCenterProcess, CMainSystem } from "./System";
 import { CGuildTable, CLocalUserTable } from "./Tables";

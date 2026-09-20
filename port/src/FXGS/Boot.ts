@@ -14,7 +14,7 @@ import { PACKET_NAME_TABLES } from "../lib/PacketIDs.ts";
 import { CChannelPool } from "./Chat";
 import { CBomberAttr, CGameMapTmplList, CItemAttr } from "./GameData";
 import { CConnectPool } from "./Pools";
-import { CUserItemMan } from "./Rows";
+import { CUserItemMan } from "./CUserItemMan";
 import { CGameSessionTable } from "./SessionTable";
 import { CCenterProcess, CMainSystem } from "./System";
 import { CGuildTable, CLocalUserTable } from "./Tables";

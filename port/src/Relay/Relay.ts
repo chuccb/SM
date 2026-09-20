@@ -304,16 +304,16 @@ export class MTUDPServer {
    * to a raw address; > 255 total is refused.
    */
   UnreliableSendToUnRegisteredHost(src: Uint8Array, hostlong: number, hostshort: number): number {
-    const n2 = src.byteLength + 1;
-    if (n2 > MAX_FRAME_SIZE) {
+    const frameLen = src.byteLength + 1; // data + the crc8 byte
+    if (frameLen > MAX_FRAME_SIZE) {
       ReportError("Request to send too long udp packet");
       return 2;
     }
-    const buf = new Uint8Array(n2 + 1);
-    buf[0] = n2;
+    const buf = new Uint8Array(frameLen + 1);
+    buf[0] = frameLen;
     buf.set(src, 1);
-    buf[n2] = UpdateCRC8(0, buf, n2);
-    this.m_dwBytesSend = (this.m_dwBytesSend + n2 + 1) >>> 0;
+    buf[frameLen] = UpdateCRC8(0, buf, frameLen);
+    this.m_dwBytesSend = (this.m_dwBytesSend + frameLen + 1) >>> 0;
     this.m_hSocket?.send(buf, hostshort, dwordToIp(hostlong));
     if (PacketLog.ShowsInfra()) PacketLog.Datagram("send", src, this.m_szLogTag);
     return 0;

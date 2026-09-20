@@ -528,13 +528,13 @@ export class CPracticeSession extends CGameSession {
     packet.Encode1(0);
     packet.Encode1(0);
     for (let slot = 0; slot < MAX_SESSION_SLOTS; slot++) {
-      const n3 = winTeam === -1 ? 3 : winTeam !== (this.m_rgSlotState[slot * 3 + 2]! & SLOTSTATE_COLOR_MASK) ? 2 : 0;
+      const resultMark = winTeam === -1 ? 3 : winTeam !== (this.m_rgSlotState[slot * 3 + 2]! & SLOTSTATE_COLOR_MASK) ? 2 : 0;
       const user = this.m_rgPlayer[slot];
       if (user) {
         packet.Encode1(1);
         packet.Encode4(user.GetGlobalSerialNo()); // [+1964]
         const expPct = CDynInfoCalculator.GetExpPercentage(user.dyn.exp);
-        packet.Encode1(n3);
+        packet.Encode1(resultMark);
         packet.Encode1(this.m_rgWinDetailB[slot]! & 0xff); // [+12048+4i] — never written
         packet.Encode1(this.m_rgColourCount[slot]! & 0xff); // [+12016+4i] — never written
         packet.Encode2(expPct);
@@ -544,7 +544,7 @@ export class CPracticeSession extends CGameSession {
         packet.Encode1(0);
       } else if (this.m_argpAISocket[slot] !== null) {
         packet.Encode1(2);
-        packet.Encode1(n3);
+        packet.Encode1(resultMark);
         packet.Encode1(this.m_rgWinDetailB[slot]! & 0xff);
         packet.Encode1(this.m_rgColourCount[slot]! & 0xff);
         packet.Encode2(this.m_anAILevel[slot]! & 0xffff);

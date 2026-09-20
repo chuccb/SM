@@ -12,7 +12,7 @@ import { CDynInfoCalculator_GetLevel } from "../LS/LevelTable.ts";
 import { CChannelPool } from "./Chat";
 import { CONN_PATCH_URL, SESSION_LOC_OTHER_SERVER } from "./Defs";
 import { CConnectPool } from "./Pools";
-import { CUserItemMan } from "./Rows";
+import { CUserItemMan } from "./CUserItemMan";
 import { CGuildTable, CLocalUserTable } from "./Tables";
 import { CClientSocket } from "./User";
 

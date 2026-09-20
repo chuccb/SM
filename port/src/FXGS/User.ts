@@ -10,7 +10,7 @@ import { CDynInfoCalculator_GetLevel, kLevelTableSize } from "../LS/LevelTable.t
 import { CChannelPool } from "./Chat";
 import { CHANNEL_TYPE_GUILD, DYN_FLUSH_BURST, SESSION_IDX_NONE } from "./Defs";
 import { CConnectPool } from "./Pools";
-import { CUserItemMan, GetVariantTime, PreInventory, UserInventory, _USERACCOUNT, _USERDYNINFO } from "./Rows";
+import { CUserItemMan, GetVariantTime, PreInventory, UserInventory, _USERACCOUNT, _USERDYNINFO } from "./CUserItemMan";
 import { CGameSessionTable } from "./SessionTable";
 import { CCenterProcess, CMainSystem } from "./System";
 import { CGuildTable, CLocalUserTable } from "./Tables";

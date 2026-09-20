@@ -8,7 +8,7 @@ import { CDBMan } from "../db/DBMan.ts";
 import { GS_ClientSend, GS_ReceivedPacket } from "../lib/PacketIDs.ts";
 import { MC_ReceivedPacket } from "../lib/S2S.ts";
 import { CChannelPool } from "./Chat";
-import { CUserItemMan, PreInventory, UserInventory } from "./Rows";
+import { CUserItemMan, PreInventory, UserInventory } from "./CUserItemMan";
 import { CGameSessionTable } from "./SessionTable";
 import { CCenterProcess, CMainSystem } from "./System";
 import { CGuildTable, CLocalUserTable } from "./Tables";
