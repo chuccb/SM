@@ -177,12 +177,14 @@ describe("receive-flood guard", () => {
     s.m_fReceiveFloodGuard = true;
     let closed = 0;
     s.hooks.onClose = () => closed++;
-    // arm: 0x31 receipts — the guard reads ring slot 0, never written, huge delta
+    const stamps = s.m_adwRcvStamp;
+    // Arm with an explicitly stale slot 0. Relying on its zero-initial value
+    // made this fixture depend on the Bun process already being >1 s old.
+    stamps[0] = (timeGetTime() - 5000) >>> 0;
     for (let i = 0; i < 0x31; i++) (s as any).CheckReceiveFlood();
     expect(s.m_bConnected).toBe(true);
     expect(closed).toBe(0);
     // spread the ring beyond the window: the 50th receipt stays quiet
-    const stamps = s.m_adwRcvStamp;
     stamps.fill(timeGetTime() - 5000);
     (s as any).CheckReceiveFlood();
     expect(s.m_bConnected).toBe(true);

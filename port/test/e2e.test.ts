@@ -70,8 +70,9 @@ function writeGameDataPackage(): void {
   // Attr/ItemAttr: the 8-byte header + an empty id→item map section.
   const itemAttr = Buffer.alloc(12);
   itemAttr.writeUInt32LE(0, 8); // mapCount
-  // Map/room1: version 1000 + the 17 template dwords (maxTeam 8,
-  // maxPlayer 8, no level/premium gate)
+  // Map/room1 and Map/practice1: version 1000 + the 17 template dwords
+  // (maxTeam 8, maxPlayer 8, no level/premium gate).  Attr/MapGroup marks
+  // only practice1 for CPracticeSession's native random-map override.
   const map = Buffer.alloc(18 * 4);
   map.writeUInt32LE(1000, 0); // version
   map.writeUInt32LE(8, 4); // max team (+32)
@@ -91,11 +92,25 @@ function writeGameDataPackage(): void {
   map.writeUInt32LE(0, 60); // +116
   map.writeUInt32LE(0, 64); // +120
   map.writeUInt32LE(0, 68); // +84
+  const i32 = (value: number): Buffer => {
+    const out = Buffer.alloc(4);
+    out.writeInt32LE(value);
+    return out;
+  };
+  const idfName = (value: string): Buffer => Buffer.concat([i32(value.length), Buffer.from(value, "latin1")]);
+  const mapGroup = Buffer.concat([
+    i32(1),
+    idfName("PraticeMapGroup"), // the official asset's spelling
+    i32(1),
+    idfName("practice1"),
+  ]);
   // the package: FxServer.idx = [u32 count]{[u32 nameLen][name][u32 off][u32 len]}
   const entries = [
     { name: "Attr/BomberAttr", data: bomber },
     { name: "Attr/ItemAttr", data: itemAttr },
+    { name: "Attr/MapGroup", data: mapGroup },
     { name: "Map/room1", data: map },
+    { name: "Map/practice1", data: Buffer.from(map) },
   ];
   const idxParts: Buffer[] = [Buffer.alloc(4)];
   idxParts[0]!.writeUInt32LE(entries.length, 0);
@@ -920,7 +935,7 @@ describe("game server room flow (FXGS)", () => {
   test("select map (97): random, theme and explicit choices broadcast 112 + 107 to both clients", async () => {
     const chief = roomChief!;
     const member = roomMember!;
-    // The fixture has one 8-team map in theme 0. Negative selections must
+    // Map 0 is the ordinary 8-team map in theme 0. Negative selections must
     // reach the same colour fold as map 0, not unsigned map 65535/65534.
     for (const selection of [0xffff, 0xfffe, 0]) {
       chief.send(97, (e) => e.u16(selection));
@@ -1297,7 +1312,7 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
     expect(r1(dup)).toBe(3);
   });
 
-  test("the practice room dies with its socket: the next create reuses slot 0", async () => {
+  test("the reused practice room starts immediately without TCP109 or UDP and remains connected", async () => {
     const { gs } = await enterGame("tester08");
     gs.send(86, (e) => {
       e.u8(1);
@@ -1306,6 +1321,46 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
     const created = await gs.recv(89);
     expect(r1(created)).toBe(0);
     expect(r2(created)).toBe(0); // slot 0 again — the dup-86 disconnect freed it
+    r4(created); // practice session serial
+    await gs.recv(105); // the human seat
+    for (let slot = 1; slot < 8; slot++) await gs.recv(107); // AI + six closed seats
+
+    // The native CPracticeSession::LaunchGameStageEx calls DeferStartGame
+    // immediately after 116.  Unlike an ordinary room, neither TCP109 nor
+    // either MTUDP check is a prerequisite for packet 150.
+    gs.send(106, (e) => {});
+    const can = await gs.recv(115);
+    expect(r1(can)).toBe(0);
+    const launch = await gs.recv(116);
+    expect(r4(launch)).toBeGreaterThan(0); // launch timeGetTime
+    expect(r2(launch)).toBe(1); // Map/practice1, selected by PraticeMapGroup
+    expect(r1(launch)).toBe(2); // one human + its AI seat
+    for (const [slot, color] of [[0, 0], [1, 7]]) {
+      expect(r1(launch)).toBe(slot);
+      expect(r1(launch)).toBe(0); // no captain in normal game type
+      expect(r1(launch)).toBeLessThan(8); // spawn
+      r1(launch); // bomber
+      expect(r1(launch)).toBe(color);
+    }
+    expect(launch.off).toBe(launch.buf.length);
+    await gs.recv(173); // airplane item probabilities close LaunchGameStage
+    const kickoff = await gs.recv(150);
+    expect(r4(kickoff)).toBeGreaterThan(0); // CGameClock start time
+    r4(kickoff); // gameSerial ^ gameVersion
+    expect(r4(kickoff)).toBe(0); // ghost start (raw seconds)
+    expect(r4(kickoff)).toBe(0); // ghost frequency (raw seconds)
+    expect(kickoff.off).toBe(kickoff.buf.length);
+
+    // Reproduce the user's late TCP109 shape exactly at field level. Practice
+    // ignores it, stays in phase 1, and must never enter the phase-0 UDP-loss
+    // sweep that emitted packet 195 in the broken implementation.
+    gs.send(109, (e) => {
+      e.u32be(0x028aa605);
+      e.u8(5, 1, 1, 5);
+      e.u32be(0xffffffff);
+    });
+    await expect(gs.recv(195, 900)).rejects.toThrow("timeout");
+    expect(gs.closed).toBe(false);
     gs.close();
   });
 

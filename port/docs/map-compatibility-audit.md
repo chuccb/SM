@@ -20,6 +20,7 @@
 | 主題索引 | `0041C4F7..0041C501`；`GetThemeMaxMaxPlayer` `0041AC72` | `321 - mapIdx` 是整個 C++ 物件的 DWORD 索引，不是 TS 主題陣列索引。主題陣列始於 DWORD 323，所以零基索引是 `-2-mapIdx`。入座、選圖及開局共用轉換。 |
 | 隨機選圖的等級輸入 | `OnRequestStartGame`，`.c:37595..37600` | 官方取 `user+1984` 的等級，TS 原先傳 `dyn.exp`。改傳 `m_nLevel`，避免低等級但累積經驗較高的玩家選到不符等級的地圖。 |
 | Premium ticket 輸入 | 同上，`user+2004 == 1` | 傳給選圖方法的是等於 1 的 BOOL，不是原始非零 byte。已正規化。 |
+| Practice 選圖 caller | `CPracticeSession::SetMapIdxPlayingByLevel` `0042605F` | 2026-09-21 後續發現 TS 只完成底層 practice filter，卻仍繼承普通房間 caller。現已恢復 override：practice=1、max-team=2、ticket=0，random／theme 只選練習群組；見[啟動修復](practice-start-compatibility-fix.md)。 |
 | 隊色及角色 bitfield | `AddUser` `.c:30551..30556`；`OnSelectMap` `.c:33300..33438`；`OnRequestStartGame` `.c:37613..37620` | 原式把 mask 放到整個 XOR 結果上，清掉高位元。改為保留高位元；隊色寫入共用 `SetColorBits`，入座角色使用 `SetBomber`。直接狀態更新不觸發 strategy 的 `OnSelectColor`。 |
 | 入座衝突 | `CBaseSession::AddUser` `.c:30544..30550`；`CListSession::AddUser` `.c:40395..40399` | 官方記錄「not return」後仍繼續，TS 卻 return。已保留官方的覆寫及計數流程。 |
 | 選圖封包 flush | `OnSelectMap` `0041C4CC` 至 `0041C775` | 官方先排入 112 與各 107，最後一次 flush。移除 TS 在 112 後額外的提前 flush。 |

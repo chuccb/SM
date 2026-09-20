@@ -2412,8 +2412,12 @@ export class CGameSession {
       if (changed) this.FlushPacket();
     }
     this.LaunchGameStage();
-    // LaunchGameStageEx (vtbl+200) is an empty `retn`
+    this.LaunchGameStageEx(); // native 00421205, vtbl+200; practice overrides it
   }
+
+  /** CGameSession::LaunchGameStageEx (004209B9) — normal rooms wait for
+   *  TCP109 + UDP readiness. Only this BASE implementation is an empty ret. */
+  LaunchGameStageEx(): void {}
 
   /** CGameSession::OnHackingSuspected — 186 (FxServer.exe.c:36160). */
   OnHackingSuspected(n: CReceivedPacket, socket: CClientSocket): void {

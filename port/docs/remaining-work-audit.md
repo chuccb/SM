@@ -13,7 +13,9 @@
 [A16 Taiwan billing transport](billing-transport-compatibility-fix.md)、
 [A06 NexonClub ID](nexonclub-id-compatibility-fix.md) 已修復各輪列明差異。
 A02 為保留需求，目前已列 A 待辦剩 **14 組**（不含 B 待全鏈追查工作）；兩份 probe 最新合計
-**38 個觀察／12 GAP／26 MATCH**。全套最新 **591 pass／0 fail**。
+**38 個觀察／12 GAP／26 MATCH**。全套最新 **601 pass／0 fail**。
+另完成 [Practice 立即開局／練習選圖／UDP-loss 誤踢修復](practice-start-compatibility-fix.md)：
+恢復普通房間空 stub 與 Practice override 的 vtable 分流；真實 TCP 不送 UDP 即收到150，普通房間 gate 保留。
 另完成 [GS ↔ Shop 轉服修復](shop-transfer-compatibility-fix.md)：回覆 opcode、Shop request 寬度與整組使用者檢查；新增雙向 TCP 回歸。
 另完成 [DigiQ 授權／餘額回覆](digiq-authorization-compatibility-fix.md) 的 224→341/342→209→301/302→203；後續新增[本機 billing](local-billing.md)，已驗證常駐商品／flat package 的原子結算及回 GS 的實際 inventory 回覆。
 本機政策不等於 native backend；A08/A17 其餘 gift/coupon/cart、receipt/reset、外部 settlement 等仍待修，這些工作仍保留待辦。

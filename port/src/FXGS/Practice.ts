@@ -489,6 +489,27 @@ export class CPracticeSession extends CGameSession {
     return 1;
   }
 
+  /** CPracticeSession::SetMapIdxPlayingByLevel (0042605F, vtbl+188) —
+   *  unlike a normal room, random/theme selection is restricted to practice
+   *  maps and always uses the native max-team argument 2.  The two inherited
+   *  authority/ticket arguments are deliberately ignored. */
+  override SetMapIdxPlayingByLevel(level: number, _authority: number, _premiumTicket: number): void {
+    let mapIdx = this.m_nMapIdx;
+    if (mapIdx === MAP_IDX_RANDOM) {
+      mapIdx = CGameMapTmplList.ms_pInstance!.GetRandomMapIdx(this.m_nCurPlayerNum, level, -1, 1, 2, 0);
+    } else if (mapIdx < 0) {
+      mapIdx = CGameMapTmplList.ms_pInstance!.GetRandomMapIdx(this.m_nCurPlayerNum, level, -2 - mapIdx, 1, 2, 0);
+    }
+    this.m_nGameMapIdx = mapIdx;
+  }
+
+  /** CPracticeSession::LaunchGameStageEx (004259AC, vtbl+200) — called
+   *  after LaunchGameStage finishes initializing the round. Practice starts
+   *  immediately; its TCP109 is intentionally ignored by OnPacket. */
+  override LaunchGameStageEx(): void {
+    this.DeferStartGame(); // native virtual dispatch through vtbl+148
+  }
+
   /** CPracticeSession::DeferStartGame (FxServer.exe.c:4259B4) — no UDP
    *  handshake gate: whoever is seated starts. */
   DeferStartGame(): void {
