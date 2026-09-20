@@ -3167,7 +3167,14 @@ export class CGameSession {
   }
 
   /** CGameSession::OnNotifyUDPLoss (185, 41D0BC) — tell the blamed slot to relay (54). */
-  /** CGameSession::OnNotifyUDPLoss — relay the asker's slot to one member. */
+  /**
+   * CGameSession::OnNotifyUDPLoss (case 185, FxServer.exe.c:34093) — relay
+   * the asker's slot to one member.  The asker must be seated (slot < 8) and
+   * the target live.  NB: the near-twin CGameSession::OnRequestUDPRelay
+   * (FxServer.exe.c:34508) adds the m_abDeleted != 1 (asker alive) gate and
+   * the "Request UDPRelay" Report — but it has no vtable slot and no caller
+   * in FXGS (dead in this build), so the shipped 185 shape is this one.
+   */
   OnNotifyUDPLoss(n: CReceivedPacket, socket: CClientSocket): void {
     const slot = n.Decode1();
     if (slot >= MAX_SESSION_SLOTS) return;
@@ -3175,12 +3182,10 @@ export class CGameSession {
     if (!target || target.m_nFree !== 0) return; // CUser+20 — the live-object mark
     const user0 = socket.GetUser(0);
     const senderSlot = user0 ? user0.m_nSlotIdx : 8;
-    // the asker must still be in play: m_abDeleted[slot] == 1 (dead) is out
-    if (senderSlot >= MAX_SESSION_SLOTS || this.m_abDeleted[senderSlot] === 1) return;
+    if (senderSlot >= MAX_SESSION_SLOTS) return;
     const packet = new CSendPacket(GS_ClientSend.OnRequestUDPRelayRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(senderSlot);
     target.m_pSocket?.SendPacket(packet);
-    console.log(`[GS] Request UDPRelay ${target.GetName()},${user0!.GetName()}`);
   }
 
   /**

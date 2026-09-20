@@ -22,7 +22,8 @@ import {
 import { UpdateCRC32 } from "../src/core/CRC.ts";
 import { CLocalSocket } from "../src/lib/CenterLink.ts";
 import { SVRCLASS_UTIL, MC_ReceivedPacket } from "../src/lib/S2S.ts";
-import { CSendPacket, CipherDegree } from "../src/core/Packet.ts";
+import { CReceivedPacket, CSendPacket, CipherDegree } from "../src/core/Packet.ts";
+import { GS_ClientSend } from "../src/lib/PacketIDs.ts";
 import { CA_CONFIG_SEED_IP } from "../src/db/CAConfigBak.ts";
 import { SimpleStreamEncrypt3, SimpleStreamDecrypt3 } from "../src/core/StreamCipher.ts";
 import { copyFileSync, mkdirSync, rmSync } from "node:fs";
@@ -1241,6 +1242,13 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
     const lvl = await gs.recv(111);
     expect(r1(lvl)).toBe(2);
     expect(r2(lvl)).toBe(16);
+    // chat (25) in practice is swallowed: the chat paths send through the
+    // table singleton's SendPacket, whose +4.. table is the GAME half —
+    // the practice seat's serial never matches a game room
+    gs.send(25, (e) => {
+      e.str("anyone there?");
+    });
+    await expect(gs.recv(25, 600)).rejects.toThrow("timeout");
     // asking again while seated → 89 [E1 3] and the disconnect
     gs.send(86, (e) => {
       e.u8(1);
@@ -1248,6 +1256,18 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
     });
     const dup = await gs.recv(89);
     expect(r1(dup)).toBe(3);
+  });
+
+  test("the practice room dies with its socket: the next create reuses slot 0", async () => {
+    const { gs } = await enterGame("tester08");
+    gs.send(86, (e) => {
+      e.u8(1);
+      e.u8(0);
+    });
+    const created = await gs.recv(89);
+    expect(r1(created)).toBe(0);
+    expect(r2(created)).toBe(0); // slot 0 again — the dup-86 disconnect freed it
+    gs.close();
   });
 
   test("the member leaving drops a 106 and hands the chief crown over", async () => {
@@ -1311,6 +1331,43 @@ describe("audit regression: 82 auto-join, before-join ring, BomberAttr map", () 
     expect(attr.GetBombPower(0)).toBe(0); // +276 dword5
     expect(attr.IsValidSelectIdx(0)).toBe(true);
     expect(attr.IsValidSelectIdx(1)).toBe(true); // the random index (== total)
+  });
+
+  test("OnNotifyUDPLoss (185): the live :34093 relay — live target + seated asker → 54 [E1 seat]", () => {
+    const session = Object.create(CGameSession.prototype) as CGameSession;
+    session.m_rgPlayer = new Array(8).fill(null);
+    const targetSocket = Object.create(CClientSocket.prototype) as CClientSocket;
+    const askerSocket = Object.create(CClientSocket.prototype) as CClientSocket;
+    const target = new CUser(targetSocket);
+    const asker = new CUser(askerSocket);
+    asker.m_nSlotIdx = 3;
+    session.m_rgPlayer[1] = target;
+    askerSocket.m_apUser = [asker];
+    let relay: CSendPacket | null = null;
+    (targetSocket as unknown as { SendPacket: (p: CSendPacket) => void }).SendPacket = (p) => {
+      relay = p;
+    };
+    const n = new CReceivedPacket();
+    n.Alloc(1);
+    n.m_uLength = 1;
+    n.m_pBlock[0] = 1; // the blamed seat — raw degree
+    // the happy path: 54 [E1 askerSeat] to the target's socket
+    session.OnNotifyUDPLoss(n, askerSocket);
+    expect(relay).not.toBeNull();
+    expect(relay!.m_nPacketType).toBe(GS_ClientSend.OnRequestUDPRelayRes);
+    expect(relay!.m_pBlock[1]! ^ 0x5a).toBe(3); // the asker's seat (kPacketEncryptedCRC8)
+    // a dead target (m_nFree) stays silent
+    relay = null;
+    target.m_nFree = 1;
+    n.m_uOffset = 0;
+    session.OnNotifyUDPLoss(n, askerSocket);
+    expect(relay).toBeNull();
+    // an unseated asker stays silent
+    target.m_nFree = 0;
+    asker.m_nSlotIdx = 8;
+    n.m_uOffset = 0;
+    session.OnNotifyUDPLoss(n, askerSocket);
+    expect(relay).toBeNull();
   });
 });
 

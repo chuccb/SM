@@ -1013,7 +1013,10 @@ export class CxCenter {
 /** CMonitorSocket (center) — SetHeaderCode(102,102,231), no rolling seq (CxCenter.exe.c:16424). */
 export class MonitorSocket extends CPacketSocket {
   /** "Socket receive buffer overflow(addr), PostClosePacket called"
-   *  (CxCenter.exe.c:16400); the monitor link has no flood ring. */
+   *  (CxCenter.exe.c:16400); the monitor link has no flood ring.  NB: the
+   *  original also re-stamps +240 = GetTickCount() on every receipt
+   *  (:16404) — a write-only liveness mark with no reader in CxCenter, so
+   *  nothing to port. */
   protected ReportReceiveOverflow(): void {
     console.error(`Socket receive buffer overflow(${this.bunSocket?.remoteAddress ?? ""}), PostClosePacket called`);
   }
