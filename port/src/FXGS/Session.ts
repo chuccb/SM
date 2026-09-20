@@ -3,7 +3,7 @@
  *  the results unit (163). */
 
 import { Decode1, Decode2, Decode4, Encode1, Encode2, Encode4, EncodeBuffer } from "../core/BufferManipulator.ts";
-import { CReceivedPacket, CSendPacket, CipherDegree, kPacketEncryptedCRC8 } from "../core/Packet.ts";
+import { CReceivedPacket, CSendPacket, CipherDegree, kPacketEncryptedCRC8, PACKET_TYPE_PLACEHOLDER } from "../core/Packet.ts";
 import { GS_ClientSend, SESSION_ReceivedPacket } from "../lib/PacketIDs.ts";
 import { FunctionalItem, ItemCategory, SLOT_DECORATION_COUNT, CHAR_DECO_COUNT } from "../lib/Item.ts";
 import { timeGetTime } from "../core/timeGetTime.ts";
@@ -40,7 +40,7 @@ import { CChannelPool } from "./Chat";
 import { CGuildDynInfoCalculator } from "./Strategy";
 import { readFileSync } from "node:fs";
 import { HOSTHANDLE } from "./MTUDP.ts";
-import { MC_ReceivedPacket } from "../lib/S2S.ts";
+import { MC_GameServerSendPacket } from "../lib/S2S.ts";
 
 // ============================ CGameSession ============================
 
@@ -399,7 +399,7 @@ export class CGameSession {
 
   /** CBaseSession::MakeSessionInfoPacket — 105/107 for every slot. */
   MakeSessionInfoPacket(socket: CClientSocket): void {
-    const packet = new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(PACKET_TYPE_PLACEHOLDER, CipherDegree.kPacketEncryptedCRC8);
     for (let slot = 0; slot < this.m_nMaxSlot; slot++) {
       if (this.m_rgPlayer[slot]) this.MakeSetPlayerPacket(slot, socket === this.m_rgPlayer[slot]!.m_pSocket ? 1 : 0, packet);
       else this.MakeSetSlotStatePacket(slot, packet);
@@ -439,7 +439,7 @@ export class CGameSession {
    *  (vtbl+80) already.  FlushPacket drains the whole room either way
    *  (FxServer.exe.c:30926 LABEL_4). */
   SendJoinPacket(socket: CClientSocket): void {
-    const packet = new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(PACKET_TYPE_PLACEHOLDER, CipherDegree.kPacketEncryptedCRC8);
     const n = socket.GetUserCount();
     if (n <= 0) {
       this.FlushPacket();
@@ -456,12 +456,12 @@ export class CGameSession {
       this.PutPacket(packet, socket);
     }
     this.FlushPacket();
-    this.m_pStrategy.SendSessionInfo(new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8)); // vtbl+32 (:41AFDC)
+    this.m_pStrategy.SendSessionInfo(new CSendPacket(PACKET_TYPE_PLACEHOLDER, CipherDegree.kPacketEncryptedCRC8)); // vtbl+32 (:41AFDC)
   }
 
   /** CBaseSession::SendResetPlayer — 106 for the leaver's users. */
   SendResetPlayer(socket: CClientSocket, fSendReset: number): void {
-    const packet = new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(PACKET_TYPE_PLACEHOLDER, CipherDegree.kPacketEncryptedCRC8);
     const n = socket.GetUserCount();
     for (let i = 0; i < n; i++) {
       const user = socket.GetUser(i);
@@ -712,7 +712,7 @@ export class CGameSession {
         this.DoOpenCloseSlot(this.GetSlotidx(socket.GetUser(i)), 1);
       }
     }
-    this.m_pStrategy.SendSessionInfo(new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8)); // vtbl+32
+    this.m_pStrategy.SendSessionInfo(new CSendPacket(PACKET_TYPE_PLACEHOLDER, CipherDegree.kPacketEncryptedCRC8)); // vtbl+32
     return 1;
   }
 
@@ -820,19 +820,19 @@ export class CGameSession {
       for (let slot = 0; slot < this.m_nMaxSlot; slot++) {
         const user = this.m_rgPlayer[slot];
         if (user && slot !== this.m_nChiefSlotidx && this.IsChief(user.m_pSocket!)) {
-          const packet = new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8);
+          const packet = new CSendPacket(PACKET_TYPE_PLACEHOLDER, CipherDegree.kPacketEncryptedCRC8);
           this.MakeSetSlotStatePacket(slot, packet);
           this.PutPacket(packet);
         }
       }
     }
     if (old >= 0) {
-      const packet = new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8);
+      const packet = new CSendPacket(PACKET_TYPE_PLACEHOLDER, CipherDegree.kPacketEncryptedCRC8);
       this.MakeSetSlotStatePacket(old, packet);
       this.PutPacket(packet);
     }
     if (this.m_nChiefSlotidx >= 0) {
-      const packet = new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8);
+      const packet = new CSendPacket(PACKET_TYPE_PLACEHOLDER, CipherDegree.kPacketEncryptedCRC8);
       this.MakeSetSlotStatePacket(this.m_nChiefSlotidx, packet);
       this.PutPacket(packet);
     }
@@ -1050,7 +1050,7 @@ export class CGameSession {
     }
     this.FlushPacket();
     this.DeleteAllSlotidx(socket);
-    this.m_pStrategy.SendSessionInfo(new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8)); // vtbl+32 (:32746)
+    this.m_pStrategy.SendSessionInfo(new CSendPacket(PACKET_TYPE_PLACEHOLDER, CipherDegree.kPacketEncryptedCRC8)); // vtbl+32 (:32746)
     if (this.m_nBanSerial !== 0) this.DeferBanPlayer(); // +207 → vtbl+144
     // a chief gone while the game is launching → try to start with the rest
     if (this.m_fPlaying !== 0 && this.m_nGamePhase === 0) this.DeferStartGame(); // +213/+246 → vtbl+148
@@ -1348,7 +1348,7 @@ export class CGameSession {
     }
     // strategy vtbl+32 with a fresh buffer (:41B197's DoReturnPrepareStage
     // tail) — the base stub no-ops, the guild variant broadcasts an 88
-    this.m_pStrategy.SendSessionInfo(new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8));
+    this.m_pStrategy.SendSessionInfo(new CSendPacket(PACKET_TYPE_PLACEHOLDER, CipherDegree.kPacketEncryptedCRC8));
     if (this.m_fSupreme !== 0) this.DoBangPok();
   }
 
@@ -1546,7 +1546,7 @@ export class CGameSession {
   /** CGameSession::SendBigLuckMsg (:36478) — packet 10 [EStr] through the
    *  center link; CLocalServerMan::OnSystemMsg rebroadcasts it as CM 13. */
   SendBigLuckMsg(strMsg: string): void {
-    const packet = new CSendPacket(MC_ReceivedPacket.OnSystemMsg);
+    const packet = new CSendPacket(MC_GameServerSendPacket.OnSystemMsg);
     packet.EncodeStr(strMsg);
     CCenterProcess.ms_pInstance?.SendPacket(packet);
   }
@@ -1598,7 +1598,7 @@ export class CGameSession {
       socket.PostClosePacket();
       return;
     }
-    const packet = new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(PACKET_TYPE_PLACEHOLDER, CipherDegree.kPacketEncryptedCRC8);
     const count = socket.GetUserCount();
     for (let i = 0; i < count; i++) {
       const user = socket.GetUser(i);
@@ -1668,7 +1668,7 @@ export class CGameSession {
 
     const applyColor = (slot: number, color: number): void => {
       this.SetColorBits(slot, color);
-      const packet = new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8);
+      const packet = new CSendPacket(PACKET_TYPE_PLACEHOLDER, CipherDegree.kPacketEncryptedCRC8);
       this.MakeSetSlotStatePacket(slot, packet);
       this.PutPacket(packet);
     };
@@ -2433,7 +2433,7 @@ export class CGameSession {
     if (can !== 0) return;
     if (CGameMapTmplList.ms_pInstance!.GetMapMaxTeam(this.m_nGameMapIdx) < MAX_SESSION_SLOTS) {
       let changed = false;
-      const packet = new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8);
+      const packet = new CSendPacket(PACKET_TYPE_PLACEHOLDER, CipherDegree.kPacketEncryptedCRC8);
       for (let slot = 0; slot < MAX_SESSION_SLOTS; slot++) {
         if (!this.IsPlayerSet(slot)) continue;
         const want = colorMap[this.GetColor(slot)]!;

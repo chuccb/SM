@@ -26,7 +26,21 @@
  */
 import { CServerConfig, CXRELAY_STR_KEYS } from "../core/Config.ts";
 import { PacketLog } from "../core/PacketLog.ts";
-import { UpdateCRC8 } from "../FXGS/MTUDP.ts";
+import {
+  BuildFrame,
+  MTUDP_CRC_BYTES,
+  MTUDP_FRAME_OVERHEAD,
+  MTUDP_LENGTH_BYTES,
+  MTUDP_MAX_TOTAL_LENGTH,
+  UpdateCRC8,
+} from "../FXGS/MTUDP.ts";
+
+/** Relay's opaque MTUDP addressing envelope after the length byte. */
+export const RELAY_SERIAL_BYTES = 4;
+export const RELAY_ADDRESSING_BYTES = RELAY_SERIAL_BYTES * 2;
+export const RELAY_SOURCE_SERIAL_OFFSET = MTUDP_LENGTH_BYTES;
+export const RELAY_DESTINATION_SERIAL_OFFSET = RELAY_SOURCE_SERIAL_OFFSET + RELAY_SERIAL_BYTES;
+export const RELAY_BODY_OFFSET = MTUDP_LENGTH_BYTES + RELAY_ADDRESSING_BYTES;
 
 /** HOSTHANDLEEX — the MTUDPServer host table value (32 bytes in the original). */
 export interface HOSTHANDLEEX {
@@ -50,8 +64,8 @@ const RECV_BUF_SIZE = 4096;
 const DISPATCH_BUFFER_MAX = 0x3e8000; // 4096000 bytes
 /** CUDPPacketDispatcher::Proc — "OffsetData" heartbeat stride. */
 const DISPATCH_REPORT_STRIDE = 0x1388; // 5000
-/** One MTUDP frame may carry at most 255 bytes (totalLen + crc). */
-const MAX_FRAME_SIZE = 0xff;
+/** Largest E1 total-length value; it includes the CRC but not the length byte. */
+const MAX_FRAME_SIZE = MTUDP_MAX_TOTAL_LENGTH;
 /** CTimerThread::Proc tick, and the date-log stride (OnTimer). */
 const TIMER_TICK = 0x190; // 400 ms
 const TIMER_DATE_STRIDE = 750; // 750 × 400 ms = 5 min
@@ -161,21 +175,21 @@ export class MTUDPServer {
     let off = 0;
     let left = n2;
     while (left !== 0) {
-      if (left < 2) {
+      if (left < MTUDP_FRAME_OVERHEAD) {
         ReportError("MTUDPBase::ProcessIncomingData - datagram length is less than len(sizeof(BYTE)) + FCS(sizeof(DWORD))");
         return;
       }
       const totalLen = buf[off]!;
-      if (totalLen + 1 > left) {
+      if (totalLen + MTUDP_CRC_BYTES > left) {
         ReportError("MTUDPBase::ProcessIncomingData - datagram length is less than (total len) + (FCS size)");
         return;
       }
-      if (UpdateCRC8(0, buf.subarray(off, off + totalLen + 1), totalLen + 1) !== 0) {
+      if (UpdateCRC8(0, buf.subarray(off, off + totalLen + MTUDP_CRC_BYTES), totalLen + MTUDP_CRC_BYTES) !== 0) {
         ReportError("MTUDPBase::ProcessIncomingData - crc check failed!, discard remaining");
         return;
       }
-      const srcSn = ((buf[off + 1]! << 24) | (buf[off + 2]! << 16) | (buf[off + 3]! << 8) | buf[off + 4]!) >>> 0;
-      const dstSn = ((buf[off + 5]! << 24) | (buf[off + 6]! << 16) | (buf[off + 7]! << 8) | buf[off + 8]!) >>> 0;
+      const srcSn = ((buf[off + RELAY_SOURCE_SERIAL_OFFSET]! << 24) | (buf[off + RELAY_SOURCE_SERIAL_OFFSET + 1]! << 16) | (buf[off + RELAY_SOURCE_SERIAL_OFFSET + 2]! << 8) | buf[off + RELAY_SOURCE_SERIAL_OFFSET + 3]!) >>> 0;
+      const dstSn = ((buf[off + RELAY_DESTINATION_SERIAL_OFFSET]! << 24) | (buf[off + RELAY_DESTINATION_SERIAL_OFFSET + 1]! << 16) | (buf[off + RELAY_DESTINATION_SERIAL_OFFSET + 2]! << 8) | buf[off + RELAY_DESTINATION_SERIAL_OFFSET + 3]!) >>> 0;
       if (!registered) {
         // the registration phase — home (or re-home) the sender
         const host = this.m_mapHost.get(srcSn);
@@ -218,12 +232,12 @@ export class MTUDPServer {
         this.m_dwHostCounter++;
         host.miss++;
       } else {
-        const body = buf.slice(off + 9, off + totalLen);
+        const body = buf.slice(off + RELAY_BODY_OFFSET, off + totalLen);
         this.AddPacket(body, target.ip, target.port);
         target.send++;
       }
-      off += totalLen + 1;
-      left -= totalLen + 1;
+      off += totalLen + MTUDP_CRC_BYTES;
+      left -= totalLen + MTUDP_CRC_BYTES;
     }
   }
 
@@ -304,18 +318,17 @@ export class MTUDPServer {
    * to a raw address; > 255 total is refused.
    */
   UnreliableSendToUnRegisteredHost(src: Uint8Array, hostlong: number, hostshort: number): number {
-    const frameLen = src.byteLength + 1; // data + the crc8 byte
+    const frameLen = src.byteLength + MTUDP_CRC_BYTES;
     if (frameLen > MAX_FRAME_SIZE) {
       ReportError("Request to send too long udp packet");
       return 2;
     }
-    const buf = new Uint8Array(frameLen + 1);
-    buf[0] = frameLen;
-    buf.set(src, 1);
-    buf[frameLen] = UpdateCRC8(0, buf, frameLen);
-    this.m_dwBytesSend = (this.m_dwBytesSend + frameLen + 1) >>> 0;
-    this.m_hSocket?.send(buf, hostshort, dwordToIp(hostlong));
-    if (PacketLog.ShowsInfra()) PacketLog.Datagram("send", src, this.m_szLogTag);
+    const frame = BuildFrame(src);
+    this.m_dwBytesSend = (this.m_dwBytesSend + frame.byteLength) >>> 0;
+    this.m_hSocket?.send(frame, hostshort, dwordToIp(hostlong));
+    // Receive traces contain the complete datagram; send traces must likewise
+    // show the actual length/body/CRC image handed to sendto, not bare `src`.
+    if (PacketLog.ShowsInfra()) PacketLog.Datagram("send", frame, this.m_szLogTag);
     return 0;
   }
 

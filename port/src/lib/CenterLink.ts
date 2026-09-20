@@ -11,7 +11,6 @@ import { CipherDegree,
 } from "../core/Packet.ts";
 import {
   CLIENT_VERSION,
-  CM_ReceivedPacket,
   CENTER_VERSION,
   CENTER_GREETING_SIZE,
   LOCAL_SERVER_IDENTIFICATION_SIZE,
@@ -21,7 +20,8 @@ import {
   LOCALSOCKET_HEADER_CODE_SND,
   LOCALSOCKET_SEQ,
   LOCALSOCKET_SEQ_DELTA,
-  MC_ReceivedPacket,
+  MC_PACKET_NAMES_BY_SERVER_CLASS,
+  CM_PACKET_NAMES_BY_SERVER_CLASS,
   SVRIDX_IDENTIFY_XOR,
 } from "./S2S.ts";
 import { PacketLog } from "../core/PacketLog.ts";
@@ -32,10 +32,13 @@ export const CENTER_CONNECT_RETRY_MS = 0xbb8;
 /** Existing port timeout for a peer that connects but never finishes its greeting. */
 const CENTER_GREETING_TIMEOUT_MS = 10_000;
 
-// the S2S link namespaces: a local server receives CM_* (center → local) and
-// sends MC_* (local → center) — the mirror image of CxCenter's own tables.
-PacketLog.Register("S2S", "recv", CM_ReceivedPacket);
-PacketLog.Register("S2S", "send", MC_ReceivedPacket);
+// A local server receives CM (center → local) and sends MC (local → center).
+// Register one context per class: the same opcode has different official
+// handlers in CxLogin, FxServer, FxShop and CxUtil.
+for (const [serverClass, table] of Object.entries(CM_PACKET_NAMES_BY_SERVER_CLASS))
+  PacketLog.Register(`S2S:${serverClass}`, "recv", table);
+for (const [serverClass, table] of Object.entries(MC_PACKET_NAMES_BY_SERVER_CLASS))
+  PacketLog.Register(`S2S:${serverClass}`, "send", table);
 
 export class CLocalSocket extends CPacketSocket {
   /** "Socket receive buffer overflow on LocalSocket" — the S2S link has no
@@ -95,6 +98,7 @@ export class CLocalSocket extends CPacketSocket {
     gameVersion = GAME_VERSION[nServerClass] ?? 0,
     clientVersion = CLIENT_VERSION[nServerClass] ?? 0,
   ): Promise<void> {
+    this.m_szLogTable = `S2S:${nServerClass}`;
     console.log("Try to connect center server.");
     for (;;) {
       this.m_fIdentifying = true;
@@ -125,8 +129,8 @@ export class CLocalSocket extends CPacketSocket {
         console.log("Connection failed. Try again.");
         continue;
       }
-      // CServerSocket (center side) greets: [u2 version][u2 sd]; we read 4
-      // raw bytes then identify (CLocalSocket::ConnectToCenter).  A drop
+      // CServerSocket greets [E2 version][E2 center header type]; we read 4
+      // raw bytes, adopt that conversion row, then identify.  A drop
       // inside this window reports and restarts the whole connect
       // (FxServer.exe.c:3680); a version mismatch reports and terminates
       // (:3714, CxLogin.exe.c:4922).
@@ -140,7 +144,9 @@ export class CLocalSocket extends CPacketSocket {
       }
       const version = (greeting[0]! << 8) | greeting[1]!;
       this.centerVersion = version;
-      this.serverType = (greeting[2]! << 8) | greeting[3]!;
+      this.centerHeaderType = (greeting[2]! << 8) | greeting[3]!;
+      // CxLogin.exe.lst:403E34 — virtual SetHeaderType at vtable +0x20.
+      this.SetHeaderType(this.centerHeaderType);
       if (version !== CENTER_VERSION) {
         console.error("Version mismatch, terminate process");
         this.Close();
@@ -177,7 +183,7 @@ export class CLocalSocket extends CPacketSocket {
   private greetingReject: ((reason: Error) => void) | null = null;
   private greetingBuf = new Uint8Array(0);
   centerVersion = 0;
-  serverType = 0;
+  centerHeaderType = 0;
 
   private waitGreeting(): Promise<Uint8Array> {
     if (!this.m_bConnected) return Promise.reject(new Error("center disconnected"));

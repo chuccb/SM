@@ -11,14 +11,18 @@
  */
 import { CServerConfig, FXSHOP_STR_KEYS } from "../core/Config.ts";
 import { timeGetTime } from "../core/timeGetTime.ts";
+import { MakeLower } from "../core/MakeLower.ts";
 import { PacketLog } from "../core/PacketLog.ts";
 import { CDBMan } from "../db/DBMan.ts";
 import { CipherDegree, CReceivedPacket, CSendPacket, enSocket, type enSocket as EnSocket } from "../core/Packet.ts";
 import { CPacketSocket, type IPacketSocketHooks } from "../core/CPacketSocket.ts";
 import { CLocalSocket } from "../lib/CenterLink.ts";
 import {
-  BILLING_ReceivedPacket,
+  BILLING_PACKET_LOG_CONTEXT,
   BILLING_SendPacket,
+  COUPON_SendPacket,
+  TW_BILLING_ReceivedPacket,
+  TW_BILLING_SendPacket,
   CLIENTSOCKET_HEADER_CODE_MODIFIER,
   CLIENTSOCKET_HEADER_CODE_RCV,
   CLIENTSOCKET_HEADER_CODE_SND,
@@ -28,7 +32,7 @@ import {
   SS_ReceivedPacket,
   PACKET_NAME_TABLES,
 } from "../lib/PacketIDs.ts";
-import { CM_ReceivedPacket, CENTER_VERSION, CONN_HELLO_VERSION, MC_ReceivedPacket, SVRCLASS_SHOP, CLIENT_SOCKET_CENSUS_MS } from "../lib/S2S.ts";
+import { CM_ShopServerPacket, CENTER_VERSION, CONN_HELLO_VERSION, MC_ShopServerSendPacket, SVRCLASS_SHOP, CLIENT_SOCKET_CENSUS_MS } from "../lib/S2S.ts";
 import { CDynInfoCalculator_GetLevel } from "../lib/LevelTable.ts";
 import { CItemMan, type ShopItem } from "./CItemMan.ts";
 import { ItemCategory, IsInventoryAddable } from "../lib/Item.ts";
@@ -317,7 +321,7 @@ export class CLocalUserTable {
 
   /** CLocalUserTable::Insert — 1 on success, 0 when the name/serial is taken. */
   Insert(user: CUser): number {
-    const key = user.GetName().toLowerCase();
+    const key = MakeLower(user.GetName());
     if (this.byName.has(key) || this.bySN.has(user.GetGlobalSerialNo())) return 0;
     this.byName.set(key, user);
     this.bySN.set(user.GetGlobalSerialNo(), user);
@@ -326,13 +330,13 @@ export class CLocalUserTable {
 
   /** CLocalUserTable::Remove */
   Remove(user: CUser): void {
-    this.byName.delete(user.GetName().toLowerCase());
+    this.byName.delete(MakeLower(user.GetName()));
     if (this.bySN.get(user.GetGlobalSerialNo()) === user) this.bySN.delete(user.GetGlobalSerialNo());
   }
 
   /** CLocalUserTable::FindUser */
   FindUser(name: string): CUser | null {
-    return this.byName.get(name.toLowerCase()) ?? null;
+    return this.byName.get(MakeLower(name)) ?? null;
   }
 
   /** CLocalUserTable::FindUserFromGlobalSerialNo */
@@ -465,7 +469,7 @@ export class CMainPool extends CUserPool {
         this.OnConnEstablished(n, socket);
         return;
       case SS_ReceivedPacket.RequestRemainCashTw:
-        this.OnRequestRemainCash(n, socket);
+        this.OnRequestRemainCashTw(n, socket);
         return;
       case SS_ReceivedPacket.OnReqPurchase:
         this.OnReqPurchase(n, socket);
@@ -556,7 +560,7 @@ export class CMainPool extends CUserPool {
     }
     socket.m_nSelectedUserIdx = n.Decode1();
     // → center MC 3 with the shop's extra per-user SID column (user+3108)
-    const p = new CSendPacket(MC_ReceivedPacket.OnConnEstablished);
+    const p = new CSendPacket(MC_ShopServerSendPacket.OnConnEstablished);
     p.Encode1(count);
     for (let j = 0; j < count; j++) {
       const u = socket.GetUser(j)!;
@@ -575,7 +579,7 @@ export class CMainPool extends CUserPool {
   OnReqConnectToSvr(n: CReceivedPacket, socket: CClientSocket): void {
     const type = n.Decode1();
     const target = n.Decode4();
-    const p = new CSendPacket(MC_ReceivedPacket.OnReqConnectToSvr);
+    const p = new CSendPacket(MC_ShopServerSendPacket.OnReqConnectToSvr);
     const count = socket.GetUserCount();
     p.Encode1(count);
     for (let i = 0; i < count; i++) p.Encode4(socket.GetUser(i)!.GetGlobalSerialNo());
@@ -757,7 +761,7 @@ export class CMainPool extends CUserPool {
 
   /** client 205 → CBillingProcess::RequestRemainCashTw (no client reply in
    *  this handler — the answer comes back through billing 302). */
-  OnRequestRemainCash(_n: CReceivedPacket, socket: CClientSocket): void {
+  OnRequestRemainCashTw(_n: CReceivedPacket, socket: CClientSocket): void {
     const user = socket.GetUser(socket.m_nSelectedUserIdx);
     if (!user) return;
     this.billingProcess.RequestRemainCashTw(user);
@@ -1224,8 +1228,12 @@ export class CWebSocket extends CPacketSocket {
     this.m_fClientLink = true;
     // CWebSocket::CWebSocket (30541) — the same header/sequence set as the
     // client sockets; the (Web) accept path does NOT raise the cipher degree.
-    this.SetHeaderCode(192, 102, 231);
-    this.SetSequence(40, 40, 3, 3); // (rcvSeq, sndSeq, rcvDelta, sndDelta)
+    this.SetHeaderCode(
+      CLIENTSOCKET_HEADER_CODE_RCV,
+      CLIENTSOCKET_HEADER_CODE_SND,
+      CLIENTSOCKET_HEADER_CODE_MODIFIER,
+    );
+    this.SetSequence(CLIENTSOCKET_SEQ, CLIENTSOCKET_SEQ, CLIENTSOCKET_SEQ_DELTA, CLIENTSOCKET_SEQ_DELTA);
     this.m_nLocalSerialNo = 1 + CWebSocket.ms_tblSerialNo2Socket.size;
     CWebSocket.ms_tblSerialNo2Socket.set(this.m_nLocalSerialNo, this);
   }
@@ -1363,7 +1371,7 @@ export class CBillingProcess {
         this.m_fConnected = 1;
         console.log("[Shop] Connection to Billing Server established"); // :521
         // CBillingProcess::ConnectToSvr — the 331 hello: [E4 4][E4 GetWorld()]
-        const hello = new CBillingSendPacket(BILLING_SendPacket.OnConnEstablished);
+        const hello = new CBillingSendPacket(TW_BILLING_SendPacket.OnConnEstablished);
         hello.Encode4(BILLING_GAME);
         hello.Encode4(this.m_nSvrTag);
         this.Send(hello);
@@ -1406,19 +1414,19 @@ export class CBillingProcess {
    *  behind the dedicated 8-byte Tw frame. */
   OnPacket(n: CReceivedPacket): void {
     switch (n.Decode4()) {
-      case BILLING_ReceivedPacket.OnRemainCashTw:
+      case TW_BILLING_ReceivedPacket.OnRemainCashTw:
         this.OnRemainCashTw(n);
         break;
-      case BILLING_ReceivedPacket.OnPurchaseOKTw:
+      case TW_BILLING_ReceivedPacket.OnPurchaseOKTw:
         this.OnPurchaseOKTw(n);
         break;
-      case BILLING_ReceivedPacket.OnPurchaseConfirmTw:
+      case TW_BILLING_ReceivedPacket.OnPurchaseConfirmTw:
         this.OnPurchaseConfirmTw(n);
         break;
-      case BILLING_ReceivedPacket.OnDigiQAuthen:
+      case TW_BILLING_ReceivedPacket.OnDigiQAuthen:
         this.OnDigiQAuthen(n);
         break;
-      case BILLING_ReceivedPacket.OnEstimateRTT:
+      case TW_BILLING_ReceivedPacket.OnTwRTT:
         console.log("[Shop] Received RTT Response");
         break;
       default:
@@ -1435,7 +1443,7 @@ export class CBillingProcess {
     if (!user.m_pSocket) return;
     const ip = user.m_pSocket.m_strPeerAddress;
     const name = user.GetName().split("\0", 1)[0]!;
-    const p = new CBillingSendPacket(BILLING_SendPacket.RequestRemainCashTw);
+    const p = new CBillingSendPacket(TW_BILLING_SendPacket.RequestRemainCashTw);
     p.Encode4(user.m_nSID);
     p.Encode4(user.m_nBID);
     p.Encode4(BILLING_GAME);
@@ -1473,13 +1481,13 @@ export class CBillingProcess {
    *  [E4 serial][EStr +3008 coupon][EStr clubId][EStr name][E1 domain]
    *  [E2 UA+128 HIWORD]. */
   RequestCheckCoupon(user: CUser): void {
-    const p = CBillingSendPacket.FromCouponPacket(BILLING_SendPacket.RequestCheckCoupon);
+    const p = CBillingSendPacket.FromCouponPacket(COUPON_SendPacket.RequestCheckCoupon);
     this.EncodeCouponBody(p, user);
     this.Send(p);
   }
 
   RequestUseCoupon(user: CUser): void {
-    const p = CBillingSendPacket.FromCouponPacket(BILLING_SendPacket.RequestUseCoupon);
+    const p = CBillingSendPacket.FromCouponPacket(COUPON_SendPacket.RequestUseCoupon);
     this.EncodeCouponBody(p, user);
     this.Send(p);
   }
@@ -1496,7 +1504,7 @@ export class CBillingProcess {
   /** CBillingProcess::RequestDigiQAuthorization — billing 341:
    *  [E1 len][Ebuf]×3 (three length-prefixed ANSI strings). */
   RequestDigiQAuthorization(account: string, password: string, name: string): void {
-    const p = new CBillingSendPacket(BILLING_SendPacket.RequestDigiQAuthorization);
+    const p = new CBillingSendPacket(TW_BILLING_SendPacket.RequestDigiQAuthorization);
     for (const s of [account, password, name]) {
       const buf = Buffer.from(s, "latin1");
       p.Encode1(buf.length);
@@ -1527,7 +1535,7 @@ export class CBillingProcess {
     }
     const ip = user.m_pSocket.m_strPeerAddress;
     const name = user.GetName().split("\0", 1)[0]!;
-    const p = new CBillingSendPacket(BILLING_SendPacket.RequestPurchaseTw);
+    const p = new CBillingSendPacket(TW_BILLING_SendPacket.RequestPurchaseTw);
     p.Encode4(user.m_nSID);
     p.Encode4(user.m_nBID);
     p.Encode4(BILLING_GAME);
@@ -1561,8 +1569,8 @@ export class CBillingProcess {
     this.localPurchases.delete(serial);
   }
 
-  private MakePurchaseConfirm(reference: string, serial: number, stock: number, result: number): CSendPacket {
-    const p = new CBillingSendPacket(BILLING_SendPacket.PurchaseConfirmTw);
+  private MakePurchaseConfirmTw(reference: string, serial: number, stock: number, result: number): CSendPacket {
+    const p = new CBillingSendPacket(TW_BILLING_SendPacket.PurchaseConfirmTw);
     string8(p, reference); p.Encode4(serial); p.Encode4(stock); p.Encode4(result);
     return p;
   }
@@ -1586,7 +1594,7 @@ export class CBillingProcess {
 
   /** CBillingProcess::TwRequestRTT — billing 351: [E1 123]. */
   TwRequestRTT(): void {
-    const p = new CBillingSendPacket(BILLING_SendPacket.TwRequestRTT);
+    const p = new CBillingSendPacket(TW_BILLING_SendPacket.TwRequestRTT);
     p.Encode1(123);
     this.Send(p);
   }
@@ -1605,7 +1613,7 @@ export class CBillingProcess {
     const result = n.Decode4();
     const user = CLocalUserTable.ms_pInstance!.FindUserFromGlobalSerialNo(serial);
     if (!user || user.m_fTranxInProgress !== 0) return;
-    const p = new CSendPacket(SC_SendPacket.OnRemainCash, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(SC_SendPacket.OnRemainCashTw, CipherDegree.kPacketEncryptedCRC8);
     if (result === 1) {
       const message = DecodeBillingString(n);
       if (message === null) return;
@@ -1633,7 +1641,7 @@ export class CBillingProcess {
       r.end();
       const purchase = this.localPurchases.get(serial);
       if (!purchase || !this.m_fLocalBilling) {
-        if (result === 0) this.Send(this.MakePurchaseConfirm(reference, serial, 0xffffffff, 2));
+        if (result === 0) this.Send(this.MakePurchaseConfirmTw(reference, serial, 0xffffffff, 2));
         if (!this.m_fLocalBilling) {
           const user = CLocalUserTable.ms_pInstance?.FindUserFromGlobalSerialNo(serial);
           if (user && user.m_fTranxInProgress === 0) this.LocalPurchaseError(user, result ? message : BILLING_ERROR.unsupported);
@@ -1652,7 +1660,7 @@ export class CBillingProcess {
       }
       if (!/^[a-f0-9]{32}$/.test(reference)) return;
       purchase.reference = reference;
-      purchase.request = this.MakePurchaseConfirm(reference, serial, stock,
+      purchase.request = this.MakePurchaseConfirmTw(reference, serial, stock,
         purchase.user.m_pSocket && purchase.user.m_fTranxInProgress === 0 ? 0 : 2);
       purchase.lastSend = Date.now();
       this.Send(purchase.request);
@@ -1762,7 +1770,7 @@ export class CCenterProcess {
 
   /** CCenterProcess::SendAuthenCode — center MC 9 [E4 serial][E1 code]. */
   SendAuthenCode(serial: number, code: number): void {
-    const p = new CSendPacket(MC_ReceivedPacket.OnSetAuthenCode);
+    const p = new CSendPacket(MC_ShopServerSendPacket.SendAuthenCode);
     p.Encode4(serial);
     p.Encode1(code);
     this.SendPacket(p);
@@ -1771,22 +1779,22 @@ export class CCenterProcess {
   /** CCenterProcess::OnPacket — the CM dispatch (1/2/6/8/12/14). */
   OnPacket(n: CReceivedPacket): void {
     switch (n.Decode1()) {
-      case CM_ReceivedPacket.OnCenterResConnectToSvr:
+      case CM_ShopServerPacket.OnCenterResConnectToSvr:
         CMainPool.ms_pInstance?.OnCenterResConnectToSvr(n);
         return;
-      case CM_ReceivedPacket.OnCenterResConnEstablished:
+      case CM_ShopServerPacket.OnCenterResConnEstablished:
         CMainPool.ms_pInstance?.OnCenterResConnEstablished(n);
         return;
-      case CM_ReceivedPacket.OnShopServerInfo:
+      case CM_ShopServerPacket.OnShopServerInfo:
         this.OnShopServerInfo(n);
         return;
-      case CM_ReceivedPacket.OnAdminNotifyMsg:
+      case CM_ShopServerPacket.OnAdminNotifyMsg:
         this.OnAdminNotifyMsg(n);
         return;
-      case CM_ReceivedPacket.OnInitialSvrAttr:
+      case CM_ShopServerPacket.OnInitialSvrAttr:
         this.OnInitialSvrAttr(n);
         return;
-      case CM_ReceivedPacket.OnItemDBInit:
+      case CM_ShopServerPacket.OnItemDBInit:
         this.OnUpdateTable(n);
         return;
       default:
@@ -2034,8 +2042,10 @@ export async function main(cfgPath: string, dbDir: string): Promise<void> {
   PacketLog.Configure("Shop");
   PacketLog.Register("Shop", "recv", ...PACKET_NAME_TABLES.Shop.recv);
   PacketLog.Register("Shop", "send", ...PACKET_NAME_TABLES.Shop.send);
-  PacketLog.Register("BILL", "recv", ...PACKET_NAME_TABLES.BILL.recv);
-  PacketLog.Register("BILL", "send", ...PACKET_NAME_TABLES.BILL.send);
+  PacketLog.Register(BILLING_PACKET_LOG_CONTEXT.Taiwan, "recv", ...PACKET_NAME_TABLES.BILL.recv);
+  PacketLog.Register(BILLING_PACKET_LOG_CONTEXT.Taiwan, "send", ...PACKET_NAME_TABLES.BILL.send);
+  PacketLog.Register(BILLING_PACKET_LOG_CONTEXT.Billing, "send", ...PACKET_NAME_TABLES.BILLING.send);
+  PacketLog.Register(BILLING_PACKET_LOG_CONTEXT.Coupon, "send", ...PACKET_NAME_TABLES.COUPON.send);
 
   const shop = new CxShop(cfg, dbDir);
   await shop.Init();

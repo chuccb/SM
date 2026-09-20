@@ -21,6 +21,15 @@
  * GetNumAttribute("ServerPort") + 1.
  */
 
+/** Shared MTUDP frame widths (`[E1 totalLen][payload][E1 CRC8]`). */
+export const MTUDP_LENGTH_BYTES = 1;
+export const MTUDP_CRC_BYTES = 1;
+export const MTUDP_FRAME_OVERHEAD = MTUDP_LENGTH_BYTES + MTUDP_CRC_BYTES;
+/** Largest value representable by the MTUDP E1 total-length field. */
+export const MTUDP_MAX_TOTAL_LENGTH = 0xff;
+/** The total-length field includes the trailing CRC but not itself. */
+export const MTUDP_MAX_PAYLOAD_LENGTH = MTUDP_MAX_TOTAL_LENGTH - MTUDP_CRC_BYTES;
+
 /**
  * MTUDPBase::StartupBase's UDP port offset from "ServerPort" — every exe's
  * MTUDP binds ServerPort+1 (CxLogin.exe.c:28168 `htons(NumAttribute + 1)`,
@@ -74,14 +83,15 @@ export function SplitDatagram(datagram: Uint8Array, host: HOSTHANDLE, szReportPr
   const frames: UdpFrame[] = [];
   let at = 0;
   while (at < datagram.length) {
-    if (datagram.length - at < 2) {
+    if (datagram.length - at < MTUDP_FRAME_OVERHEAD) {
       console.error(
         `${szReportPrefix} MTUDPBase::ProcessIncomingData - datagram length is less than len(sizeof(BYTE)) + FCS(sizeof(DWORD))`,
       );
       break;
     }
     const totalLen = datagram[at]!;
-    if (totalLen + 1 > datagram.length - at) {
+    const frameLength = totalLen + MTUDP_LENGTH_BYTES;
+    if (frameLength > datagram.length - at) {
       console.error(`${szReportPrefix} MTUDPBase::ProcessIncomingData - datagram length is less than (total len) + (FCS size)`);
       break;
     }
@@ -89,22 +99,31 @@ export function SplitDatagram(datagram: Uint8Array, host: HOSTHANDLE, szReportPr
       console.error(`${szReportPrefix} MTUDPBase::ProcessIncomingData - datagram total len 0`);
       break;
     }
-    if (UpdateCRC8(0, datagram.subarray(at, at + totalLen + 1), totalLen + 1) !== 0) {
+    if (UpdateCRC8(0, datagram.subarray(at, at + frameLength), frameLength) !== 0) {
       console.error(`${szReportPrefix} MTUDPBase::ProcessIncomingData - crc check failed!, discard remaining.`);
       break;
     }
-    frames.push({ payload: datagram.subarray(at + 1, at + totalLen), host });
-    at += totalLen + 1;
+    frames.push({
+      payload: datagram.subarray(
+        at + MTUDP_LENGTH_BYTES,
+        at + frameLength - MTUDP_CRC_BYTES,
+      ),
+      host,
+    });
+    at += frameLength;
   }
   return frames;
 }
 
 /** Build one MTUDP frame (UnreliableSendTo: len, payload, crc). */
 export function BuildFrame(payload: Uint8Array): Uint8Array {
-  const out = new Uint8Array(payload.length + 2);
-  out[0] = payload.length + 1;
-  out.set(payload, 1);
+  if (payload.length > MTUDP_MAX_PAYLOAD_LENGTH) {
+    throw new RangeError(`MTUDP payload exceeds ${MTUDP_MAX_PAYLOAD_LENGTH} bytes`);
+  }
+  const out = new Uint8Array(payload.length + MTUDP_FRAME_OVERHEAD);
+  out[0] = payload.length + MTUDP_CRC_BYTES;
+  out.set(payload, MTUDP_LENGTH_BYTES);
   // UnreliableSendTo: crc over [totalLen][payload] (n bytes), written at [n]
-  out[payload.length + 1] = UpdateCRC8(0, out, payload.length + 1);
+  out[payload.length + MTUDP_LENGTH_BYTES] = UpdateCRC8(0, out, payload.length + MTUDP_LENGTH_BYTES);
   return out;
 }

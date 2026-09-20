@@ -17,6 +17,7 @@
 import { CServerConfig } from "../core/Config.ts";
 import { PacketLog } from "../core/PacketLog.ts";
 import { GetTickCount } from "../core/GetTickCount.ts";
+import { MakeLower } from "../core/MakeLower.ts";
 import {
   CONNECTION_TIMEOUT_MS, CONNECTING_LIST_BUCKET_COUNT, SERVER_IDX_NONE,
   TIMER_INTERVAL_MS, TIMEOUT_SWEEP_TICKS, SERVER_STATE_BROADCAST_TICKS,
@@ -26,6 +27,9 @@ import { CReceivedPacket, CSendPacket, enSocket, type enSocket as EnSocket } fro
 import {
   CM_ReceivedPacket,
   MC_ReceivedPacket,
+  MC_PACKET_NAMES_BY_SERVER_CLASS,
+  MC_DISPATCH_NAMES_BY_SERVER_CLASS,
+  CM_PACKET_NAMES_BY_SERVER_CLASS,
   SVRCLASS_GAME,
   SVRCLASS_LOGIN,
   SVRCLASS_SHOP,
@@ -33,6 +37,16 @@ import {
   CENTER_VERSION,
   CENTER_GREETING_SIZE,
   LOCAL_SERVER_IDENTIFICATION_SIZE,
+  LOCALSOCKET_HEADER_CODE_RCV,
+  LOCALSOCKET_HEADER_CODE_SND,
+  LOCALSOCKET_HEADER_CODE_MODIFIER,
+  LOCALSOCKET_SEQ,
+  LOCALSOCKET_SEQ_DELTA,
+  MONITOR_HEADER_CODE_RCV,
+  MONITOR_HEADER_CODE_SND,
+  MONITOR_HEADER_CODE_MODIFIER,
+  MONITOR_SEQ,
+  MONITOR_SEQ_DELTA,
   SVRIDX_IDENTIFY_XOR,
 } from "../lib/S2S.ts";
 import { MONITOR_ClientSend, MONITOR_ReceivedPacket, PACKET_NAME_TABLES } from "../lib/PacketIDs.ts";
@@ -56,6 +70,22 @@ export function IpToU32(ip: string): number {
 export function U32ToIp(v: number): string {
   // exact inverse of IpToU32 (host order).
   return `${(v >>> 24) & 0xff}.${(v >>> 16) & 0xff}.${(v >>> 8) & 0xff}.${v & 0xff}`;
+}
+
+/** The native CGlobalUserTable hashes MakeLower(name), never the display form. */
+class CGlobalUserNameTable extends Map<string, CUser> {
+  override set(name: string, user: CUser): this {
+    return super.set(MakeLower(name), user);
+  }
+  override get(name: string): CUser | undefined {
+    return super.get(MakeLower(name));
+  }
+  override has(name: string): boolean {
+    return super.has(MakeLower(name));
+  }
+  override delete(name: string): boolean {
+    return super.delete(MakeLower(name));
+  }
 }
 
 /** CGlobalUserTable entry (CUser of CxCenter, 0x74 bytes). */
@@ -296,22 +326,28 @@ export class CenterClientSocket extends CPacketSocket {
       onClose: (sock) => center.OnDisconnect(sock as CenterClientSocket),
     });
     this.m_szLogTag = "Center";
-    // CServerSocket on the center side (CxCenter.exe.c:14833): mirrors CLocalSocket.
+    // Center-side bases are the reverse of the connector's.  Both sides use
+    // the original SetSequence(40, 40, 0, 0).
     this.SetHeaderType(ms_nLocalSocketHeaderTypeCounter++ & 0x8000000f);
-    this.SetHeaderCode(189, 96, 231);
-    this.SetSequence(0, 0, 40, 40); // the port's self-consistent local-link variant (see src/lib/S2S.ts)
+    this.SetHeaderCode(
+      LOCALSOCKET_HEADER_CODE_SND,
+      LOCALSOCKET_HEADER_CODE_RCV,
+      LOCALSOCKET_HEADER_CODE_MODIFIER,
+    );
+    this.SetSequence(LOCALSOCKET_SEQ, LOCALSOCKET_SEQ, LOCALSOCKET_SEQ_DELTA, LOCALSOCKET_SEQ_DELTA);
   }
 
   /** CLocalServerMan::OnConnEstablished — the greeting goes out on accept. */
   SendGreeting(): void {
     if (this.fGreeted) return;
-    // CxCenter.exe.c:14324: Encode2(3 /* version */); Encode2(sd);
+    // CxCenter.exe.lst:40D7E0 reads CPacketSocket +0x20: m_nHeaderType,
+    // despite the decompiler's misleading `m_sd` field label.
     const greeting = new Uint8Array(CENTER_GREETING_SIZE);
     greeting[0] = (CENTER_VERSION >>> 8) & 0xff;
     greeting[1] = CENTER_VERSION & 0xff;
-    const sd = (this.bunSocket?.localPort ?? 0) & 0xffff;
-    greeting[2] = (sd >>> 8) & 0xff;
-    greeting[3] = sd & 0xff;
+    const headerType = this.m_nHeaderType & 0xffff;
+    greeting[2] = (headerType >>> 8) & 0xff;
+    greeting[3] = headerType & 0xff;
     this.fGreeted = this.SendBuffer(greeting) === enSocket.kioOk;
   }
 
@@ -332,6 +368,7 @@ export class CenterClientSocket extends CPacketSocket {
     this.pending = new Uint8Array(0);
     this.fIdentified = true;
     const nServerClass = all[0]!;
+    this.m_szLogTable = `Center:${nServerClass}`;
     const idxX = (all[1]! | (all[2]! << 8) | (all[3]! << 16) | (all[4]! << 24)) >>> 0;
     const nSvrIdx = (idxX ^ SVRIDX_IDENTIFY_XOR) >>> 0;
     const nGameVersion = all[5]! | (all[6]! << 8);
@@ -344,9 +381,11 @@ export class CenterClientSocket extends CPacketSocket {
 export class CxCenter {
   cfg: CServerConfig;
   servers: CLocalServer[] = [];
-  userTable = new Map<string, CUser>(); // CGlobalUserTable (name keyed)
+  userTable = new CGlobalUserNameTable(); // CGlobalUserTable (MakeLower(name) keyed)
   serialTable = new Map<number, CUser>(); // SN keyed
-  nMaxUser = 0;
+  /** CGlobalUserTable +272/+276: peak concurrent users for the local day. */
+  m_nDailyPeakUsers = 0;
+  private m_wDailyPeakDay = 0;
   /** Per-GS-class live connection count / versions (CLocalServerMan +52/+64/+76). */
   m_mapConnNo = new Map<number, number>();
   m_mapGameVersion = new Map<number, number>();
@@ -359,10 +398,37 @@ export class CxCenter {
   constructor(cfg: CServerConfig) {
     this.cfg = cfg;
     PacketLog.Configure("Center");
-    PacketLog.Register("Center", "recv", MC_ReceivedPacket); // S2S family — lib/S2S.ts
-    PacketLog.Register("Center", "send", CM_ReceivedPacket);
-    PacketLog.Register("MON", "recv", ...PACKET_NAME_TABLES.Center.recv);
-    PacketLog.Register("MON", "send", ...PACKET_NAME_TABLES.Center.send);
+    for (const [serverClass, table] of Object.entries(MC_PACKET_NAMES_BY_SERVER_CLASS))
+      PacketLog.Register(`Center:${serverClass}`, "recv", table);
+    for (const [serverClass, table] of Object.entries(CM_PACKET_NAMES_BY_SERVER_CLASS))
+      PacketLog.Register(`Center:${serverClass}`, "send", table);
+    PacketLog.Register("MON", "recv", ...PACKET_NAME_TABLES.MON.recv);
+    PacketLog.Register("MON", "send", ...PACKET_NAME_TABLES.MON.send);
+  }
+
+  /** CGlobalUserTable::AddNewUser (00408FA0).  Name insertion gates the
+   * serial table; even a duplicate attempt still updates the local-day peak. */
+  AddNewUser(user: CUser, now = new Date()): number {
+    let added = 0;
+    if (!this.userTable.has(user.m_strName)) {
+      this.userTable.set(user.m_strName, user);
+      if (!this.serialTable.has(user.nSID)) this.serialTable.set(user.nSID, user);
+      added = 1;
+    }
+    this.UpdateDailyPeak(now);
+    return added;
+  }
+
+  /** CGlobalUserTable::AddNewUser's local-day peak update.  The 2005
+   * binary compares SYSTEMTIME.wDay (day of month), not a UTC timestamp. */
+  UpdateDailyPeak(now = new Date()): void {
+    const day = now.getDate();
+    if (day !== this.m_wDailyPeakDay) {
+      this.m_wDailyPeakDay = day;
+      this.m_nDailyPeakUsers = 0;
+    }
+    if (this.userTable.size > this.m_nDailyPeakUsers)
+      this.m_nDailyPeakUsers = this.userTable.size;
   }
 
   GetSvrNo(nServerClass: number): number {
@@ -729,6 +795,9 @@ export class CxCenter {
     const owner = sock.owner;
     if (owner === null) return;
     const id = n.Decode1();
+    // Derived OnPacket implementations first select their own packet subset;
+    // an opcode valid for a different server class is ignored, not decoded.
+    if (MC_DISPATCH_NAMES_BY_SERVER_CLASS[owner.nServerClass]?.names[id] === undefined) return;
     switch (id) {
       case MC_ReceivedPacket.OnAddNewUser:
         if (owner.nServerClass === SVRCLASS_LOGIN) this.OnAddNewUser(owner, n);
@@ -746,15 +815,10 @@ export class CxCenter {
         this.OnConnEstablished(owner, n);
         return;
       case MC_ReceivedPacket.OnAdminNotifyMsg:
-        // CGameServer/CUtilServer::OnAdminNotifyMsg →
-        // CLocalServerMan::OnAdminNotifyMsg (CxCenter.exe.c:11182): CM 8
-        // [EStr] to the login + game + shop lists.
         this.OnAdminNotifyMsg(n);
         return;
       case MC_ReceivedPacket.OnAdminNotifyGameServerMsg:
-        // only CUtilServer::OnPacket routes 5 upstream (CUtilServer.exe.c
-        // 21737); the other classes' dispatches ignore it.
-        if (owner.nServerClass === SVRCLASS_UTIL) this.OnAdminNotifyGameServerMsg(n);
+        this.OnAdminNotifyGameServerMsg(n);
         return;
       case MC_ReceivedPacket.OnRequestUserChannel:
         // CGameServer::OnPacket routes 7 to OnRequestUserChannel, as do
@@ -765,21 +829,34 @@ export class CxCenter {
         else if (owner.nServerClass === SVRCLASS_UTIL) this.OnRequestUserChannelUtil(owner, n);
         return;
       case MC_ReceivedPacket.OnSetAuthenCode:
-        return; // billing-side; no CAuthenThread in this suite
+        this.OnSetAuthenCode(n);
+        return;
       case MC_ReceivedPacket.OnSystemMsg:
-        // → CLocalServerMan::OnSystemMsg (CxCenter.exe.c:11281): CM 13 [EStr]
-        // to the login + game + shop lists.
         this.OnSystemMsg(n);
         return;
       case MC_ReceivedPacket.OnSystemCmd:
-        // → CLocalServerMan::OnSystemCmd (CxCenter.exe.c:11925): a leading
-        // "UpdateFxItem" becomes an empty CM 14 to the game + shop lists;
-        // anything else is dropped.
         this.OnSystemCmd(n);
+        return;
+      case MC_ReceivedPacket.OnDestructCenterSvr:
+        this.OnDestructCenterSvr();
         return;
       default:
         return;
     }
+  }
+
+  /** CShopServer::OnSetAuthenCode (MC 9): [E4 global serial][E1 code]. */
+  OnSetAuthenCode(n: CReceivedPacket): void {
+    const user = this.serialTable.get(n.Decode4());
+    const code = n.Decode1();
+    user?.SetAuthenCode(code);
+  }
+
+  /** CLoginServer::OnPacket MC 100.  The native marks the reserved
+   * global-user entry 0xFFFFFFFF free; installations without that sentinel
+   * simply have no work to do. */
+  OnDestructCenterSvr(): void {
+    this.serialTable.get(0xffffffff)?.SetFree(this);
   }
 
   /**
@@ -805,12 +882,9 @@ export class CxCenter {
       else fAllSimpleInfo = 0;
       u.nCommunitySvr = communitySvr;
       u.nLocalSerialNo = 0; // filled from the packet tail below
-      if (!this.userTable.has(name)) {
-        this.userTable.set(name, u);
-        this.serialTable.set(sn, u);
-      } else {
-        fAllAdded = 0;
-      }
+      // Native stops calling AddNewUser after the first failure, while still
+      // decoding/constructing the rest of the batch for the rollback below.
+      if (fAllAdded !== 0) fAllAdded = this.AddNewUser(u);
       users.push(u);
     }
     const nb = n.Decode4();
@@ -829,9 +903,14 @@ export class CxCenter {
     }
     owner.socket?.SendPacket(packet);
     if (!fAllAdded) {
-      for (const u of users) {
-        if (this.userTable.get(u.m_strName) === u) this.userTable.delete(u.m_strName);
-        if (this.serialTable.get(u.nSID) === u) this.serialTable.delete(u.nSID);
+      for (const user of users) {
+        // Native calls ExtractUser(newGlobalSerial) and SetFree for every
+        // constructed row. This port still aliases global serial to account
+        // SID, so a duplicate login can reuse the resident's serial; retain
+        // native object identity and never extract that older resident.
+        if (this.serialTable.get(user.nSID) === user) this.ExtractUser(user.nSID);
+        else if (this.userTable.get(user.m_strName) === user) this.userTable.delete(user.m_strName);
+        user.SetFree(this);
       }
     }
     void fAllSimpleInfo;
@@ -923,7 +1002,7 @@ export class CxCenter {
     // the match and the reply carries result 0.
     const users: (CUser | undefined)[] = serials.map((sn, i) => {
       const u = this.serialTable.get(sn >>> 0);
-      return u !== undefined && u.m_strName.toLowerCase() === names[i]!.toLowerCase() ? u : undefined;
+      return u !== undefined && MakeLower(u.m_strName) === MakeLower(names[i]!) ? u : undefined;
     });
     // the per-user match flags (CShopServer::OnConnEstablished's entry[2])
     const flags: number[] = users.map(() => 0);
@@ -1173,8 +1252,8 @@ export class MonitorSocket extends CPacketSocket {
     });
     this.m_szLogTag = "Center";
     this.m_szLogTable = "MON";
-    this.SetHeaderCode(102, 102, 231);
-    this.SetSequence(0, 0, 0, 0);
+    this.SetHeaderCode(MONITOR_HEADER_CODE_RCV, MONITOR_HEADER_CODE_SND, MONITOR_HEADER_CODE_MODIFIER);
+    this.SetSequence(MONITOR_SEQ, MONITOR_SEQ, MONITOR_SEQ_DELTA, MONITOR_SEQ_DELTA);
   }
 
   OnPacket(n: CReceivedPacket): void {
@@ -1193,19 +1272,19 @@ export class MonitorSocket extends CPacketSocket {
   OnRequestCurrentUserStat(): void {
     const packet = new CSendPacket(MONITOR_ClientSend.OnRequestCurrentUserStat);
     packet.Encode4(this.center.userTable.size);
-    packet.Encode4(this.center.nMaxUser);
+    packet.Encode4(this.center.m_nDailyPeakUsers);
     this.SendPacket(packet);
   }
 
   OnRequestSvrState(): void {
     const packet = new CSendPacket(MONITOR_ClientSend.OnRequestSvrState);
     const all = this.center.servers;
-    packet.Encode1(all.length);
+    packet.Encode4(all.length);
     for (const s of all) {
       packet.Encode1(s.nServerClass);
-      packet.Encode4(s.nSvrIdx);
-      packet.Encode4(s.socket ? 1 : 0);
-      packet.Encode4(s.nConnNo);
+      packet.Encode2(s.nSvrIdx);
+      packet.EncodeStr(s.m_strName);
+      packet.Encode4(s.socket ? s.nConnNo : -1);
     }
     this.SendPacket(packet);
   }

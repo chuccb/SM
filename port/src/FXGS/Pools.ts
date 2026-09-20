@@ -8,7 +8,7 @@ import { INVENTORY_SLOT_NONE, ItemCategory, USER_INVENTORY_LOAD_LIMIT } from "..
 import { CDBMan } from "../db/DBMan.ts";
 import { GS_ClientSend, GS_ReceivedPacket } from "../lib/PacketIDs.ts";
 import { timeGetTime } from "../core/timeGetTime.ts";
-import { MC_ReceivedPacket } from "../lib/S2S.ts";
+import { MC_GameServerSendPacket } from "../lib/S2S.ts";
 import { CChannelPool } from "./Chat";
 import { CUserItemMan, PreInventory, UserInventory } from "./CUserItemMan";
 import { CGameSessionTable } from "./SessionTable";
@@ -218,7 +218,7 @@ export class CConnectPool extends CUserPool {
     socket.GetUser(0)!.SetClientInitialized(n.Decode1() === 0 ? 1 : 0);
 
     // → center p3 OnConnEstablished [E1 n][n×(EStr, E4 gSN)]
-    const p = new CSendPacket(MC_ReceivedPacket.OnConnEstablished);
+    const p = new CSendPacket(MC_GameServerSendPacket.OnConnEstablished);
     p.Encode1(count);
     for (let j = 0; j < count; j++) {
       const u = socket.GetUser(j)!;

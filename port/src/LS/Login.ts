@@ -18,6 +18,7 @@
  * six-server suite; the paths that would defer to it answer immediately.
  */
 import { CServerConfig, CXLOGIN_STR_KEYS } from "../core/Config.ts";
+import { MakeLower } from "../core/MakeLower.ts";
 import { timeGetTime } from "../core/timeGetTime.ts";
 import { PacketLog } from "../core/PacketLog.ts";
 import { CPacketSocket } from "../core/CPacketSocket.ts";
@@ -26,9 +27,10 @@ import { CDBMan, EncodePassword } from "../db/DBMan.ts";
 import { CMultiServer, inet_addr } from "./MultiServer.ts";
 import { MTUDPServer, SetLocalUserTableFinder } from "./MTUDPServer.ts";
 import { CChannelCache } from "./ChannelCache.ts";
+import { CConfigDyn } from "./CConfigDyn.ts";
 import { CDynInfoCalculator_GetLevel } from "../lib/LevelTable.ts";
 import { CLocalSocket } from "../lib/CenterLink.ts";
-import { MC_ReceivedPacket, CENTER_VERSION, CONN_HELLO_VERSION, SVRCLASS_GAME, SVRCLASS_LOGIN } from "../lib/S2S.ts";
+import { CM_LoginServerPacket, MC_LoginServerSendPacket, CENTER_VERSION, CONN_HELLO_VERSION, SVRCLASS_GAME, SVRCLASS_LOGIN } from "../lib/S2S.ts";
 import {
   CLIENTSOCKET_HEADER_CODE_MODIFIER,
   CLIENTSOCKET_HEADER_CODE_RCV,
@@ -131,6 +133,16 @@ export class CUser {
   GetSocket(): CClientSocket {
     return this.socket;
   }
+
+  /** CUser::SafeFree (004177F0) — unregister this user's own center serial,
+   * then remove the exact object from the login pool and local lookup table. */
+  SafeFree(): void {
+    const pool = CLoginPool.ms_pInstance;
+    CCenterProcess.ms_pInstance?.UnregisterConnection(this.GetGlobalSerialNo());
+    pool?.DelUser(this);
+    pool?.m_localUserTable.ExtractUser(this);
+    this.nGlobalSerialNo = 0;
+  }
 }
 
 /** CClientSocket — one connected game client (CxLogin.exe.c:9880). */
@@ -161,7 +173,7 @@ export class CClientSocket extends CPacketSocket {
   static ms_tblSN2Obj = new Map<number, CClientSocket>();
 
   m_nLocalSerialNo = 0; // +236
-  m_nDeleteUserSN = 0; // +248 (the D4 tail of OnLogin; echoed by UnregisterConnection)
+  m_nNoticeHash = 0; // +248 — the client's cached CConfigDyn notice hash
   m_nGameRoomCode = 0; // +472
   m_apUser: (CUser | null)[] = []; // +480
   m_nUserCount = 0; // +476
@@ -233,8 +245,10 @@ export class CClientSocket extends CPacketSocket {
     return this.m_nUserCount;
   }
 
-  /** CClientSocket::ClearAttachedUsers */
+  /** CClientSocket::ClearAttachedUsers — native SetFree reaches
+   * CUser::SafeFree for every attached user before the pointers are cleared. */
   ClearAttachedUsers(): void {
+    for (const user of this.m_apUser) user?.SafeFree();
     this.m_apUser = [];
     this.m_nUserCount = 0;
   }
@@ -256,12 +270,14 @@ export class CClientSocket extends CPacketSocket {
       return true;
     }
 
-  /** CClientSocket::SafeFree — pool cleanup + center unregistration. */
+  /** CClientSocket::SafeFree seats each CUser for its own SafeFree path.
+   * The +248 dword is only the notice hash; center deletion uses each user's
+   * global serial (CUser::SafeFree, 004177F0). */
   protected OnClose(): void {
-    for (const u of this.m_apUser) if (u) CLoginPool.ms_pInstance?.DelUser(u);
+    this.ClearAttachedUsers();
     CLoginPool.ms_pInstance?.DelSocket(this);
     CClientSocket.ms_tblSN2Obj.delete(this.m_nLocalSerialNo);
-    CCenterProcess.ms_pInstance?.UnregisterConnection(this.m_nDeleteUserSN);
+    this.m_nLocalSerialNo = 0;
     super.OnClose();
   }
 }
@@ -273,19 +289,20 @@ export class CLocalUserTable {
 
   /** CLocalUserTable::Insert */
   Insert(user: CUser): void {
-    this.byName.set(user.GetName(), user);
+    this.byName.set(MakeLower(user.GetName()), user);
     if (user.GetGlobalSerialNo() !== 0) this.bySN.set(user.GetGlobalSerialNo(), user);
   }
 
   /** CLocalUserTable::ExtractUser */
   ExtractUser(user: CUser): void {
-    this.byName.delete(user.GetName());
-    this.bySN.delete(user.GetGlobalSerialNo());
+    const key = MakeLower(user.GetName());
+    if (this.byName.get(key) === user) this.byName.delete(key);
+    if (this.bySN.get(user.GetGlobalSerialNo()) === user) this.bySN.delete(user.GetGlobalSerialNo());
   }
 
   /** CLocalUserTable::FindUserFromId */
   FindUserFromId(name: string): CUser | null {
-    return this.byName.get(name) ?? null;
+    return this.byName.get(MakeLower(name)) ?? null;
   }
 
   /** CLocalUserTable::FindUserFromGlobalSerialNo */
@@ -382,6 +399,7 @@ export class CLoginPool {
       if (n % 9999 === 0) center.UpdateFxMessage();
       if (n % 11111 === 0) center.UpdatePremiumChannelMapSelReward();
       if (++nUserPool % 75 === 0) this.DisconnectTimeoutSocket();
+      CConfigDyn.ms_pInstance?.OnTimer(n);
       n++;
     }, 400);
     timer.unref?.();
@@ -436,7 +454,7 @@ export class CLoginPool {
       case LS_ReceivedPacket.OnRequestDestoryService:
         this.OnRequestDestoryService(n, socket);
         break;
-      case 61:
+      case LS_ReceivedPacket.OnReplyDestoryService:
         n.Decode4();
         this.m_center.DestructCenterSvr();
         break;
@@ -476,7 +494,6 @@ export class CLoginPool {
       console.log("Disconnect login_flush-suspected socket.");
       return;
     }
-    for (const u of socket.m_apUser) if (u) this.DelUser(u);
     socket.ClearAttachedUsers();
     socket.AddNewUsers(inited);
     let userIdx = 0;
@@ -490,7 +507,7 @@ export class CLoginPool {
         userIdx++;
       } while (userIdx < count);
     }
-    socket.m_nDeleteUserSN = n.Decode4();
+    socket.m_nNoticeHash = n.Decode4();
     if (inited !== 0) {
       const packet = new CSendPacket(LS_SendPacket.OnLoginRes, CipherDegree.kPacketEncryptedCRC8);
       packet.Encode1(inited >= 2 && inited <= 3 ? 1 : 3);
@@ -570,7 +587,7 @@ export class CLoginPool {
     const gate = this.m_center.CheckEnterGame(nServerType, nSvrIdx, nVersion);
     if (gate === 1) {
       const userCount = socket.GetUserCount();
-      const packet = new CSendPacket(MC_ReceivedPacket.OnReqConnectToSvr); // MC
+      const packet = new CSendPacket(MC_LoginServerSendPacket.OnReqConnectToSvr); // MC
       packet.Encode1(userCount);
       for (let i = 0; i < userCount; i++) packet.Encode4(socket.GetUser(i)!.GetGlobalSerialNo());
       packet.Encode1(nServerType);
@@ -694,7 +711,7 @@ export class CLoginPool {
       packet.Encode1(0); // LOBYTE of the never-initialized _USERACCOUNT int (UA+76)
       packet.Encode2(0);
       packet.Encode1(1);
-      packet.Encode1(10);
+      packet.Encode1(SVRCLASS_GAME);
       packet.Encode2(CDynInfoCalculator_GetLevel(user.nFxexp));
       packet.Encode4(user.nFxMoney);
       packet.Encode4(user.nGuildSerialNo);
@@ -708,6 +725,9 @@ export class CLoginPool {
     }
     packet.EncodeStr(""); // dst — zero-initialized buffer
     socket.SendPacket(packet);
+    const configDyn = CConfigDyn.ms_pInstance;
+    if (configDyn !== null && socket.m_nNoticeHash !== configDyn.GetNoticeHash())
+      socket.SendPacket(configDyn.GetNoticePacket());
     void strDes;
     strDes = "";
   }
@@ -865,7 +885,7 @@ export class CCenterProcess {
         this.m_pCenterSocket = null;
       },
     });
-    await this.m_pCenterSocket.ConnectToCenter(host, port, 1, cfg.GetNumAttribute("ServerIndex"));
+    await this.m_pCenterSocket.ConnectToCenter(host, port, SVRCLASS_LOGIN, cfg.GetNumAttribute("ServerIndex"));
     console.log(`[LS] attached to center ${host}:${port}`);
   }
 
@@ -877,34 +897,34 @@ export class CCenterProcess {
   /** CCenterProcess::OnPacket (CxLogin.exe.c:6055) */
   OnPacket(n: CReceivedPacket): void {
     switch (n.Decode1()) {
-      case 0:
+      case CM_LoginServerPacket.OnCenterResAddNewUser:
         this.m_pLoginPool.OnCenterResAddNewUser(n);
         break;
-      case 1:
+      case CM_LoginServerPacket.OnCenterResConnectToSvr:
         this.OnCenterResConnectToSvr(n);
         break;
-      case 2:
+      case CM_LoginServerPacket.OnCenterResConnEstablished:
         console.error("Fatal error: Login server cannot handle 'kmcResConnEstablished'");
         break;
-      case 3:
+      case CM_LoginServerPacket.OnLocalServerInfo:
         this.OnLocalServerInfo(n);
         break;
-      case 4:
+      case CM_LoginServerPacket.OnLocalServerState:
         this.OnLocalServerState(n);
         break;
-      case 5:
+      case CM_LoginServerPacket.OnLocalGameState:
         this.OnLocalGameState(n);
         break;
-      case 7:
+      case CM_LoginServerPacket.OnSvrReservedMsg:
         this.OnSvrReservedMsg(n);
         break;
-      case 8:
+      case CM_LoginServerPacket.OnAdminNotifyMsg:
         this.OnAdminNotifyMsg(n);
         break;
-      case 11:
+      case CM_LoginServerPacket.OnDeleteUser:
         this.OnDeleteUser(n);
         break;
-      case 13:
+      case CM_LoginServerPacket.OnSystemMsg:
         this.OnSystemMsg(n);
         break;
       default:
@@ -914,7 +934,7 @@ export class CCenterProcess {
 
   /** CCenterProcess::RegisterConnection (CxLogin.exe.c:4942) — center packet 0. */
   RegisterConnection(socket: CClientSocket): void {
-    const packet = new CSendPacket(MC_ReceivedPacket.OnAddNewUser); // MC
+    const packet = new CSendPacket(MC_LoginServerSendPacket.OnAddNewUser); // MC
     packet.Encode4(PeerAddressDword(socket)); // the client's in_addr (the D4 the center stores as CUser::GetIP)
     packet.EncodeBuffer(socket.GetMachineId(), 16);
     packet.Encode4(socket.GetGameRoomCode());
@@ -934,14 +954,14 @@ export class CCenterProcess {
   /** CCenterProcess::UnregisterConnection (CxLogin.exe.c:1380) — center packet 1. */
   UnregisterConnection(sn: number): void {
     if (sn === 0) return;
-    const packet = new CSendPacket(MC_ReceivedPacket.OnDeleteUser); // MC
+    const packet = new CSendPacket(MC_LoginServerSendPacket.OnDeleteUser); // MC
     packet.Encode4(sn);
     this.SendFrPacketToCenter(packet);
   }
 
   /** CCenterProcess::DestructCenterSvr (CxLogin.exe.c:1406) — center packet 100. */
   DestructCenterSvr(): void {
-    const packet = new CSendPacket(MC_ReceivedPacket.OnDestructCenterSvr);
+    const packet = new CSendPacket(MC_LoginServerSendPacket.OnDestructCenterSvr);
     this.SendFrPacketToCenter(packet);
   }
 
@@ -1282,6 +1302,7 @@ export async function main(cfgFile: string, dbDir: string): Promise<void> {
   PacketLog.Register("LS", "send", ...PACKET_NAME_TABLES.LS.send);
 
   const db = new CDBMan(dbDir);
+  new CConfigDyn(db);
   const multiServer = new CMultiServer();
   multiServer.Init(db);
 

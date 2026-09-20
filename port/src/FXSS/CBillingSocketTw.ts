@@ -4,7 +4,16 @@
 import { CPacketSocket, type IPacketSocketHooks } from "../core/CPacketSocket.ts";
 import { CReceivedPacket, CSendPacket, enSocket, type enSocket as EnSocket } from "../core/Packet.ts";
 import { PacketLog } from "../core/PacketLog.ts";
-import { DecodePacketTw, EncodePacketTw, GetIncomingPacketLengthTw, GetOutgoingPacketLengthTw } from "./Packet.ts";
+import {
+  DecodePacketTw,
+  EncodePacketTw,
+  GetIncomingPacketLengthTw,
+  GetOutgoingPacketLengthTw,
+  TW_SOCKET_HEADER_CODE_MODIFIER,
+  TW_SOCKET_HEADER_CODE_RCV,
+  TW_SOCKET_HEADER_CODE_SND,
+} from "./Packet.ts";
+import { BILLING_PACKET_LOG_CONTEXT, BNB_TAIWAN_PacketFamily } from "../lib/PacketIDs.ts";
 
 export class CBillingSocketTw extends CPacketSocket {
   /** The native constructor flag at +240 controls CloseAll/overflow's exit.
@@ -13,8 +22,12 @@ export class CBillingSocketTw extends CPacketSocket {
   constructor(readonly m_fTerminateProcess = true, hooks?: Partial<IPacketSocketHooks>) {
     super(CPacketSocket.dwRcvBufferSize, CPacketSocket.dwSndBufferSize, hooks);
     this.m_szLogTag = "Shop";
-    this.m_szLogTable = "BILL";
-    this.SetHeaderCode(41, 41, 0); // inherited native setup; Tw never reads/writes it
+    this.m_szLogTable = BILLING_PACKET_LOG_CONTEXT.Taiwan;
+    this.SetHeaderCode(
+      TW_SOCKET_HEADER_CODE_RCV,
+      TW_SOCKET_HEADER_CODE_SND,
+      TW_SOCKET_HEADER_CODE_MODIFIER,
+    ); // inherited native setup; Tw never reads/writes it
   }
 
   /** CBillingSocket::CloseAll (00405080), CMainSystem::TerminateProcess
@@ -136,7 +149,14 @@ export class CBillingSocketTw extends CPacketSocket {
 
   private LogPacket(direction: "send" | "recv", packet: CSendPacket | CReceivedPacket, length: number): void {
     if (!PacketLog.ShowsInfra()) return;
+    let table = this.m_szLogTable;
+    if (direction === "send" && "m_nBillingPacketFamily" in packet) {
+      if (packet.m_nBillingPacketFamily === BNB_TAIWAN_PacketFamily.Billing)
+        table = BILLING_PACKET_LOG_CONTEXT.Billing;
+      else if (packet.m_nBillingPacketFamily === BNB_TAIWAN_PacketFamily.Coupon)
+        table = BILLING_PACKET_LOG_CONTEXT.Coupon;
+    }
     PacketLog.Packet(this.LogPeer, this.m_szLogTag, direction, packet.m_nPacketType, packet.m_nCipherDegree,
-      packet.m_pBlock.subarray(0, length), this.m_szLogTable);
+      packet.m_pBlock.subarray(0, length), table);
   }
 }

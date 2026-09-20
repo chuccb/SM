@@ -3,7 +3,7 @@
 
 import { Encode4 } from "../core/BufferManipulator.ts";
 import { CSendPacket } from "../core/Packet.ts";
-import { GS_INPLAY_SendInventory } from "../lib/PacketIDs.ts";
+import { GS_ClientSend } from "../lib/PacketIDs.ts";
 import { MAX_SESSION_SLOTS, SLOTSTATE_COLOR_MASK } from "./Defs";
 import { CGameSession } from "./Session";
 import { CGuildTable } from "./Tables";
@@ -205,7 +205,7 @@ export class CGuildSessionStrategy extends CGameSessionStrategy {
   /** CGuildSessionStrategy::EncodeGuildSessionInfo (:39737) — the 88 body:
    *  [E4 count][count × [E4 serial][E4 playerCount][E4 winCount]]. */
   EncodeGuildSessionInfo(packet: CSendPacket): void {
-    packet.InitPacket(GS_INPLAY_SendInventory.OnGuildSessionInfo);
+    packet.InitPacket(GS_ClientSend.OnGuildSessionInfo);
     packet.Encode4(this.m_nGuildCount);
     for (let i = 0; i < this.m_nGuildCount; i++) {
       packet.Encode4(this.m_argSerialNo[i]! >>> 0);

@@ -1,8 +1,8 @@
 /** CPracticeSession — the solo practice rooms with their AI seats. */
 
 import { Encode1, Encode2 } from "../core/BufferManipulator.ts";
-import { CReceivedPacket, CSendPacket, CipherDegree, kPacketEncryptedCRC8 } from "../core/Packet.ts";
-import { GS_ClientSend, GS_INPLAY_SendInventory, SESSION_ReceivedPacket } from "../lib/PacketIDs.ts";
+import { CReceivedPacket, CSendPacket, CipherDegree, kPacketEncryptedCRC8, PACKET_TYPE_PLACEHOLDER } from "../core/Packet.ts";
+import { GS_ClientSend, SESSION_ReceivedPacket } from "../lib/PacketIDs.ts";
 import { timeGetTime } from "../core/timeGetTime.ts";
 import {
   AI_LEVEL_BAND,
@@ -194,7 +194,7 @@ export class CPracticeSession extends CGameSession {
     socket.m_nPoolType = 1; // back to the lobby
     this.FlushPacket();
     this.DeleteAllSlotidx(socket);
-    this.m_pStrategy.SendSessionInfo(new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8)); // vtbl+32 (:42035)
+    this.m_pStrategy.SendSessionInfo(new CSendPacket(PACKET_TYPE_PLACEHOLDER, CipherDegree.kPacketEncryptedCRC8)); // vtbl+32 (:42035)
     return 1;
   }
 
@@ -387,7 +387,7 @@ export class CPracticeSession extends CGameSession {
       for (let i = 0; i < this.m_nMaxSlot; i++) {
         this.m_anAILevel[i] = level;
         if (this.m_argpAISocket[i] !== null) {
-          const packet = new CSendPacket(GS_INPLAY_SendInventory.OnChangeAILevel, CipherDegree.kPacketEncryptedCRC8);
+          const packet = new CSendPacket(GS_ClientSend.OnChangeAILevel, CipherDegree.kPacketEncryptedCRC8);
           packet.Encode1(i);
           packet.Encode2(level & 0xffff);
           socket.PutPacketQueued(packet);
@@ -395,7 +395,7 @@ export class CPracticeSession extends CGameSession {
       }
     } else {
       this.m_anAILevel[slot] = level;
-      const packet = new CSendPacket(GS_INPLAY_SendInventory.OnChangeAILevel, CipherDegree.kPacketEncryptedCRC8);
+      const packet = new CSendPacket(GS_ClientSend.OnChangeAILevel, CipherDegree.kPacketEncryptedCRC8);
       packet.Encode1(slot);
       packet.Encode2(level & 0xffff);
       socket.PutPacketQueued(packet);
@@ -416,7 +416,7 @@ export class CPracticeSession extends CGameSession {
   /** CPracticeSession::MakeSessionInfoPacket (FxServer.exe.c:4258CE) — the
    *  owner socket gets one 105 (fSelf forced) or 107 per slot. */
   MakeSessionInfoPacket(socket: CClientSocket): void {
-    const packet = new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(PACKET_TYPE_PLACEHOLDER, CipherDegree.kPacketEncryptedCRC8);
     for (let slot = 0; slot < this.m_nMaxSlot; slot++) {
       if (this.m_rgPlayer[slot]) this.MakeSetPlayerPacket(slot, 1, packet);
       else this.MakeSetSlotStatePacket(slot, packet);
@@ -618,14 +618,13 @@ export class CPracticeSession extends CGameSession {
       if (host.some((b) => b !== 0)) host.fill(0); // HOSTHANDLE::operator!= invalidHost
     }
     // vtbl+32 with a fresh CSendPacket, just like the normal return path.
-    this.m_pStrategy.SendSessionInfo(new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8));
+    this.m_pStrategy.SendSessionInfo(new CSendPacket(PACKET_TYPE_PLACEHOLDER, CipherDegree.kPacketEncryptedCRC8));
   }
 
   /** CPracticeSession::OnPacket (FxServer.exe.c:42790) — the practice room
-   *  dispatch.  96 (ready) and the game-type/title/chat block (101..105,
-   *  107) are wrong-type errors here, 109 (immediate start) and 111/112
-   *  (chat) are dropped silently, 98/99/100/110 take the practice handlers,
-   *  and the in-play relays 140..154 plus 185/186 are the game's. */
+   *  dispatch.  96, 102..105 and 107 are wrong-type errors; 101, 109 and
+   *  111/112 are dropped silently. 98/99/100/110 take the practice handlers,
+   *  and the in-play relays 140..152 plus 185/186 are the game's. */
   OnPacket(n: CReceivedPacket, socket: CClientSocket): void {
     if (!this.CheckValidSocket(socket)) {
       console.error(`[GS] !this->CheckValidSocket(pSocket), CPracticeSession::OnPacket. Disconnect socket[${GetInfoStr(socket)}]`);

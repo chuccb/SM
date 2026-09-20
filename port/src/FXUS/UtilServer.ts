@@ -15,6 +15,7 @@
  * CSockRcvMultiplexer → CCenterProcess → CTimerThread → CListenThread.
  */
 import { CServerConfig, CXUTIL_STR_KEYS } from "../core/Config.ts";
+import { MakeLower } from "../core/MakeLower.ts";
 import { PacketLog } from "../core/PacketLog.ts";
 import { CPacketSocket } from "../core/CPacketSocket.ts";
 import { CipherDegree, CReceivedPacket, CSendPacket, enSocket, type enSocket as EnSocket } from "../core/Packet.ts";
@@ -26,14 +27,14 @@ import {
   CLIENTSOCKET_SEQ_DELTA,
 } from "../lib/PacketIDs.ts";
 import {
-  CM_ReceivedPacket,
-  MC_ReceivedPacket,
+  CM_UtilServerPacket,
+  MC_UtilServerSendPacket,
   CENTER_VERSION,
   CONN_HELLO_VERSION,
   SVRCLASS_UTIL,
 } from "../lib/S2S.ts";
 import { CLocalSocket } from "../lib/CenterLink.ts";
-import { PACKET_NAME_TABLES, US_ReceivedPacket, UTIL_ClientPacket, UTIL_ClientSend } from "../lib/PacketIDs.ts";
+import { PACKET_NAME_TABLES, UTIL_ClientReceivedPacket, UTIL_ClientSend } from "../lib/PacketIDs.ts";
 
 /** CMainSystem::OnConnEstablished (CxUtil.exe.c:21701) — the tool hello's
  *  patch URL. */
@@ -163,7 +164,7 @@ export class CLocalUserTable {
 
   /** CLocalUserTable::Insert — 0 when the name is taken. */
   Insert(User: CUser): number {
-    const key = User.GetName().toLowerCase();
+    const key = MakeLower(User.GetName());
     if (this.m_mapName.has(key)) return 0;
     this.m_mapName.set(key, User);
     if (User.m_dwGlobalSerialNo !== 0) this.m_mapSerial.set(User.m_dwGlobalSerialNo, User);
@@ -172,7 +173,7 @@ export class CLocalUserTable {
 
   /** CLocalUserTable::Remove (by the user's own name). */
   Remove(User: CUser): void {
-    const key = User.GetName().toLowerCase();
+    const key = MakeLower(User.GetName());
     this.m_mapName.delete(key);
     this.m_mapSerial.delete(User.m_dwGlobalSerialNo);
   }
@@ -183,7 +184,7 @@ export class CLocalUserTable {
   }
 
   FindUserFromId(id: string): CUser | null {
-    return this.m_mapName.get(id.toLowerCase()) ?? null;
+    return this.m_mapName.get(MakeLower(id)) ?? null;
   }
 }
 
@@ -268,25 +269,25 @@ export class CMainPool {
   /** CMainPool::OnPacket (CxUtil.exe.c:21528) — the relay dispatch. */
   OnPacket(n: CReceivedPacket, socket: CClientSocket): void {
     switch (n.Decode1()) {
-      case UTIL_ClientPacket.OnConnEstablished:
+      case UTIL_ClientReceivedPacket.OnConnEstablished:
         this.OnConnEstablished(n, socket);
         break;
-      case UTIL_ClientPacket.OnAdminNotifyMsg:
+      case UTIL_ClientReceivedPacket.OnAdminNotifyMsg:
         this.OnAdminNotifyMsg(n, socket);
         break;
-      case UTIL_ClientPacket.OnAdminNotifyGameServerMsg:
+      case UTIL_ClientReceivedPacket.OnAdminNotifyGameServerMsg:
         this.OnAdminNotifyGameServerMsg(n, socket);
         break;
-      case UTIL_ClientPacket.OnSystemMsg:
+      case UTIL_ClientReceivedPacket.OnSystemMsg:
         this.OnSystemMsg(n, socket);
         break;
-      case UTIL_ClientPacket.OnKickoffUser:
+      case UTIL_ClientReceivedPacket.OnKickoffUser:
         this.OnKickoffUser(n, socket);
         break;
-      case UTIL_ClientPacket.OnReqUserInfo:
+      case UTIL_ClientReceivedPacket.OnReqUserInfo:
         this.OnReqUserInfo(n, socket);
         break;
-      case UTIL_ClientPacket.OnUpdateItem:
+      case UTIL_ClientReceivedPacket.OnUpdateItem:
         this.OnUpdateItem(n, socket);
         break;
       default:
@@ -325,7 +326,7 @@ export class CMainPool {
   /** CMainPool::OnAdminNotifyMsg (25) — CSendPacket(4) [EStr] to the center. */
   OnAdminNotifyMsg(n: CReceivedPacket, _a3: CClientSocket): void {
     const str = n.DecodeStr();
-    const packet = new CSendPacket(MC_ReceivedPacket.OnAdminNotifyMsg);
+    const packet = new CSendPacket(MC_UtilServerSendPacket.OnAdminNotifyMsg);
     packet.EncodeStr(str);
     CCenterProcess.ms_pInstance?.SendPacket(packet);
   }
@@ -334,7 +335,7 @@ export class CMainPool {
   OnAdminNotifyGameServerMsg(n: CReceivedPacket, _a3: CClientSocket): void {
     const b = n.Decode1();
     const str = n.DecodeStr();
-    const packet = new CSendPacket(MC_ReceivedPacket.OnAdminNotifyGameServerMsg);
+    const packet = new CSendPacket(MC_UtilServerSendPacket.OnAdminNotifyGameServerMsg);
     packet.Encode1(b);
     packet.EncodeStr(str);
     CCenterProcess.ms_pInstance?.SendPacket(packet);
@@ -343,7 +344,7 @@ export class CMainPool {
   /** CMainPool::OnSystemMsg (31) — CSendPacket(10) [EStr] to the center. */
   OnSystemMsg(n: CReceivedPacket, _a3: CClientSocket): void {
     const str = n.DecodeStr();
-    const packet = new CSendPacket(MC_ReceivedPacket.OnSystemMsg);
+    const packet = new CSendPacket(MC_UtilServerSendPacket.OnSystemMsg);
     packet.EncodeStr(str);
     CCenterProcess.ms_pInstance?.SendPacket(packet);
   }
@@ -351,7 +352,7 @@ export class CMainPool {
   /** CMainPool::OnKickoffUser (32) — CSendPacket(1) [EStr name] to the center. */
   OnKickoffUser(n: CReceivedPacket, _a3: CClientSocket): void {
     const str = n.DecodeStr();
-    const packet = new CSendPacket(MC_ReceivedPacket.OnDeleteUser);
+    const packet = new CSendPacket(MC_UtilServerSendPacket.OnDeleteUser);
     packet.EncodeStr(str);
     CCenterProcess.ms_pInstance?.SendPacket(packet);
   }
@@ -359,7 +360,7 @@ export class CMainPool {
   /** CMainPool::OnReqUserInfo (64) — CSendPacket(7) [E4 serial][EStr account]. */
   OnReqUserInfo(n: CReceivedPacket, socket: CClientSocket): void {
     const str = n.DecodeStr();
-    const packet = new CSendPacket(MC_ReceivedPacket.OnRequestUserChannel);
+    const packet = new CSendPacket(MC_UtilServerSendPacket.OnRequestUserChannel);
     const User = socket.GetUser(0);
     console.error("OnReqUserInfo called");
     packet.Encode4(User ? User.m_dwGlobalSerialNo : 0);
@@ -369,16 +370,16 @@ export class CMainPool {
 
   /** CMainPool::OnUpdateItem (66) — CSendPacket(11) [EStr] ("UpdateFxItem"). */
   OnUpdateItem(n: CReceivedPacket, _a3: CClientSocket): void {
-    const packet = new CSendPacket(MC_ReceivedPacket.OnSystemCmd);
+    const packet = new CSendPacket(MC_UtilServerSendPacket.OnSystemCmd);
     let str = "";
-    if (n.Decode1() === MC_ReceivedPacket.OnSystemCmd) str = "UpdateFxItem";
+    if (n.Decode1() === MC_UtilServerSendPacket.OnSystemCmd) str = "UpdateFxItem";
     packet.EncodeStr(str);
     CCenterProcess.ms_pInstance?.SendPacket(packet);
   }
 
   /** CUserPool::OnEstimateRTT (20) — echo the [E4] back under id 20. */
   OnEstimateRTT(n: CReceivedPacket, socket: CClientSocket): void {
-    if (n.Decode1() !== UTIL_ClientPacket.OnEstimateRTT) return;
+    if (n.Decode1() !== UTIL_ClientReceivedPacket.OnEstimateRTT) return;
     const t = n.Decode4();
     const packet = new CSendPacket(UTIL_ClientSend.OnEstimateRTTRes);
     packet.Encode4(t);
@@ -438,13 +439,13 @@ export class CCenterProcess {
   /** CCenterProcess::OnPacket — 8 broadcast, 10 user result, 12 FXAttr. */
   OnPacket(n: CReceivedPacket): void {
     switch (n.Decode1()) {
-      case CM_ReceivedPacket.OnAdminNotifyMsg:
+      case CM_UtilServerPacket.OnAdminNotifyMsg:
         this.OnAdminNotifyMsg(n);
         break;
-      case CM_ReceivedPacket.OnUserChannelResult:
+      case CM_UtilServerPacket.OnUserChannelResult:
         this.OnUserChannelResult(n);
         break;
-      case CM_ReceivedPacket.OnInitialSvrAttr:
+      case CM_UtilServerPacket.OnInitialSvrAttr:
         CMainSystem.ms_pInstance?.OnInitialSvrAttr(n);
         break;
       default:

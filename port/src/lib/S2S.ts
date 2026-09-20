@@ -6,6 +6,8 @@
  * CLocalServer/CLocalServerMan family.
  */
 
+import { DefinePacketNameTable, type PacketNameTable } from "./PacketNames.ts";
+
 /** CLocalSocket identification bytes (first byte of the attach handshake). */
 export const SVRCLASS_LOGIN = 1;
 export const SVRCLASS_GAME = 10;
@@ -27,49 +29,148 @@ export const LOCAL_SERVER_IDENTIFICATION_SIZE = 1 + 4 + 2 + 2; // class, index, 
 export const CLIENT_SOCKET_CENSUS_MS = 0x493e0;
 
 /**
- * CLocalSocket::CLocalSocket — SetHeaderCode(rcv=96, snd=189, mod=231)
- * (CxLogin.exe.lst:40C1F3). The original local link runs SetSequence(40, 40,
- * 0, 0) — a static check code with the deg-0 type conversion enabled — but
- * the conversion rows only line up when both ends share the header type,
- * and the original's accept side stamps SetHeaderType(counter++ % 16)
- * (CxCenter 40E1FE) while the connect side derives a constant 1 from the
- * static code ((40+96)^96-231). How the original reconciles those rows is
- * not resolved yet; until it is, the port runs the self-consistent variant
- * below (seq 0 → conversion off, code rolls (ht+231)^(base+seq) by 40).
- * The center link only ever connects port servers to each other, so this
- * is not client-observable.
+ * CLocalSocket::CLocalSocket — SetHeaderCode(rcv=96, snd=189, mod=231) and
+ * SetSequence(40, 40, 0, 0) (CxLogin.exe.lst:40C1F3..40C22A).  A zero delta
+ * makes check codes the fixed 96/189 pair; the nonzero sequence still enables
+ * packet-type conversion and supplies key 40.  CxCenter greets with its
+ * accepted socket's `m_nHeaderType` (CxCenter.exe.lst:40D7E0 reads +0x20),
+ * and the connector calls SetHeaderType with that E2 value
+ * (CxLogin.exe.lst:403E31 calls vtable +0x20), so both conversion rows match.
  */
 export const LOCALSOCKET_HEADER_CODE_RCV = 96;
 export const LOCALSOCKET_HEADER_CODE_SND = 189;
 export const LOCALSOCKET_HEADER_CODE_MODIFIER = 231;
-export const LOCALSOCKET_SEQ = 0;
-export const LOCALSOCKET_SEQ_DELTA = 40;
+export const LOCALSOCKET_SEQ = 40;
+export const LOCALSOCKET_SEQ_DELTA = 0;
 
 /** CServerSocket (center-side accept) mirrors it: SetHeaderCode(189, 96, 231). */
 
-/**
- * Local server → center packets (CLocalServer::OnPacket and friends).
- * Dispatch lives in CxCenter.exe.c.
- */
-export const MC_ReceivedPacket = {
-  OnAddNewUser: 0, // CLoginServer::OnAddNewUser (only accepted on the LS class)
-  OnDeleteUser: 1, // CLocalServer::OnDeleteUser
-  OnReqConnectToSvr: 2, // CLocalServer::OnReqConnectToSvr
-  OnConnEstablished: 3, // CLocalServer vtbl+28 → OnConnEstablished
-  OnAdminNotifyMsg: 4,
-  OnAdminNotifyGameServerMsg: 5,
-  OnRequestUserChannel: 7, // CShopServer::OnRequestUserChannel (the shop link)
-  OnSvrReservedMsg: 7, // the generic CLocalServer::OnPacket name for the same id
-  OnSetAuthenCode: 9, // CShopServer::OnSetAuthenCode
-  OnSystemMsg: 10,
-  OnSystemCmd: 11,
-  OnDestructCenterSvr: 100, // CxCenter.exe.c:15315 CLoginServer::OnPacket — LS shutdown notice → CGlobalUserTable::GetUser(-1) + SetFree
-  OnLocalServerState: 4, // CGameServer::OnPacket → OnAdminNotifyMsg(4); state via LS handler
+/** CMonitorSocket's independent raw packet framing (CxCenter.exe.c:16424). */
+export const MONITOR_HEADER_CODE_RCV = 102;
+export const MONITOR_HEADER_CODE_SND = 102;
+export const MONITOR_HEADER_CODE_MODIFIER = 231;
+export const MONITOR_SEQ = 0;
+export const MONITOR_SEQ_DELTA = 0;
+
+/** Packets accepted by every CLocalServer before class-specific dispatch. */
+export const MC_LocalServerPacket = {
+  OnDeleteUser: 1,
+  OnReqConnectToSvr: 2,
+  OnConnEstablished: 3,
 } as const;
 
-/** Center → local server packets (CCenterProcess::OnPacket on each server). */
-export const CM_ReceivedPacket = {
+/** CLoginServer::OnPacket additions (local login server → center). */
+export const MC_LoginServerPacket = {
+  OnAddNewUser: 0,
+  OnDestructCenterSvr: 100,
+} as const;
+
+/** CGameServer::OnPacket additions (local game server → center). */
+export const MC_GameServerPacket = {
+  OnAdminNotifyMsg: 4,
+  OnRequestUserChannel: 7,
+  OnSystemMsg: 10,
+  OnSystemCmd: 11,
+} as const;
+
+/** CShopServer::OnPacket additions (local shop server → center). */
+export const MC_ShopServerPacket = {
+  OnAdminNotifyMsg: 4,
+  OnRequestUserChannel: 7,
+  OnSetAuthenCode: 9,
+} as const;
+
+/** CUtilServer::OnPacket additions (local utility server → center). */
+export const MC_UtilServerPacket = {
+  OnDeleteUser: 1, // class-specific implementation replaces the base handler
+  OnAdminNotifyMsg: 4,
+  OnAdminNotifyGameServerMsg: 5,
+  OnRequestUserChannel: 7,
+  OnSystemMsg: 10,
+  OnSystemCmd: 11,
+} as const;
+
+/** Complete local-server send contexts.  FxServer really constructs MC 9
+ * in CCenterProcess::SendAuthenCode, although CxCenter's CGameServer dispatch
+ * ignores it; keep the wire site visible without enabling that handler. */
+export const MC_LoginServerSendPacket = {
+  ...MC_LocalServerPacket,
+  ...MC_LoginServerPacket,
+} as const;
+export const MC_GameServerSendPacket = {
+  ...MC_LocalServerPacket,
+  ...MC_GameServerPacket,
+  SendAuthenCode: 9,
+} as const;
+export const MC_ShopServerSendPacket = {
+  ...MC_LocalServerPacket,
+  ...MC_ShopServerPacket,
+  SendAuthenCode: 9,
+} as const;
+export const MC_UtilServerSendPacket = {
+  ...MC_LocalServerPacket,
+  ...MC_UtilServerPacket,
+} as const;
+
+/**
+ * Source-compatible union for packet constructors.  New code should use its
+ * class-specific MC_*ServerSendPacket table.
+ */
+export const MC_ReceivedPacket = {
+  ...MC_LocalServerPacket,
+  ...MC_LoginServerPacket,
+  ...MC_GameServerPacket,
+  ...MC_ShopServerPacket,
+  ...MC_UtilServerPacket,
+} as const;
+
+export const MC_LocalServerPacketNames = DefinePacketNameTable(
+  "enLocalPacket",
+  "CLocalServer",
+  "local-to-center",
+  MC_LocalServerPacket,
+);
+export const MC_LoginServerPacketNames = DefinePacketNameTable(
+  "enLocalPacket",
+  "CLoginServer",
+  "local-to-center",
+  MC_LoginServerSendPacket,
+);
+export const MC_GameServerPacketNames = DefinePacketNameTable(
+  "enLocalPacket",
+  "CGameServer",
+  "local-to-center",
+  MC_GameServerSendPacket,
+);
+export const MC_ShopServerPacketNames = DefinePacketNameTable(
+  "enLocalPacket",
+  "CShopServer",
+  "local-to-center",
+  MC_ShopServerSendPacket,
+);
+export const MC_UtilServerPacketNames = DefinePacketNameTable(
+  "enLocalPacket",
+  "CUtilServer",
+  "local-to-center",
+  MC_UtilServerSendPacket,
+);
+
+/** CxLogin CCenterProcess::OnPacket subset (center → login server). */
+export const CM_LoginServerPacket = {
   OnCenterResAddNewUser: 0,
+  OnCenterResConnectToSvr: 1,
+  OnCenterResConnEstablished: 2,
+  OnLocalServerInfo: 3,
+  OnLocalServerState: 4,
+  OnLocalGameState: 5,
+  OnSvrReservedMsg: 7,
+  OnAdminNotifyMsg: 8,
+  OnDeleteUser: 11,
+  OnSystemMsg: 13,
+} as const;
+
+/** FxServer CCenterProcess::OnPacket subset (center → game server). */
+export const CM_GameServerPacket = {
   OnCenterResConnectToSvr: 1,
   OnCenterResConnEstablished: 2,
   OnLocalServerInfo: 3,
@@ -81,11 +182,100 @@ export const CM_ReceivedPacket = {
   OnDeleteUser: 11,
   OnInitialSvrAttr: 12,
   OnSystemMsg: 13,
-  OnItemDBInit: 14, // CUserItemMan::Init (GS) / CItemMan::Update*Table (shop)
-  OnShopServerInfo: 6, // CCenterProcess::OnShopServerInfo — [E4 n][n×(E4 ip, E2 port)]
+  OnItemDBInit: 14,
 } as const;
 
-/** CxCenter greet: Encode2(3 /* version *\/); Encode2(sd). */
+/** FxShop CCenterProcess::OnPacket subset (center → shop server). */
+export const CM_ShopServerPacket = {
+  OnCenterResConnectToSvr: 1,
+  OnCenterResConnEstablished: 2,
+  OnShopServerInfo: 6,
+  OnAdminNotifyMsg: 8,
+  OnInitialSvrAttr: 12,
+  OnItemDBInit: 14,
+} as const;
+
+/** CxUtil CCenterProcess::OnPacket subset (center → utility server). */
+export const CM_UtilServerPacket = {
+  OnAdminNotifyMsg: 8,
+  OnUserChannelResult: 10,
+  OnInitialSvrAttr: 12,
+} as const;
+
+/** Source-compatible union for center packet constructors. */
+export const CM_ReceivedPacket = {
+  ...CM_LoginServerPacket,
+  ...CM_GameServerPacket,
+  ...CM_ShopServerPacket,
+  ...CM_UtilServerPacket,
+} as const;
+
+export const CM_LoginServerPacketNames = DefinePacketNameTable(
+  "enCenterPacket",
+  "CxLogin::CCenterProcess",
+  "center-to-local",
+  CM_LoginServerPacket,
+);
+export const CM_GameServerPacketNames = DefinePacketNameTable(
+  "enCenterPacket",
+  "FxServer::CCenterProcess",
+  "center-to-local",
+  CM_GameServerPacket,
+);
+export const CM_ShopServerPacketNames = DefinePacketNameTable(
+  "enCenterPacket",
+  "FxShop::CCenterProcess",
+  "center-to-local",
+  CM_ShopServerPacket,
+);
+export const CM_UtilServerPacketNames = DefinePacketNameTable(
+  "enCenterPacket",
+  "CxUtil::CCenterProcess",
+  "center-to-local",
+  CM_UtilServerPacket,
+);
+
+/** Center-side accepted subsets.  These intentionally differ from the wire
+ * registry for the GS-only, sent-but-ignored MC 9 compatibility path. */
+export const MC_LoginServerDispatchNames = DefinePacketNameTable(
+  "enLocalPacket", "CLoginServer::OnPacket", "local-to-center",
+  { ...MC_LocalServerPacket, ...MC_LoginServerPacket },
+);
+export const MC_GameServerDispatchNames = DefinePacketNameTable(
+  "enLocalPacket", "CGameServer::OnPacket", "local-to-center",
+  { ...MC_LocalServerPacket, ...MC_GameServerPacket },
+);
+export const MC_ShopServerDispatchNames = DefinePacketNameTable(
+  "enLocalPacket", "CShopServer::OnPacket", "local-to-center",
+  { ...MC_LocalServerPacket, ...MC_ShopServerPacket },
+);
+export const MC_UtilServerDispatchNames = DefinePacketNameTable(
+  "enLocalPacket", "CUtilServer::OnPacket", "local-to-center",
+  { ...MC_LocalServerPacket, ...MC_UtilServerPacket },
+);
+
+/** Server-class-aware wire registries used by packet tracing. */
+export const MC_PACKET_NAMES_BY_SERVER_CLASS: Readonly<Record<number, PacketNameTable>> = {
+  [SVRCLASS_LOGIN]: MC_LoginServerPacketNames,
+  [SVRCLASS_GAME]: MC_GameServerPacketNames,
+  [SVRCLASS_SHOP]: MC_ShopServerPacketNames,
+  [SVRCLASS_UTIL]: MC_UtilServerPacketNames,
+};
+export const MC_DISPATCH_NAMES_BY_SERVER_CLASS: Readonly<Record<number, PacketNameTable>> = {
+  [SVRCLASS_LOGIN]: MC_LoginServerDispatchNames,
+  [SVRCLASS_GAME]: MC_GameServerDispatchNames,
+  [SVRCLASS_SHOP]: MC_ShopServerDispatchNames,
+  [SVRCLASS_UTIL]: MC_UtilServerDispatchNames,
+};
+
+export const CM_PACKET_NAMES_BY_SERVER_CLASS: Readonly<Record<number, PacketNameTable>> = {
+  [SVRCLASS_LOGIN]: CM_LoginServerPacketNames,
+  [SVRCLASS_GAME]: CM_GameServerPacketNames,
+  [SVRCLASS_SHOP]: CM_ShopServerPacketNames,
+  [SVRCLASS_UTIL]: CM_UtilServerPacketNames,
+};
+
+/** CxCenter raw greeting: [E2 version 3][E2 accepted-socket header type]. */
 export const CENTER_VERSION = 3;
 
 /**

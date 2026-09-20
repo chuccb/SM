@@ -3,18 +3,37 @@
  */
 import { CSendPacket as CSendPacketBase, CReceivedPacket, CipherDegree } from "../core/Packet.ts";
 import { Decode4, Encode4 } from "../core/BufferManipulator.ts";
+import {
+  STANDARD_PACKET_OPCODE_BYTES,
+  TAIWAN_BILLING_OPCODE_BYTES,
+  WORD_PACKET_OPCODE_BYTES,
+} from "../lib/PacketNames.ts";
+import { BNB_TAIWAN_PacketFamily } from "../lib/PacketIDs.ts";
 
-export const TW_HEADER_SIZE = 8;
-/** Emitted at +4; the native decoder does not validate it. */
+export const TW_LENGTH_BYTES = 4;
+export const TW_HEADER_CODE_BYTES = 4;
+export const TW_HEADER_SIZE = TW_LENGTH_BYTES + TW_HEADER_CODE_BYTES;
+/** Emitted after the length DWORD; the native decoder does not validate it. */
 export const TW_HEADER_CODE = 7;
-export const TW_PACKET_TYPE_SIZE = 4;
-const BNB_TAIWAN_PACKET_FAMILY = { Billing: 0, Coupon: 1 } as const;
-export type PacketTypeSize = 1 | 2 | 4;
+export const TW_PACKET_TYPE_SIZE = TAIWAN_BILLING_OPCODE_BYTES;
+/** Inherited CPacketSocket setup retained by CBillingSocketTw; its dedicated
+ * codec bypasses these standard-frame codes. */
+export const TW_SOCKET_HEADER_CODE_RCV = 41;
+export const TW_SOCKET_HEADER_CODE_SND = 41;
+export const TW_SOCKET_HEADER_CODE_MODIFIER = 0;
+export type PacketTypeSize =
+  | typeof STANDARD_PACKET_OPCODE_BYTES
+  | typeof WORD_PACKET_OPCODE_BYTES
+  | typeof TAIWAN_BILLING_OPCODE_BYTES;
 
 /** CSendPacket(int, int) (00419280): second argument is opcode width.
  * Keep this separate from core CSendPacket's cipher-degree constructor.
  */
 export class CSendPacket extends CSendPacketBase {
+  /** Trace metadata for the nested [E1 family][E1 opcode] constructors. */
+  m_nBillingPacketFamily: number | null = null;
+  m_nPacketTypeSize: PacketTypeSize = TW_PACKET_TYPE_SIZE;
+
   constructor(nPacketType: number, nPacketTypeSize: PacketTypeSize = TW_PACKET_TYPE_SIZE) {
     super();
     this.m_uOffset = 0; // native CSendPacketBase() starts with no opcode
@@ -24,11 +43,13 @@ export class CSendPacket extends CSendPacketBase {
   /** 00419170: sets raw degree and APPENDS the opcode, unlike the base
    * InitPacket overload which resets the packet. No implicit buffer reset. */
   override InitPacket(nPacketType: number, nPacketTypeSize: PacketTypeSize = TW_PACKET_TYPE_SIZE): this {
+    this.m_nPacketTypeSize = nPacketTypeSize;
+    this.m_nBillingPacketFamily = null;
     this.SetCipherDegree(CipherDegree.kPacketRaw);
     switch (nPacketTypeSize) {
-      case 1: this.Encode1(nPacketType); break;
-      case 2: this.Encode2(nPacketType); break;
-      case 4: this.Encode4(nPacketType); break;
+      case STANDARD_PACKET_OPCODE_BYTES: this.Encode1(nPacketType); break;
+      case WORD_PACKET_OPCODE_BYTES: this.Encode2(nPacketType); break;
+      case TAIWAN_BILLING_OPCODE_BYTES: this.Encode4(nPacketType); break;
     }
     this.m_nPacketType = nPacketType;
     return this;
@@ -36,18 +57,19 @@ export class CSendPacket extends CSendPacketBase {
 
   /** BNB_TAIWAN::enBillingPacket constructor (00419040): [E1 0][E1 id]. */
   static FromBillingPacket(nPacketType: number): CSendPacket {
-    return this.FromFamilyPacket(BNB_TAIWAN_PACKET_FAMILY.Billing, nPacketType);
+    return this.FromFamilyPacket(BNB_TAIWAN_PacketFamily.Billing, nPacketType);
   }
 
   /** BNB_TAIWAN::enCouponPacket constructor (004190A0): [E1 1][E1 id]. */
   static FromCouponPacket(nPacketType: number): CSendPacket {
-    return this.FromFamilyPacket(BNB_TAIWAN_PACKET_FAMILY.Coupon, nPacketType);
+    return this.FromFamilyPacket(BNB_TAIWAN_PacketFamily.Coupon, nPacketType);
   }
 
   private static FromFamilyPacket(family: number, nPacketType: number): CSendPacket {
-    const packet = new CSendPacket(family, 1);
+    const packet = new CSendPacket(family, STANDARD_PACKET_OPCODE_BYTES);
     packet.Encode1(nPacketType);
     packet.m_nPacketType = nPacketType;
+    packet.m_nBillingPacketFamily = family;
     return packet;
   }
 }
@@ -67,7 +89,7 @@ export function EncodePacketTw(packet: CSendPacketBase, destination: Uint8Array,
   if (length < TW_HEADER_SIZE || packet.m_uOffset > packet.m_pBlock.length ||
       offset < 0 || offset + length > destination.length) return false;
   Encode4(destination, offset, packet.m_uOffset);
-  Encode4(destination, offset + 4, TW_HEADER_CODE);
+  Encode4(destination, offset + TW_LENGTH_BYTES, TW_HEADER_CODE);
   destination.set(packet.m_pBlock.subarray(0, packet.m_uOffset), offset + TW_HEADER_SIZE);
   return true;
 }

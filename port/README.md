@@ -25,7 +25,7 @@ Gift/coupon/cart、premium、限時等未完成路徑明確拒絕，不以假成
 
 ## 統一的預覽版工具鏈
 
-2026-09-20 查詢並固定 **npm `typescript@next`／`bun@canary`／`bun-types@canary`**：
+2026-09-21 再次查詢並固定 **npm `typescript@next`／`bun@canary`／`bun-types@canary`**：
 
 | 項目 | 固定版本 |
 | --- | --- |
@@ -40,7 +40,7 @@ npm wrapper 的版本與 binary 自報版本不同，**不是混裝兩套 Bun**�
 `package.json` 使用精確版本，不用 `^` 或浮動 `next`／`canary`；`bun.lock` 固定 transitive dependencies。
 Bun 完整 revision 與 SQLite source ID 在 `toolchain.json`；`tools/check-toolchain.ts` 會檢查真正執行中的 runtime，不只看套件名稱。
 
-**「最新」的範圍限制：** 同日查到 GitHub rolling canary 指向較新的
+**「最新」的範圍限制：** 2026-09-20 另查到 GitHub rolling canary 指向較新的
 `fc297d4658ebfba68e9810e60ba7e0cb719a6f22`，但下載 release asset 時遇到 EOF／TLS 連線失敗，尚未安裝或測試該 build。
 本次統一的是 npm 當時最新且可安裝驗證的預覽版，不冒稱已使用所有發佈管道中最新的 Bun。
 SQLite 使用 Bun 隨附實作，沒有另裝不相容的 npm SQLite driver，也沒有宣稱它是 SQLite upstream trunk。

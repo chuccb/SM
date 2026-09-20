@@ -5,33 +5,48 @@
  * registration, the 9-byte addressing strip, the per-datagram miss on an
  * unknown target, multi-frame datagrams, and re-homing on address change.
  */
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, spyOn, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { UpdateCRC8 } from "../src/FXGS/MTUDP.ts";
-import { main as relayMain, MTUDPServer } from "../src/Relay/Relay.ts";
+import {
+  BuildFrame,
+  MTUDP_CRC_BYTES,
+  MTUDP_FRAME_OVERHEAD,
+  MTUDP_LENGTH_BYTES,
+  MTUDP_MAX_PAYLOAD_LENGTH,
+  UpdateCRC8,
+} from "../src/FXGS/MTUDP.ts";
+import { PacketLog } from "../src/core/PacketLog.ts";
+import {
+  main as relayMain,
+  MTUDPServer,
+  RELAY_ADDRESSING_BYTES,
+  RELAY_BODY_OFFSET,
+  RELAY_DESTINATION_SERIAL_OFFSET,
+  RELAY_SOURCE_SERIAL_OFFSET,
+} from "../src/Relay/Relay.ts";
 
 /** The client-side MTUDP frame: [totalLen][E4 srcSn][E4 dstSn][body][crc8]. */
 function BuildClientFrame(srcSn: number, dstSn: number, body: string | Uint8Array): Uint8Array {
   const payload = typeof body === "string" ? Buffer.from(body, "latin1") : body;
-  const totalLen = 9 + payload.byteLength;
-  const buf = new Uint8Array(totalLen + 1);
+  const totalLen = RELAY_ADDRESSING_BYTES + payload.byteLength + MTUDP_CRC_BYTES;
+  const buf = new Uint8Array(totalLen + MTUDP_LENGTH_BYTES);
   const dv = new DataView(buf.buffer);
   buf[0] = totalLen;
-  dv.setUint32(1, srcSn, false);
-  dv.setUint32(5, dstSn, false);
-  buf.set(payload, 9);
-  buf[totalLen] = UpdateCRC8(0, buf, totalLen);
+  dv.setUint32(RELAY_SOURCE_SERIAL_OFFSET, srcSn, false);
+  dv.setUint32(RELAY_DESTINATION_SERIAL_OFFSET, dstSn, false);
+  buf.set(payload, RELAY_BODY_OFFSET);
+  buf[buf.byteLength - MTUDP_CRC_BYTES] = UpdateCRC8(0, buf, buf.byteLength - MTUDP_CRC_BYTES);
   return buf;
 }
 
 /** The relay-side forward frame: [totalLen][body][crc8]. */
 function BuildServerFrame(body: Uint8Array): Uint8Array {
-  const buf = new Uint8Array(body.byteLength + 2);
-  buf[0] = body.byteLength + 1;
-  buf.set(body, 1);
-  buf[buf.byteLength - 1] = UpdateCRC8(0, buf, buf.byteLength - 1);
+  const buf = new Uint8Array(body.byteLength + MTUDP_FRAME_OVERHEAD);
+  buf[0] = body.byteLength + MTUDP_CRC_BYTES;
+  buf.set(body, MTUDP_LENGTH_BYTES);
+  buf[buf.byteLength - MTUDP_CRC_BYTES] = UpdateCRC8(0, buf, buf.byteLength - MTUDP_CRC_BYTES);
   return buf;
 }
 
@@ -39,6 +54,38 @@ const SN_A = 0x11111111;
 const SN_B = 0x22222222;
 
 describe("game relay (CxRelay)", () => {
+  test("shared MTUDP builder enforces the E1 total-length limit", () => {
+    const maximum = BuildFrame(new Uint8Array(MTUDP_MAX_PAYLOAD_LENGTH));
+    expect(maximum.byteLength).toBe(MTUDP_MAX_PAYLOAD_LENGTH + MTUDP_FRAME_OVERHEAD);
+    expect(maximum[0]).toBe(0xff);
+    expect(UpdateCRC8(0, maximum, maximum.byteLength)).toBe(0);
+    expect(() => BuildFrame(new Uint8Array(MTUDP_MAX_PAYLOAD_LENGTH + 1))).toThrow(RangeError);
+  });
+
+  test("send trace is the complete length/body/CRC datagram handed to sendto", () => {
+    const server = new MTUDPServer();
+    server.m_szLogTag = "Relay";
+    const send = mock((_data: Uint8Array, _port: number, _host: string) => 1);
+    server.m_hSocket = { send } as unknown as typeof server.m_hSocket;
+    const shows = spyOn(PacketLog, "ShowsInfra").mockReturnValue(true);
+    const trace = spyOn(PacketLog, "Datagram").mockImplementation(() => {});
+    try {
+      const payload = Uint8Array.of(0x11, 0x22, 0x33);
+      const expected = BuildFrame(payload);
+      expect(server.UnreliableSendToUnRegisteredHost(payload, 0x7f000001, 9520)).toBe(0);
+      expect(Buffer.from(send.mock.calls[0]![0])).toEqual(Buffer.from(expected));
+      expect(send.mock.calls[0]!.slice(1)).toEqual([9520, "127.0.0.1"]);
+      expect(trace).toHaveBeenCalledTimes(1);
+      expect(trace.mock.calls[0]![0]).toBe("send");
+      expect(Buffer.from(trace.mock.calls[0]![1])).toEqual(Buffer.from(expected));
+      expect(trace.mock.calls[0]![2]).toBe("Relay");
+      expect(server.m_dwBytesSend).toBe(expected.byteLength);
+    } finally {
+      trace.mockRestore();
+      shows.mockRestore();
+    }
+  });
+
   test("registers hosts, strips the addressing prefix, forwards both ways", async () => {
     const dir = mkdtempSync(join(tmpdir(), "relay-"));
     const cfgFile = join(dir, "relay.cfg");

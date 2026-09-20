@@ -3,11 +3,11 @@
 
 import { Decode1, Decode2, Decode4, Encode1, Encode2, Encode4 } from "../core/BufferManipulator.ts";
 import { CServerConfig } from "../core/Config.ts";
-import { CReceivedPacket, CSendPacket, CipherDegree, kPacketEncryptedCRC8 } from "../core/Packet.ts";
+import { CReceivedPacket, CSendPacket, CipherDegree, kPacketEncryptedCRC8, PACKET_TYPE_PLACEHOLDER } from "../core/Packet.ts";
 import { CDBMan } from "../db/DBMan.ts";
-import { GS_ClientSend, GS_ReceivedPacket } from "../lib/PacketIDs.ts";
+import { GS_ChatReceivedPacket, GS_ClientSend, GS_ReceivedPacket } from "../lib/PacketIDs.ts";
 import { CDynInfoCalculator_GetMaxExpInLevel } from "../lib/LevelTable.ts";
-import { MC_ReceivedPacket, SVRCLASS_SHOP } from "../lib/S2S.ts";
+import { MC_GameServerSendPacket, SVRCLASS_GAME, SVRCLASS_SHOP } from "../lib/S2S.ts";
 import { SESSION_IDX_NONE } from "./Defs";
 import { CUserPool } from "./Pools";
 import { CUserItemMan } from "./CUserItemMan";
@@ -40,38 +40,34 @@ export class CChatPool extends CUserPool {
     void fLobbyOnly;
   }
 
-  /** CChatPool::OnPacket — 25/26/27/28/30/31/71/74/216, then the RTT tail. */
+  /** CChatPool::OnPacket — dispatch the same top-level opcode after the
+   * derived CChannelPool rewinds it, then rewind again for CUserPool's tail. */
   OnPacket(n: CReceivedPacket, socket: CClientSocket): void {
     const id = n.Decode1();
     switch (id) {
-      case 25:
+      case GS_ChatReceivedPacket.OnChatMsg:
         this.OnChatMsg(n, socket);
         break;
-      case 26:
-        this.OnSpecialCommand(n, socket);
-        break;
-      case 27:
-        this.OnWhisper(n, socket);
-        break;
-      case 28:
-        this.OnItemMsg(n, socket);
-        break;
-      case 30:
-        this.OnSystemMsg(n, socket);
-        break;
-      case 31:
+      case GS_ChatReceivedPacket.OnAdminNotifyMsg:
         this.OnAdminNotifyMsg(n, socket);
         break;
-      case 71:
-        this.OnSystemCmd(n, socket);
+      case GS_ChatReceivedPacket.OnWhisper:
+        this.OnWhisper(n, socket);
         break;
-      case 74:
-        this.OnShoutMsg(n, socket);
+      case GS_ChatReceivedPacket.OnItemMsg:
+        this.OnItemMsg(n, socket);
         break;
-      case 216:
+      case GS_ChatReceivedPacket.OnKickoffUser:
         this.OnKickoffUser(n, socket);
         break;
-      default:
+      case GS_ChatReceivedPacket.OnSystemMsg:
+        this.OnSystemMsg(n, socket);
+        break;
+      case GS_ChatReceivedPacket.OnShoutMsg:
+        this.OnShoutMsg(n, socket);
+        break;
+      case GS_ChatReceivedPacket.OnSystemCmd:
+        this.OnSystemCmd(n, socket);
         break;
     }
     n.m_uOffset = 0;
@@ -82,7 +78,7 @@ export class CChatPool extends CUserPool {
   OnChatMsg(n: CReceivedPacket, socket: CClientSocket): void {
     const msg = n.DecodeStr();
     if (msg.startsWith("/")) {
-      this.OnSpecialCommand(n, socket);
+      this.OnSpecialCommand(msg, socket);
       return;
     }
     if (msg.length === 0) {
@@ -107,9 +103,9 @@ export class CChatPool extends CUserPool {
   }
 
   /** CChatPool::OnSpecialCommand — a stub in the original (`retn 8`). */
-  OnSpecialCommand(_n: CReceivedPacket, _socket: CClientSocket): void {}
+  OnSpecialCommand(_command: string, _socket: CClientSocket): void {}
 
-  /** CChatPool::OnWhisper — packet 27/28 [EStr to][EStr msg]. */
+  /** CChatPool::OnWhisper — packet 27 [EStr to][EStr msg]. */
   OnWhisper(n: CReceivedPacket, socket: CClientSocket): void {
     const to = n.DecodeStr();
     const msg = n.DecodeStr();
@@ -132,7 +128,7 @@ export class CChatPool extends CUserPool {
     target.m_pSocket?.SendPacket(p);
   }
 
-  /** CChatPool::OnItemMsg — packet 28 [E1 bomber][EStr msg] (in-session). */
+  /** CChatPool::OnItemMsg — packet 29 [E1 bomber][EStr msg] (in-session). */
   OnItemMsg(n: CReceivedPacket, socket: CClientSocket): void {
     const bomber = n.Decode1();
     const msg = n.DecodeStr();
@@ -156,7 +152,7 @@ export class CChatPool extends CUserPool {
     CGameSessionTable.ms_pInstance!.SendPacket(idx, socket.GetUser(0)!.GetSessionSerialNo(), p);
   }
 
-  /** CChatPool::OnSystemMsg — packet 30 to the session or the lobby. */
+  /** CChatPool::OnSystemMsg — packet 31 to the session or the lobby. */
   OnSystemMsg(n: CReceivedPacket, socket: CClientSocket): void {
     const msg = n.DecodeStr();
     const p = new CSendPacket(GS_ClientSend.OnSystemMsg, CipherDegree.kPacketEncryptedCRC8);
@@ -166,14 +162,14 @@ export class CChatPool extends CUserPool {
     else CGameSessionTable.ms_pInstance!.SendPacket(idx, socket.GetUser(0)!.GetSessionSerialNo(), p);
   }
 
-  /** CChatPool::OnAdminNotifyMsg — packet 31 from an operator client. */
+  /** CChatPool::OnAdminNotifyMsg — packet 26 from an operator client. */
   OnAdminNotifyMsg(n: CReceivedPacket, socket: CClientSocket): void {
     if (socket.GetUserCount() === 1 && (socket.GetUser(0)!.GetSessionIdx() === 0xffff)) {
       this.SendAdminMsg(n.DecodeStr());
     }
   }
 
-  /** CChatPool::OnSystemCmd — packet 71 from an operator client. */
+  /** CChatPool::OnSystemCmd — packet 216 from an operator client. */
   OnSystemCmd(n: CReceivedPacket, socket: CClientSocket): void {
     if (socket.GetUserCount() === 1 && (socket.GetUser(0)!.GetSessionIdx() === 0xffff)) {
       this.SendSystemCmd(n.DecodeStr());
@@ -182,19 +178,19 @@ export class CChatPool extends CUserPool {
 
   /** CChatPool::SendAdminMsg — to the center (MC 4). */
   SendAdminMsg(msg: string): void {
-    const p = new CSendPacket(MC_ReceivedPacket.OnAdminNotifyMsg);
+    const p = new CSendPacket(MC_GameServerSendPacket.OnAdminNotifyMsg);
     p.EncodeStr(msg);
     CCenterProcess.ms_pInstance?.SendPacket(p);
   }
 
   /** CChatPool::SendSystemCmd — to the center (MC 11). */
   SendSystemCmd(msg: string): void {
-    const p = new CSendPacket(MC_ReceivedPacket.OnSystemCmd);
+    const p = new CSendPacket(MC_GameServerSendPacket.OnSystemCmd);
     p.EncodeStr(msg);
     CCenterProcess.ms_pInstance?.SendPacket(p);
   }
 
-  /** CChatPool::OnShoutMsg — packet 74; costs an Item/ItemSpeaker. */
+  /** CChatPool::OnShoutMsg — packet 71; costs an Item/ItemSpeaker. */
   OnShoutMsg(n: CReceivedPacket, socket: CClientSocket): void {
     const idx = n.Decode1();
     let msg = n.DecodeStr();
@@ -228,7 +224,7 @@ export class CChatPool extends CUserPool {
     this.SendAll(p, 0);
   }
 
-  /** CChatPool::OnKickoffUser — packet 216; authority-gated (always fails). */
+  /** CChatPool::OnKickoffUser — packet 30; authority-gated (always fails). */
   OnKickoffUser(n: CReceivedPacket, socket: CClientSocket): void {
     if (socket.GetUserCount() !== 1) return;
     n.DecodeStr(); // the target name
@@ -327,6 +323,9 @@ export class CChannelPool extends CChatPool {
       case GS_ReceivedPacket.OnEnterLobbyStage:
         this.OnEnterLobbyStage(socket);
         return;
+      case GS_ReceivedPacket.OnRequestCreateGuildSession:
+        CGameSessionTable.ms_pInstance!.CreateSessionGuild(n, socket);
+        return;
       case GS_ReceivedPacket.OnRequestGuildMemberInfo:
         this.OnRequestGuildMemberInfo(n, socket);
         return;
@@ -337,10 +336,6 @@ export class CChannelPool extends CChatPool {
         return;
       case GS_ReceivedPacket.OnRequestUserInventory:
         this.OnRequestUserItemList(socket);
-        return;
-      case GS_ReceivedPacket.Chat:
-        n.m_uOffset = 0;
-        super.OnPacket(n, socket);
         return;
       default:
         if (id > 95 && id < 190) {
@@ -453,7 +448,7 @@ export class CChannelPool extends CChatPool {
 
   /** the MakeChannelsStatePacket/MakeChannelsGameStatePacket carrier pair */
   private SendChannelsState(socket: CClientSocket): void {
-    const packet = new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(PACKET_TYPE_PLACEHOLDER, CipherDegree.kPacketEncryptedCRC8);
     CCenterProcess.ms_pInstance!.MakeChannelsStatePacket(packet);
     socket.SendPacket(packet);
     CCenterProcess.ms_pInstance!.MakeChannelsGameStatePacket(packet);
@@ -540,7 +535,7 @@ export class CChannelPool extends CChatPool {
       }
     }
     // ok → center p2 [E1 n][n×E4 serial][E1 type][E4 target]
-    const p = new CSendPacket(MC_ReceivedPacket.OnReqConnectToSvr);
+    const p = new CSendPacket(MC_GameServerSendPacket.OnReqConnectToSvr);
     p.Encode1(socket.GetUserCount());
     for (const u of socket.m_apUser) p.Encode4(u!.GetGlobalSerialNo());
     p.Encode1(type);
@@ -647,7 +642,7 @@ export class CChannelPool extends CChatPool {
     const user = CLocalUserTable.ms_pInstance!.FindUserFromId(name);
     if (!user) {
       // ask the center (MC 7 [E1 0|1][E4 asker][EStr name])
-      const p = new CSendPacket(MC_ReceivedPacket.OnSvrReservedMsg);
+      const p = new CSendPacket(MC_GameServerSendPacket.OnRequestUserChannel);
       p.Encode1(0);
       p.Encode4(socket.GetUser(0)!.GetGlobalSerialNo());
       p.EncodeStr(name);
@@ -673,7 +668,7 @@ export class CChannelPool extends CChatPool {
     packet.Encode4(CDynInfoCalculator_GetMaxExpInLevel(user.m_nLevel));
     packet.Encode2(user.m_nLevel);
     packet.Encode4(user.dyn.money);
-    packet.Encode1(10);
+    packet.Encode1(SVRCLASS_GAME);
     packet.Encode4(CServerConfig.ms_pInstance!.GetNumAttribute("ServerIndex"));
     packet.Encode2(user.GetSessionIdx() & 0xffff);
     packet.Encode1(user.account.Reveal);
@@ -694,7 +689,7 @@ export class CChannelPool extends CChatPool {
     const name = n.DecodeStr();
     const user = CLocalUserTable.ms_pInstance!.FindUserFromId(name);
     if (!user) {
-      const p = new CSendPacket(MC_ReceivedPacket.OnSvrReservedMsg);
+      const p = new CSendPacket(MC_GameServerSendPacket.OnRequestUserChannel);
       p.Encode1(1);
       p.Encode4(socket.GetUser(0)!.GetGlobalSerialNo());
       p.EncodeStr(name);
@@ -704,7 +699,7 @@ export class CChannelPool extends CChatPool {
     const packet = new CSendPacket(GS_ClientSend.OnRequestUserLocationRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(1);
     packet.EncodeStr(user.GetName());
-    packet.Encode1(10);
+    packet.Encode1(SVRCLASS_GAME);
     packet.Encode4(CServerConfig.ms_pInstance!.GetNumAttribute("ServerIndex"));
     packet.Encode2(user.GetSessionIdx() & 0xffff);
     socket.SendPacket(packet);

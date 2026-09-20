@@ -17,6 +17,7 @@
  * CRS*::OnReceiveRow select lists in the decompiled servers.
  */
 import { Database } from "bun:sqlite";
+import { MakeLower } from "../core/MakeLower.ts";
 import { INVENTORY_SLOT_NONE } from "../lib/Item.ts";
 import { SCHEMA_ITEM } from "./CAItemSchema.ts";
 import { mkdirSync, readFileSync } from "node:fs";
@@ -35,7 +36,8 @@ export interface _USERDYNINFO {
 
 /** CDBMan::GetUserHashNo — lower(name[0]) % 6. */
 export function GetUserHashNo(id: string): number {
-  const c = id.length > 0 ? id.toLowerCase().charCodeAt(0) & 0xff : 0;
+  const lowered = MakeLower(id);
+  const c = lowered.length > 0 ? lowered.charCodeAt(0) & 0xff : 0;
   return c % 6;
 }
 
@@ -348,6 +350,13 @@ export class CDBMan {
     return this.config
       .query("SELECT sn, type, value, strAttr FROM CAString WHERE type = 0 OR type = 1 ORDER BY sn")
       .all() as { sn: number; type: number; value: string; strAttr: string }[];
+  }
+
+  /** CRSNotice — CConfigDyn::UpdateNotice's `top 1 sn,type,value` type-2 row. */
+  GetNotice(): { sn: number; type: number; value: string } | null {
+    return this.config
+      .query("SELECT sn, type, value FROM CAString WHERE type = 2 ORDER BY sn LIMIT 1")
+      .get() as { sn: number; type: number; value: string } | null;
   }
 
   /** CRSOptions ("FxUserOptions") — CCenterProcess::UpdateLevelLimit. */

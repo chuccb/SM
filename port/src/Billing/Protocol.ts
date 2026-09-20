@@ -1,5 +1,5 @@
 import { CSendPacket } from "../FXSS/Packet.ts";
-import { BILLING_ReceivedPacket as Reply } from "../lib/PacketIDs.ts";
+import { TW_BILLING_ReceivedPacket as Reply } from "../lib/PacketIDs.ts";
 import { BillingError } from "./Defs.ts";
 
 /** Strict raw Tw body reader; invalid input never becomes zero/success. */

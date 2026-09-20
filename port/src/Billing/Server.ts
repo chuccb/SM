@@ -1,7 +1,7 @@
 import { CBillingSocketTw } from "../FXSS/CBillingSocketTw.ts";
 import { CSendPacket } from "../FXSS/Packet.ts";
 import type { CDBMan } from "../db/DBMan.ts";
-import { BILLING_SendPacket as Request, BILLING_ReceivedPacket as Reply } from "../lib/PacketIDs.ts";
+import { TW_BILLING_SendPacket as Request, TW_BILLING_ReceivedPacket as Reply, TW_BILLING_SEND_NAMES, TW_BILLING_RECEIVED_NAMES } from "../lib/PacketIDs.ts";
 import { PacketLog } from "../core/PacketLog.ts";
 import type { CReceivedPacket } from "../core/Packet.ts";
 import { BillingReader, purchaseReply, string8 } from "./Protocol.ts";
@@ -22,8 +22,8 @@ export class BillingServer {
   private peers = new Set<Bun.Socket<Peer>>();
   private authFailures = new Map<string, { count: number; since: number }>();
   constructor(readonly store: BillingStore) {
-    PacketLog.Register("LOCALBILL", "recv", Request);
-    PacketLog.Register("LOCALBILL", "send", Reply);
+    PacketLog.Register("LOCALBILL", "recv", TW_BILLING_SEND_NAMES);
+    PacketLog.Register("LOCALBILL", "send", TW_BILLING_RECEIVED_NAMES);
   }
   get port(): number { return this.listener?.port ?? 0; }
   listen(host = "127.0.0.1", port = 0): void {
@@ -73,7 +73,7 @@ export class BillingServer {
       if (peer.world === null) throw new BillingError("Billing hello required");
       if (id === Request.TwRequestRTT) {
         const token = n.u8(); n.end();
-        const p = new CSendPacket(Reply.OnEstimateRTT); p.Encode1(token); peer.wire.SendPacket(p);
+        const p = new CSendPacket(Reply.OnTwRTT); p.Encode1(token); peer.wire.SendPacket(p);
       } else if (id === Request.RequestDigiQAuthorization) {
         const account = n.string(), password = n.string(), name = n.string(); n.end();
         if (name.length > 32) throw new BillingError("Character name exceeds native response buffer");

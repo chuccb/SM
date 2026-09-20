@@ -8,7 +8,7 @@ import { CReceivedPacket, CSendPacket, CipherDegree, kPacketEncryptedCRC8, kPack
 import { CDBMan } from "../db/DBMan.ts";
 import { CLocalSocket } from "../lib/CenterLink.ts";
 import { GS_ClientSend } from "../lib/PacketIDs.ts";
-import { CENTER_VERSION, CM_ReceivedPacket, CONN_HELLO_VERSION, MC_ReceivedPacket, SVRCLASS_GAME } from "../lib/S2S.ts";
+import { CENTER_VERSION, CM_GameServerPacket, CONN_HELLO_VERSION, MC_GameServerSendPacket, SVRCLASS_GAME } from "../lib/S2S.ts";
 import { CDynInfoCalculator_GetLevel, CDynInfoCalculator_GetMaxExpInLevel } from "../lib/LevelTable.ts";
 import { CChannelPool } from "./Chat";
 import { CONN_PATCH_URL, SESSION_LOC_OTHER_SERVER } from "./Defs";
@@ -128,56 +128,56 @@ export class CCenterProcess {
 
   /** CCenterProcess::UnregisterConnection — MC 1 [E4 serial]. */
   UnregisterConnection(n: number): void {
-    const p = new CSendPacket(MC_ReceivedPacket.OnDeleteUser);
+    const p = new CSendPacket(MC_GameServerSendPacket.OnDeleteUser);
     p.Encode4(n);
     this.SendPacket(p);
   }
 
   /** CCenterProcess::SendAuthenCode — MC 9 [E4 serial][E1 code]. */
   SendAuthenCode(n: number, code: number): void {
-    const p = new CSendPacket(MC_ReceivedPacket.OnSetAuthenCode);
+    const p = new CSendPacket(MC_GameServerSendPacket.SendAuthenCode);
     p.Encode4(n);
     p.Encode1(code);
     this.SendPacket(p);
   }
 
-  /** CCenterProcess::OnPacket — the 13-case dispatch. */
+  /** CCenterProcess::OnPacket — the 12-case dispatch. */
   OnPacket(n: CReceivedPacket): void {
     switch (n.Decode1()) {
-      case CM_ReceivedPacket.OnCenterResConnectToSvr:
+      case CM_GameServerPacket.OnCenterResConnectToSvr:
         CChannelPool.ms_pInstance?.OnCenterResConnectToSvr(n);
         break;
-      case CM_ReceivedPacket.OnCenterResConnEstablished:
+      case CM_GameServerPacket.OnCenterResConnEstablished:
         CConnectPool.ms_pInstance?.OnCenterResConnEstablished(n);
         break;
-      case CM_ReceivedPacket.OnLocalServerInfo:
+      case CM_GameServerPacket.OnLocalServerInfo:
         this.OnLocalServerInfo(n);
         break;
-      case CM_ReceivedPacket.OnLocalServerState:
+      case CM_GameServerPacket.OnLocalServerState:
         this.OnLocalServerState(n);
         break;
-      case CM_ReceivedPacket.OnLocalGameState:
+      case CM_GameServerPacket.OnLocalGameState:
         this.OnLocalGameState(n);
         break;
-      case CM_ReceivedPacket.OnSvrReservedMsg:
+      case CM_GameServerPacket.OnSvrReservedMsg:
         this.OnSvrReservedMsg(n);
         break;
-      case CM_ReceivedPacket.OnAdminNotifyMsg:
+      case CM_GameServerPacket.OnAdminNotifyMsg:
         this.OnAdminNotifyMsg(n);
         break;
-      case CM_ReceivedPacket.OnUserChannelResult:
+      case CM_GameServerPacket.OnUserChannelResult:
         this.OnUserChannelResult(n);
         break;
-      case CM_ReceivedPacket.OnDeleteUser:
+      case CM_GameServerPacket.OnDeleteUser:
         this.OnDeleteUser(n);
         break;
-      case CM_ReceivedPacket.OnInitialSvrAttr:
+      case CM_GameServerPacket.OnInitialSvrAttr:
         this.OnInitialSvrAttr(n);
         break;
-      case CM_ReceivedPacket.OnSystemMsg:
+      case CM_GameServerPacket.OnSystemMsg:
         this.OnSystemMsg(n);
         break;
-      case CM_ReceivedPacket.OnItemDBInit:
+      case CM_GameServerPacket.OnItemDBInit:
         CUserItemMan.ms_pInstance?.Init(this.db);
         break;
       default:

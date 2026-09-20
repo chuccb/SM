@@ -27,10 +27,22 @@
  * CUDPPacketDispatcher::Proc drain (the dispatcher thread) — the same
  * call sequence, without the Sleep(5)/Sleep(10) polling.
  */
-import { BuildFrame, HOSTHANDLE, MTUDP_UDP_PORT_OFFSET, SplitDatagram } from "../FXGS/MTUDP.ts";
+import {
+  BuildFrame,
+  HOSTHANDLE,
+  MTUDP_MAX_PAYLOAD_LENGTH,
+  MTUDP_MAX_TOTAL_LENGTH,
+  MTUDP_UDP_PORT_OFFSET,
+  SplitDatagram,
+} from "../FXGS/MTUDP.ts";
 import { CServerConfig } from "../core/Config.ts";
 import { PacketLog } from "../core/PacketLog.ts";
 import type { CUser } from "./Login.ts";
+
+/** Login MTUDP `check udp comm` payload opcodes (CxLogin.exe.c:22617). */
+export const LOGIN_MTUDP_CHECK_UDP_COMM_REQUEST = 0;
+export const LOGIN_MTUDP_CHECK_UDP_COMM_RESPONSE = 2;
+export const LOGIN_MTUDP_CHECK_UDP_COMM_REQUEST_BYTES = 1 + 4; // opcode + global serial
 
 /** MTUDPBase::GetUnreliableData's drain buffer size (CUDPPacketDispatcher::Proc). */
 const UDP_DRAIN_BUFFER_SIZE = 0x1000;
@@ -47,7 +59,7 @@ class cUnreliableQueueIn {
   /** the AddPacket capacity gate (CxLogin.exe.c:26195) */
   static readonly CAPACITY = 0x3000;
   /** the longest packet AddPacket accepts (CxLogin.exe.c:26178) */
-  static readonly MAX_PACKET = 0xff;
+  static readonly MAX_PACKET = MTUDP_MAX_TOTAL_LENGTH;
 
   m_anBuf = new Uint8Array(cUnreliableQueueIn.CAPACITY + 8);
   m_nCount = 0; // +12324: bytes queued
@@ -211,14 +223,14 @@ export class MTUDPServer {
       console.error(`MTUDPBase::ReliableSendTo - Invalid parameters. ${ip}, ${port}`);
       return 1;
     }
-    if (buf !== null && len + 1 > 0xff) {
+    if (buf !== null && len > MTUDP_MAX_PAYLOAD_LENGTH) {
       console.error("Request to send too long udp packet");
       return 2;
     }
     const frame = BuildFrame(buf.subarray(0, len));
     const fSent = this.m_nSocket!.send(frame, port, u32ToAddress(ip));
     this.m_nBytesSend += frame.length;
-    if (PacketLog.ShowsClient()) PacketLog.Datagram("send", buf.subarray(0, len), this.m_szLogTag);
+    if (PacketLog.ShowsClient()) PacketLog.Datagram("send", frame, this.m_szLogTag);
     if (!fSent) {
       console.error(`MTUDPBase::ResendData() - Sent 0 of ${frame.length} bytes.`);
     }
@@ -273,9 +285,9 @@ export class CUDPPacketDispatcher {
   /** CUDPPacketDispatcher::OnUDPPacket (22617) — the login server's only
    *  UDP payload: the type-0 'check udp comm' handshake. */
   OnUDPPacket(datagram: Uint8Array, host: HOSTHANDLE): void {
-    if (datagram[0] !== 0) return; // the frame type byte (always 0 here)
+    if (datagram[0] !== LOGIN_MTUDP_CHECK_UDP_COMM_REQUEST) return;
     const pServer = MTUDPServer.ms_pInstance!;
-    if (datagram.length !== 5) {
+    if (datagram.length !== LOGIN_MTUDP_CHECK_UDP_COMM_REQUEST_BYTES) {
       pServer.HostDestroy(host.ip, host.port);
       return;
     }
@@ -291,7 +303,8 @@ export class CUDPPacketDispatcher {
       pServer.HostDestroy(host.ip, host.port);
       return;
     }
-    pServer.UnreliableSendTo(Uint8Array.of(2), 1, host.ip, host.port);
+    const response = Uint8Array.of(LOGIN_MTUDP_CHECK_UDP_COMM_RESPONSE);
+    pServer.UnreliableSendTo(response, response.length, host.ip, host.port);
     pServer.HostDestroy(host.ip, host.port);
   }
 }

@@ -8,9 +8,11 @@
  * encoding and packet-type conversion depend on the cipher degree (Packet.ts).
  * This layer owns the bounded byte queues and connection lifecycle.
  */
-import { CipherDegree,
+import {
+  CipherDegree,
   CReceivedPacket,
   CSendPacket,
+  IsValidCipherDegree,
   enSocket,
   kPacketRaw,
   type enSocket as EnSocket,
@@ -42,7 +44,8 @@ export interface IPacketSocketHooks {
 export abstract class CPacketSocket {
   static ms_nHeaderTypeCounter = 0;
 
-  m_nCipherDegree = 0;
+  // Explicitly wide: preview TS must not infer the mutable field as literal 0.
+  m_nCipherDegree: number = CipherDegree.kPacketRaw;
   m_nHeaderType = 0;
   m_nHeaderCodeRcvBase = 0;
   m_nHeaderCodeSndBase = 0;
@@ -118,9 +121,9 @@ export abstract class CPacketSocket {
   }
 
   /** CPacketSocket::SetHeaderType — also arms m_fHeaderTypeSet (the ctor
-   *  bytes `c7 41 64 01` at 0042EAE0: the accept-side socket keeps the
-   *  counter-derived header type; only the PEER learns its k from the first
-   *  frame it receives). */
+   * bytes `c7 41 64 01` at 0042EAE0). Accept-side sockets keep their
+   * counter-derived row; ordinary clients derive it from the first frame,
+   * while a center-link connector receives it in the raw greeting. */
   SetHeaderType(nHeaderType: number): void {
     this.m_nHeaderType = nHeaderType;
     this.m_fHeaderTypeSet = 1;
@@ -152,7 +155,7 @@ export abstract class CPacketSocket {
 
   /** CPacketSocket::SetCipherDegree */
   SetCipherDegree(nCipherDegree: number): void {
-    if (nCipherDegree <= 2) this.m_nCipherDegree = nCipherDegree;
+    if (IsValidCipherDegree(nCipherDegree)) this.m_nCipherDegree = nCipherDegree;
   }
 
   /** CPacketSocket::GetRcvHeaderCode */

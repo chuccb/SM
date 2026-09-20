@@ -1,6 +1,7 @@
 /** CLocalUserTable, CGuild and CGuildTable — the server's user index and
  *  the lazily-loaded guild rows. */
 
+import { MakeLower } from "../core/MakeLower.ts";
 import { CDBMan } from "../db/DBMan.ts";
 import { CUser } from "./User";
 
@@ -19,7 +20,7 @@ export class CLocalUserTable {
 
   /** CLocalUserTable::Insert — 1 on success (name keys are MakeLower'd). */
   Insert(user: CUser): number {
-    const key = user.GetName().toLowerCase();
+    const key = MakeLower(user.GetName());
     if (this.byName.has(key)) return 0;
     if (this.bySN.has(user.m_nGlobalSerialNo)) return 0;
     this.byName.set(key, user);
@@ -31,7 +32,7 @@ export class CLocalUserTable {
    *  operates on whatever sits under it, reporting whichever second lookup
    *  misses (:20311). */
   Remove(user: CUser): void {
-    const key = user.GetName().toLowerCase();
+    const key = MakeLower(user.GetName());
     const found = this.byName.get(key);
     if (!found) {
       console.error(`[GS] Remove failed (User Id:${user.GetName()})`);
@@ -47,7 +48,7 @@ export class CLocalUserTable {
 
   /** CLocalUserTable::FindUserFromId */
   FindUserFromId(name: string): CUser | null {
-    return this.byName.get(name.toLowerCase()) ?? null;
+    return this.byName.get(MakeLower(name)) ?? null;
   }
 
   /** CLocalUserTable::FindUserFromGlobalSerialNo */

@@ -28,19 +28,24 @@
  * Packet names resolve through the PacketIDs.ts tables registered per server
  * in its main(); unregistered flows print the bare id as p<N>.
  */
-import { PacketIdName } from "../lib/PacketIDs.ts";
+import { PacketIdInfo } from "../lib/PacketIDs.ts";
+import {
+  MergePacketNameInfo,
+  PacketNameLabel,
+  PacketNamesFromIds,
+  type PacketIdTable,
+  type PacketNameInfo,
+  type PacketNameTable,
+} from "../lib/PacketNames.ts";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-
-/** {OnLogin: 3, ...} tables inverted to 3 → "OnLogin" on registration. */
-type PacketNameTable = Record<string, number>;
 
 export class PacketLog {
   /** Per-process server tag ([LS] / [GS] / …), set by each main(). */
   static tag = "Srv";
 
   /** id → name tables keyed "<tableKey>:<recv|send>" (tableKey defaults to the tag). */
-  static names = new Map<string, Map<number, string>>();
+  static names = new Map<string, Map<number, PacketNameInfo>>();
 
   /** Test seam: when set, Emit hands the line here instead of console/file. */
   static out: ((line: string) => void) | null = null;
@@ -71,14 +76,25 @@ export class PacketLog {
     PacketLog.tag = tag;
   }
 
-  /** Register name tables for "<tableKey>:<dir>" (later tables win per id). */
-  static Register(tableKey: string, dir: "recv" | "send", ...tables: PacketNameTable[]): void {
+  /** Register context-bound tables for "<tableKey>:<dir>".  Reused ids
+   * preserve the first canonical name and every later name as an alias. */
+  static Register(
+    tableKey: string,
+    dir: "recv" | "send",
+    ...tables: readonly (PacketNameTable | PacketIdTable)[]
+  ): void {
     let map = PacketLog.names.get(`${tableKey}:${dir}`);
     if (map === undefined) {
-      map = new Map<number, string>();
+      map = new Map<number, PacketNameInfo>();
       PacketLog.names.set(`${tableKey}:${dir}`, map);
     }
-    for (const t of tables) for (const name of Object.keys(t)) map.set(t[name]!, name);
+    for (const table of tables) {
+      const names = "names" in table && "ids" in table ? table.names : PacketNamesFromIds(table);
+      for (const [rawId, incoming] of Object.entries(names)) {
+        const id = Number(rawId);
+        map.set(id, MergePacketNameInfo(map.get(id), incoming));
+      }
+    }
   }
 
   /** One framed packet (payload = [type][body...], the decoded logical image). */
@@ -92,16 +108,14 @@ export class PacketLog {
     tableKey: string | null = null,
   ): void {
     if (!PacketLog.Enabled()) return;
-    const map = PacketLog.names.get(`${tableKey ?? tag}:${dir}`);
-    let name = map?.get(nPacketType) ?? PacketIdName(tableKey ?? tag, dir, nPacketType);
-    if (name === null) name = `p${nPacketType}`;
-    // These bodies contain account/password fields. Keep useful ID/length
-    // diagnostics, but never persist credential bytes even with scope=all.
-    const credentials = (nPacketType === 341 && (tableKey === "BILL" || tag === "Billing")) ||
-      (nPacketType === 224 && tag === "Shop");
+    const registryKey = tableKey ?? tag;
+    const info = PacketLog.names.get(`${registryKey}:${dir}`)?.get(nPacketType) ??
+      PacketIdInfo(registryKey, dir, nPacketType);
+    const name = info === null || info === undefined ? `p${nPacketType}` : PacketNameLabel(info);
     PacketLog.Emit(
       `[${PacketLog.Timestamp()}] [${tag}] ${peer} ${dir === "recv" ? "<-" : "->"} ` +
-        `${name}(${nPacketType}) deg${nCipherDegree} len=${payload.length} | ${credentials ? "[credentials redacted]" : PacketLog.Hex(payload)}`,
+        `${name}(${nPacketType}) deg${nCipherDegree} len=${payload.length} | ` +
+        `${info?.containsCredentials === true ? "[credentials redacted]" : PacketLog.Hex(payload)}`,
     );
   }
 

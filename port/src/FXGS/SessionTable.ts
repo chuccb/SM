@@ -2,9 +2,9 @@
  *  and the create/join/UDP dispatch. */
 
 import { Decode1, Decode2, Decode4, Encode1, Encode2, Encode4 } from "../core/BufferManipulator.ts";
-import { CReceivedPacket, CSendPacket, CipherDegree, kPacketEncryptedCRC8 } from "../core/Packet.ts";
+import { CReceivedPacket, CSendPacket, CipherDegree, kPacketEncryptedCRC8, PACKET_TYPE_PLACEHOLDER } from "../core/Packet.ts";
 import { HOSTHANDLE } from "./MTUDP.ts";
-import { GS_ClientSend, GS_INPLAY_SendInventory, SESSION_ReceivedPacket } from "../lib/PacketIDs.ts";
+import { GS_ClientSend, SESSION_ReceivedPacket } from "../lib/PacketIDs.ts";
 import { timeGetTime } from "../core/timeGetTime.ts";
 import { CChannelPool } from "./Chat";
 import { CUserPool } from "./Pools";
@@ -254,6 +254,24 @@ export class CGameSessionTable {
     this.DoCreateSession(socket, title, password, this.DecodeBomberSelections(n, count), gameType);
   }
 
+  /** CGameSessionTable::CreateSessionGuild (vtbl+56, 004230F5) — packet 84:
+   * [EStr password][E1 gameType][E1 count][count × E1 select].  The native
+   * room title is the CP949 byte string 길드방 ("guild room"), while the one
+   * client string is passed as the password. */
+  CreateSessionGuild(n: CReceivedPacket, socket: CClientSocket): void {
+    const password = n.DecodeStr();
+    const gameType = n.Decode1();
+    const count = n.Decode1();
+    if (count !== socket.GetUserCount()) {
+      console.error("[GS] ChannelPool::OnRequestCreateSession, player count not matched!");
+      socket.PostClosePacket();
+      return;
+    }
+    // Keep the original CP949 bytes in the latin1 string domain used by EStr.
+    const guildRoomTitle = "\xb1\xe6\xb5\xe5\xb9\xe6";
+    this.DoCreateSession(socket, guildRoomTitle, password, this.DecodeBomberSelections(n, count), gameType);
+  }
+
   /** CGameSessionTable::DoCreateSession (FxServer.exe.c:38917). */
   DoCreateSession(socket: CClientSocket, title: string, password: string, selects: number[], gameType: number): void {
     if (this.KickImp(socket) !== 0) return;
@@ -313,7 +331,7 @@ export class CGameSessionTable {
    *  already seated somewhere. */
   DoCreatePracticeSession(socket: CClientSocket, selects: number[]): void {
     if (this.KickImp(socket) !== 0) return;
-    const res = new CSendPacket(GS_INPLAY_SendInventory.OnPracticeSessionCreated, CipherDegree.kPacketEncryptedCRC8);
+    const res = new CSendPacket(GS_ClientSend.OnPracticeSessionCreated, CipherDegree.kPacketEncryptedCRC8);
     const na = socket.GetUserCount();
     if (na > 0) {
       for (let i = 0; i < na; i++) {
@@ -485,7 +503,7 @@ export class CGameSessionTable {
     if (!list) return;
     for (const session of this.m_apGameSession) {
       if (!session || session.fValid === 0) continue;
-      const packet = new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8);
+      const packet = new CSendPacket(PACKET_TYPE_PLACEHOLDER, CipherDegree.kPacketEncryptedCRC8);
       if (session.MakeModifiedPacket(packet) !== 0) {
         CUserPool.SendAll(packet, list);
       }
@@ -513,13 +531,13 @@ export class CGameSessionTable {
       if (!session) continue;
       const flags = this.m_acTableFlags[n]!;
       if ((flags & 1) !== 0) {
-        const packet = new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8);
+        const packet = new CSendPacket(PACKET_TYPE_PLACEHOLDER, CipherDegree.kPacketEncryptedCRC8);
         session.MakeCreatedPacket(packet);
         this.m_acTableFlags[n] = 0;
         this.m_acTableFlags[n]! |= 2;
         CChannelPool.ms_pInstance?.SendAll(packet, 1);
       } else if ((flags & 4) !== 0) {
-        const packet = new CSendPacket(0, CipherDegree.kPacketEncryptedCRC8);
+        const packet = new CSendPacket(PACKET_TYPE_PLACEHOLDER, CipherDegree.kPacketEncryptedCRC8);
         session.MakeDestroyedPacket(packet);
         this.m_acTableFlags[n] = 0;
         CChannelPool.ms_pInstance?.SendAll(packet, 1);

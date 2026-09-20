@@ -6,12 +6,31 @@ import { describe, expect, spyOn, test } from "bun:test";
 import { connect } from "node:net";
 import { createHash } from "node:crypto";
 import { CPacketSocket } from "../src/core/CPacketSocket.ts";
-import { CSendPacket, CipherDegree, enSocket } from "../src/core/Packet.ts";
+import { CReceivedPacket, CSendPacket, CipherDegree, enSocket } from "../src/core/Packet.ts";
 import { CLocalSocket } from "../src/lib/CenterLink.ts";
+import {
+  CLIENTSOCKET_HEADER_CODE_MODIFIER,
+  CLIENTSOCKET_HEADER_CODE_RCV,
+  CLIENTSOCKET_HEADER_CODE_SND,
+  CLIENTSOCKET_SEQ,
+  CLIENTSOCKET_SEQ_DELTA,
+} from "../src/lib/PacketIDs.ts";
 import { CenterClientSocket, type CxCenter } from "../src/Center/Center.ts";
 import { CBillingProcess, CWebSocket } from "../src/FXSS/Shop.ts";
 import type { CDBMan } from "../src/db/DBMan.ts";
-import { CENTER_VERSION, LOCAL_SERVER_IDENTIFICATION_SIZE, SVRCLASS_GAME, SVRIDX_IDENTIFY_XOR } from "../src/lib/S2S.ts";
+import {
+  CENTER_VERSION,
+  CLIENT_VERSION,
+  GAME_VERSION,
+  LOCAL_SERVER_IDENTIFICATION_SIZE,
+  LOCALSOCKET_HEADER_CODE_MODIFIER,
+  LOCALSOCKET_HEADER_CODE_RCV,
+  LOCALSOCKET_HEADER_CODE_SND,
+  LOCALSOCKET_SEQ,
+  LOCALSOCKET_SEQ_DELTA,
+  SVRCLASS_GAME,
+  SVRIDX_IDENTIFY_XOR,
+} from "../src/lib/S2S.ts";
 
 class TestSocket extends CPacketSocket {}
 
@@ -50,11 +69,39 @@ function packet(id: number, degree: number): CSendPacket {
 function configure(socket: CPacketSocket, degree: number): void {
   socket.SetCipherDegree(degree);
   socket.SetHeaderType(5);
-  socket.SetHeaderCode(102, 102, 231);
-  socket.SetSequence(40, 40, 3, 3);
+  // This fixture is symmetric, so use the official send base in both slots.
+  socket.SetHeaderCode(
+    CLIENTSOCKET_HEADER_CODE_SND,
+    CLIENTSOCKET_HEADER_CODE_SND,
+    CLIENTSOCKET_HEADER_CODE_MODIFIER,
+  );
+  socket.SetSequence(CLIENTSOCKET_SEQ, CLIENTSOCKET_SEQ, CLIENTSOCKET_SEQ_DELTA, CLIENTSOCKET_SEQ_DELTA);
 }
 
 describe("CPacketSocket send FIFO", () => {
+  test("native cipher-degree setters reject values outside integral enum 0..2", () => {
+    const socket = new TestSocket();
+    const sent = new CSendPacket(1, CipherDegree.kPacketEncrypted);
+    const received = new CReceivedPacket();
+    received.SetCipherDegree(CipherDegree.kPacketEncrypted);
+    socket.SetCipherDegree(CipherDegree.kPacketEncrypted);
+    for (const invalid of [-1, 3, 1.5, NaN, Infinity]) {
+      sent.SetCipherDegree(invalid);
+      received.SetCipherDegree(invalid);
+      socket.SetCipherDegree(invalid);
+      expect([
+        sent.m_nCipherDegree,
+        received.m_nCipherDegree,
+        socket.m_nCipherDegree,
+      ]).toEqual([
+        CipherDegree.kPacketEncrypted,
+        CipherDegree.kPacketEncrypted,
+        CipherDegree.kPacketEncrypted,
+      ]);
+    }
+    expect(new CSendPacket(1, -1).m_nCipherDegree).toBe(CipherDegree.kPacketRaw);
+  });
+
   for (let accepted = 0; accepted <= 8; accepted++) {
     test(`write accepts ${accepted}/8 bytes; a later drain sends exactly the suffix`, () => {
       const socket = new TestSocket();
@@ -186,7 +233,10 @@ describe("CPacketSocket send FIFO", () => {
     const transport = new Transport(); transport.attach(center); transport.limit = 1;
     center.SendGreeting(); center.SendGreeting(); // exactly one greeting queued
     transport.limit = Infinity; center.Flush();
-    expect(transport.bytes).toEqual([0, CENTER_VERSION, 2828 >>> 8, 2828 & 255]);
+    expect(transport.bytes).toEqual([
+      0, CENTER_VERSION,
+      (center.m_nHeaderType >>> 8) & 0xff, center.m_nHeaderType & 0xff,
+    ]);
     center.Close();
     const web = new CWebSocket(); const webTransport = new Transport(); webTransport.attach(web);
     webTransport.limit = 1;
@@ -200,14 +250,29 @@ describe("CPacketSocket send FIFO", () => {
 });
 
 describe("CLocalSocket raw identification ordering", () => {
-  const greeting = Buffer.from([0, CENTER_VERSION, 0x12, 0x34]);
-  const identification = [SVRCLASS_GAME, 2 ^ SVRIDX_IDENTIFY_XOR, 0, 0, 0, 7, 0, 3, 0];
+  const centerHeaderType = 4;
+  const serverIndex = 2;
+  const greeting = Buffer.from([0, CENTER_VERSION, 0, centerHeaderType]);
+  const gameVersion = GAME_VERSION[SVRCLASS_GAME];
+  const clientVersion = CLIENT_VERSION[SVRCLASS_GAME];
+  const identification = [
+    SVRCLASS_GAME,
+    serverIndex ^ SVRIDX_IDENTIFY_XOR, 0, 0, 0,
+    gameVersion & 0xff, (gameVersion >>> 8) & 0xff,
+    clientVersion & 0xff, (clientVersion >>> 8) & 0xff,
+  ];
 
   test("early fragmented greeting + coalesced frame, short identification and drain", async () => {
     const transport = new Transport(); transport.limit = 2;
     let handlers!: Bun.SocketHandler;
     const incoming = new TestSocket(); incoming.m_bConnected = true;
-    incoming.SetHeaderType(0); incoming.SetHeaderCode(189, 96, 231); incoming.SetSequence(0, 0, 40, 40);
+    incoming.SetHeaderType(centerHeaderType);
+    incoming.SetHeaderCode(
+      LOCALSOCKET_HEADER_CODE_SND,
+      LOCALSOCKET_HEADER_CODE_RCV,
+      LOCALSOCKET_HEADER_CODE_MODIFIER,
+    );
+    incoming.SetSequence(LOCALSOCKET_SEQ, LOCALSOCKET_SEQ, LOCALSOCKET_SEQ_DELTA, LOCALSOCKET_SEQ_DELTA);
     incoming.PutPacket(packet(42, 0));
     const frame = Buffer.from(pending(incoming));
     const received: number[] = [];
@@ -222,9 +287,10 @@ describe("CLocalSocket raw identification ordering", () => {
       return Promise.resolve(transport.handle);
     }) as typeof Bun.connect);
     try {
-      await local.ConnectToCenter("fixture", 1, SVRCLASS_GAME, 2);
+      await local.ConnectToCenter("fixture", 1, SVRCLASS_GAME, serverIndex);
       expect(received).toEqual([42]);
-      expect(local.centerVersion).toBe(CENTER_VERSION); expect(local.serverType).toBe(0x1234);
+      expect(local.centerVersion).toBe(CENTER_VERSION);
+      expect(local.centerHeaderType).toBe(centerHeaderType);
       expect(local.m_nSndCnt).toBeGreaterThan(0);
       transport.limit = Infinity;
       handlers.drain!(transport.handle);
@@ -251,7 +317,7 @@ describe("CLocalSocket raw identification ordering", () => {
         return Promise.resolve(transport.handle);
       }) as typeof Bun.connect);
       try {
-        await local.ConnectToCenter("fixture", 1, SVRCLASS_GAME, 2);
+        await local.ConnectToCenter("fixture", 1, SVRCLASS_GAME, serverIndex);
         expect(attempts).toBe(2); expect(closes).toBe(0);
         expect(first.bytes).toEqual([]); expect(second.bytes).toEqual(identification);
         expect(first.ends).toBe(1); expect(local.m_nSndCnt).toBe(0);
@@ -282,7 +348,7 @@ describe("CLocalSocket raw identification ordering", () => {
       return Promise.resolve(second.handle);
     }) as typeof Bun.connect);
     try {
-      const connecting = local.ConnectToCenter("fixture", 1, SVRCLASS_GAME, 2);
+      const connecting = local.ConnectToCenter("fixture", 1, SVRCLASS_GAME, serverIndex);
       await Promise.resolve();
       old.close!(first.handle);
       await connecting;

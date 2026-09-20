@@ -1,5 +1,5 @@
 {
-  "checkedOn": "2026-09-20",
+  "checkedOn": "2026-09-21",
   "channel": "npm typescript@next, bun@canary, bun-types@canary",
   "bun": {
     "version": "1.4.3",

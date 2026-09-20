@@ -6,11 +6,23 @@ import { CBillingSocketTw } from "../src/FXSS/CBillingSocketTw.ts";
 import {
   CSendPacket, DecodePacketTw, EncodePacketTw, GetIncomingPacketLengthTw, GetOutgoingPacketLengthTw,
 } from "../src/FXSS/Packet.ts";
-import { CReceivedPacket, CSendPacket as CGameSendPacket, enSocket } from "../src/core/Packet.ts";
+import { CipherDegree, CReceivedPacket, CSendPacket as CGameSendPacket, enSocket } from "../src/core/Packet.ts";
 import { CPacketSocket } from "../src/core/CPacketSocket.ts";
 import { PacketLog } from "../src/core/PacketLog.ts";
 import { CBillingProcess, CUser, CxShop, CClientSocket } from "../src/FXSS/Shop.ts";
 import { ShopItem } from "../src/FXSS/CItemMan.ts";
+import {
+  BILLING_PACKET_LOG_CONTEXT,
+  BILLING_SendPacket,
+  COUPON_SendPacket,
+  TW_BILLING_ReceivedPacket,
+  TW_BILLING_SendPacket,
+} from "../src/lib/PacketIDs.ts";
+import {
+  STANDARD_PACKET_OPCODE_BYTES,
+  TAIWAN_BILLING_OPCODE_BYTES,
+  WORD_PACKET_OPCODE_BYTES,
+} from "../src/lib/PacketNames.ts";
 import type { CDBMan } from "../src/db/DBMan.ts";
 
 const RTT = "00000005000000070000015f7b";
@@ -32,7 +44,11 @@ function frame(packet: CGameSendPacket): Uint8Array {
   expect(EncodePacketTw(packet, result)).toBe(true);
   return result;
 }
-function rtt(): CSendPacket { const p = new CSendPacket(351); p.Encode1(123); return p; }
+function rtt(): CSendPacket {
+  const p = new CSendPacket(TW_BILLING_SendPacket.TwRequestRTT);
+  p.Encode1(123);
+  return p;
+}
 function receiver() {
   const received: { id: number; body: string; offset: number }[] = [];
   const socket = new CBillingSocketTw(false, {
@@ -65,7 +81,7 @@ class Transport {
 describe("Tw packet codec and opcode overloads", () => {
   test("351 RTT exact bytes and complete DWORD opcode", () => {
     const packet = rtt();
-    expect(packet.m_nCipherDegree).toBe(0);
+    expect(packet.m_nCipherDegree).toBe(CipherDegree.kPacketRaw);
     expect(hex(frame(packet))).toBe(RTT);
     const received = new CReceivedPacket();
     expect(GetIncomingPacketLengthTw(received, bytes(RTT), 13)).toBe(13);
@@ -73,34 +89,40 @@ describe("Tw packet codec and opcode overloads", () => {
     expect([received.m_uOffset, received.m_uLength, received.m_nPacketType]).toEqual([0, 5, 351]);
     expect([received.Decode4(), received.Decode1()]).toEqual([351, 123]);
   });
-  for (const [width, prefix] of [[1, "78"], [2, "5678"], [4, "12345678"]] as const) {
+  for (const [width, prefix] of [
+    [STANDARD_PACKET_OPCODE_BYTES, "78"],
+    [WORD_PACKET_OPCODE_BYTES, "5678"],
+    [TAIWAN_BILLING_OPCODE_BYTES, "12345678"],
+  ] as const) {
     test(`native opcode width ${width}, without changing ordinary game packet semantics`, () => {
       const p = new CSendPacket(0x12345678, width);
       expect(hex(p.m_pBlock.subarray(0, p.m_uOffset))).toBe(prefix);
       expect(p.m_nPacketType).toBe(0x12345678);
-      const game = new CGameSendPacket(0x78, 2);
-      expect(game.m_nCipherDegree).toBe(2); expect(game.m_uOffset).toBe(1);
+      const game = new CGameSendPacket(0x78, CipherDegree.kPacketEncryptedCRC8);
+      expect(game.m_nCipherDegree).toBe(CipherDegree.kPacketEncryptedCRC8); expect(game.m_uOffset).toBe(1);
       expect(game.GetOutgoingPacketLength()).toBe(5);
     });
   }
   test("InitPacket width overload appends and forces raw degree; core reset is unchanged", () => {
-    const p = new CSendPacket(0x11, 1); p.SetCipherDegree(2);
-    p.InitPacket(0x2233, 2); p.InitPacket(0x44556677, 4);
-    expect(p.m_nCipherDegree).toBe(0);
+    const p = new CSendPacket(0x11, STANDARD_PACKET_OPCODE_BYTES);
+    p.SetCipherDegree(CipherDegree.kPacketEncryptedCRC8);
+    p.InitPacket(0x2233, WORD_PACKET_OPCODE_BYTES);
+    p.InitPacket(0x44556677, TAIWAN_BILLING_OPCODE_BYTES);
+    expect(p.m_nCipherDegree).toBe(CipherDegree.kPacketRaw);
     expect(hex(p.m_pBlock.subarray(0, p.m_uOffset))).toBe("11223344556677");
     const ordinary = new CGameSendPacket(1); ordinary.Encode4(99); ordinary.InitPacket(2);
     expect(ordinary.m_uOffset).toBe(1);
   });
   test("legacy BNB_TAIWAN enum overloads retain both prefix bytes", () => {
     for (const [packet, prefix] of [
-      [CSendPacket.FromBillingPacket(7), "0007"],
-      [CSendPacket.FromCouponPacket(0), "0100"],
-      [CSendPacket.FromCouponPacket(1), "0101"],
+      [CSendPacket.FromBillingPacket(BILLING_SendPacket.RequestGift), "0007"],
+      [CSendPacket.FromCouponPacket(COUPON_SendPacket.RequestCheckCoupon), "0100"],
+      [CSendPacket.FromCouponPacket(COUPON_SendPacket.RequestUseCoupon), "0101"],
     ] as const) {
       expect(hex(frame(packet))).toBe(`0000000200000007${prefix}`);
     }
   });
-  for (const degree of [1, 2]) {
+  for (const degree of [CipherDegree.kPacketEncrypted, CipherDegree.kPacketEncryptedCRC8]) {
     test(`Tw disallows nonraw degree ${degree}`, () => {
       const p = rtt(); p.SetCipherDegree(degree);
       expect(GetOutgoingPacketLengthTw(p)).toBe(0);
@@ -117,7 +139,7 @@ describe("Tw packet codec and opcode overloads", () => {
     expect(EncodePacketTw(rtt(), dest, 8)).toBe(false);
   });
   test("empty body after opcode is valid; empty payload is not decodable", () => {
-    const packet = new CSendPacket(352);
+    const packet = new CSendPacket(TW_BILLING_ReceivedPacket.OnTwRTT);
     expect(hex(frame(packet))).toBe("000000040000000700000160");
     const n = new CReceivedPacket();
     expect(DecodePacketTw(n, frame(packet), 12)).toBe(true);
@@ -164,7 +186,7 @@ describe("CBillingSocketTw bounded receive pump", () => {
   });
   test("maximum frame fits exactly, and the next frame is not discarded", () => {
     const { socket, received } = receiver();
-    const p = new CSendPacket(352);
+    const p = new CSendPacket(TW_BILLING_ReceivedPacket.OnTwRTT);
     p.EncodeBuffer(new Uint8Array(socket.m_nMaxPacketLen - 12).fill(0x7f));
     const encoded = frame(p);
     expect(encoded.length).toBe(socket.m_mbRcvBuffer.length);
@@ -237,7 +259,7 @@ describe("Tw send FIFO and native error policy", () => {
   }
   test("invalid cipher does not disturb the queued prefix or close a sender", () => {
     const { socket } = receiver(); socket.PutPacket(rtt());
-    const p = new CGameSendPacket(1, 2);
+    const p = new CGameSendPacket(1, CipherDegree.kPacketEncryptedCRC8);
     expect(socket.PutPacket(p)).toBe(enSocket.kioInvalidPacket);
     expect(socket.m_nSndCnt).toBe(13); expect(socket.m_bConnected).toBe(true);
     socket.Close(); expect(socket.PutPacket(rtt())).toBe(enSocket.kioNotConnected);
@@ -323,8 +345,41 @@ describe("billing builders and four-byte dispatch integration", () => {
     const { socket, received } = receiver();
     socket.PutPacket(rtt()); socket.OnReceive(bytes(RTT_RESPONSE));
     expect(log.mock.calls.map(call => [call[2], call[3], call[4], hex(call[5]!), call[6]]))
-      .toEqual([["send", 351, 0, "0000015f7b", "BILL"], ["recv", 352, 0, "000001607b", "BILL"]]);
+      .toEqual([["send", 351, 0, "0000015f7b", BILLING_PACKET_LOG_CONTEXT.Taiwan],
+        ["recv", 352, 0, "000001607b", BILLING_PACKET_LOG_CONTEXT.Taiwan]]);
     expect(received[0]!.offset).toBe(0);
+  });
+
+  test("trace keeps Taiwan/Billing/Coupon contexts separate and redacts credentials", () => {
+    const savedLog = process.env.CA_PACKET_LOG;
+    const savedScope = process.env.CA_PACKET_LOG_SCOPE;
+    process.env.CA_PACKET_LOG = "1";
+    process.env.CA_PACKET_LOG_SCOPE = "all";
+    const lines: string[] = [];
+    PacketLog.out = (line) => lines.push(line);
+    try {
+      const socket = new CBillingSocketTw(false);
+      socket.m_bConnected = true;
+      const authorization = new CSendPacket(TW_BILLING_SendPacket.RequestDigiQAuthorization);
+      authorization.EncodeBuffer(Buffer.from("account-password", "latin1"));
+      expect(socket.PutPacket(authorization)).toBe(enSocket.kioOk);
+      expect(socket.PutPacket(CSendPacket.FromBillingPacket(7))).toBe(enSocket.kioOk);
+      expect(socket.PutPacket(CSendPacket.FromCouponPacket(0))).toBe(enSocket.kioOk);
+
+      expect(lines[0]).toContain("RequestDigiQAuthorization(341)");
+      expect(lines[0]).toContain("[credentials redacted]");
+      expect(lines[0]).not.toContain("61 63 63 6f 75 6e 74");
+      expect(lines[1]).toContain("RequestGift(7)");
+      expect(lines[1]).toContain("| 00 07");
+      expect(lines[2]).toContain("RequestCheckCoupon(0)");
+      expect(lines[2]).toContain("[credentials redacted]");
+    } finally {
+      PacketLog.out = null;
+      if (savedLog === undefined) delete process.env.CA_PACKET_LOG;
+      else process.env.CA_PACKET_LOG = savedLog;
+      if (savedScope === undefined) delete process.env.CA_PACKET_LOG_SCOPE;
+      else process.env.CA_PACKET_LOG_SCOPE = savedScope;
+    }
   });
 });
 
