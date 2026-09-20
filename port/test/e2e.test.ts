@@ -1379,7 +1379,7 @@ describe("audit regression: 82 auto-join, before-join ring, BomberAttr map", () 
     expect(mk().CheckConnectingToSvr(man, 1, 0)).toBe(0); // GetSvr miss → shutdown
     expect(mk().CheckConnectingToSvr(man, 10, 2)).toBe(2); // type-41 premium without the ticket
     const ticketed = mk();
-    ticketed.fSimpleInfoModified = 1;
+    ticketed.nAuthencode = 1;
     expect(ticketed.CheckConnectingToSvr(man, 10, 2)).toBe(1); // the ticket admits
   });
 

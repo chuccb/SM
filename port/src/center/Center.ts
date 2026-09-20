@@ -61,7 +61,6 @@ export class CUser {
   nAuthencode = 0; // CUser::GetAuthencode / SetAuthenCode
   nLocalSerialNo: number; // the LS socket's local serial (p0 tail)
   nIP: number; // +32 — the CM 0 head D4: the client's in_addr (CUser::GetIP, CxCenter.exe.c:15124)
-  fSimpleInfoModified = 0; // +56: premium-ticket flag from the LS
   nCommunitySvr = 0; // +76 (byte)
   nChannel = 0; // +60 (byte): the server class the user currently sits on
   nSessionIdx = 0; // +64: the session slot on that server (0 = none)
@@ -141,7 +140,7 @@ export class CUser {
       return 0;
     }
     // the enterable-type-41 premium gate: CUser+56 is the LS premium ticket
-    if (svr.nType !== 41 || this.fSimpleInfoModified === 1) return 1;
+    if (svr.nType !== 41 || this.nAuthencode === 1) return 1;
     return 2;
   }
 
@@ -799,10 +798,10 @@ export class CxCenter {
     for (let i = 0; i < count; i++) {
       const name = n.DecodeStr();
       const sn = n.Decode4();
-      const fSimpleInfoModified = n.Decode1();
+      const fAuthencode = n.Decode1();
       const communitySvr = n.Decode1();
       const u = new CUser(name, SVRCLASS_LOGIN, owner.nSvrIdx, sn, 0, nIP, this);
-      if (fSimpleInfoModified !== 0) u.fSimpleInfoModified = 1;
+      if (fAuthencode !== 0) u.nAuthencode = 1; // CUser+56 — the LS GetPremiumTicket byte
       else fAllSimpleInfo = 0;
       u.nCommunitySvr = communitySvr;
       u.nLocalSerialNo = 0; // filled from the packet tail below

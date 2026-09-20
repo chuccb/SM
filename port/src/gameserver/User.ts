@@ -311,15 +311,19 @@ export class CClientSocket extends CPacketSocket {
   /** CClientSocket::PutPacket's wrapper switch (FxServer.exe.c:9526). */
   protected ReportPutError(err: EnSocket): void {
     const addr = this.bunSocket?.remoteAddress ?? "";
-    if (err === enSocket.kioNotConnected) console.error(`Not-connected client [${addr}] socket tried to put packet.`);
-    else if (err === enSocket.kioInvalidPacket) console.error("tried to send invalid( =\tNULL ) packet");
+    if (err === enSocket.kioNotConnected) {
+      console.error(`Not-connected client [${addr}] socket tried to put packet.`);
+      this.PostClosePacket(); // the GS build's case 1 falls into the LABEL_7 close (FxServer.exe.c:9534); the other exes' client wrappers just return
+    } else if (err === enSocket.kioInvalidPacket) console.error("tried to send invalid( =\tNULL ) packet");
   }
 
   /** CClientSocket::GetPacket's sequencing line carries the cipher detail
-   *  (FxServer.exe.c:9466) — only the GS build spells it out. */
+   *  (FxServer.exe.c:9466) — only the GS build spells it out.  The
+   *  official's m_nPacketSeq is CClientSocket+52 (this+13), the snd seq of
+   *  the +- dump — not the rcv base. */
   protected ReportSequencingErrorLine(addr: string): void {
     console.error(
-      `Error in client packet sequencing(m_nHeaderType, m_nPacketSeq = ${this.m_nHeaderType}, ${this.m_nHeaderCodeRcvBase}), close connection: [${addr}]`,
+      `Error in client packet sequencing(m_nHeaderType, m_nPacketSeq = ${this.m_nHeaderType}, ${this.m_nPacketSndSeq}), close connection: [${addr}]`,
     );
   }
   static ms_nHeaderTypeCounter = 0; // dword_4AF338
