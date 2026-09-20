@@ -175,7 +175,8 @@ export const GS_ClientSend = {
   OnStartGame: 116, // CGameSession::LaunchGameStage
   OnChangeTitle: 117, // CBaseSession::DoChangeTitle [EStr title]
   OnPlayEmotion: 118, // CBaseSession::OnPlayEmotion (SendPacketExclude self)
-  OnNeedStartGame: 121, // CGameSession::DeferBanChief [E1 0/1/2/3][E2 seconds]
+  // DeferBanChief: E1 stage 0/1 warning, 2/3 removal (ordinary/odd-slot); E2 warningSeconds (10 or SuperChief 30).
+  OnNeedStartGame: 121,
   OnUDPPeerInfo: 120, // CGameSession::OnUDPPeerInfo — the peer matrix broadcast
   OnBangPok: 122, // CListSession::DoBangPok (empty body)
   OnStartGame2: 150, // CGameSession::DoStartGame [E4 seed][E4 seq][E4 ghostStartMs][E4 ghostFreqMs]

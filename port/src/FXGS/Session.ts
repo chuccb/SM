@@ -175,6 +175,7 @@ export class CGameSession {
       this.m_nGhostCount = 0; // +936
       this.m_rgSlotGhost.fill(-1); // memset(+872, -1, 0x20)
       this.m_rgGhostSlot.fill(-1); // memset(+904, -1, 0x20)
+      this.m_BanChief.Init(); // +12576, FxServer.exe.c:31766
     }
   }
 
@@ -1041,7 +1042,7 @@ export class CGameSession {
     this.m_SyncGameObjMan.OnPlayerLeave(firstSlot);
     if (wasChief) {
       const oldSupreme = this.m_fSupreme;
-      this.m_BanChief = new CBanChief(); // CBanChief::Init(+12576)
+      this.m_BanChief.Init(); // CBanChief::Init(+12576)
       this.SetNewChief(-1);
       if (this.m_nChiefSwapCount >= SUPREME_ROOM_SWAP_COUNT && oldSupreme === 0 && this.m_fSupreme !== 0 && this.m_fPlaying === 0) {
         dissolve = true;
@@ -1214,14 +1215,14 @@ export class CGameSession {
 
   /**
    * CGameSession::DeferBanChief (vtbl+224, FxServer.exe.lst:41C15B) — the
-   * idle-room start gate.  The chief must press start within IsBanChief's
-   * window (10 s idle games / 20 s fresh rooms since SetCanStart, halved when
-   * he wears "Item/SuperChief" or holds Pm authority 25) or receive warning
-   * 121 (E1 1/2/3 per stage); expiry removes him (163 with result 2).  A
-   * start-flood gets the odd-slot grace (GetOddSlotInManner = count × 5 s)
-   * and its own warning; expiry restarts the whole CanStart cycle
-   * (SetCanStart(1)).  A chief-side decline (b) or the arrival of an
-   * already-started room resets the cycle (SetCanStart(0)).
+   * idle-room automatic-chief-removal gate.  Once CanStartGame succeeds, a
+   * full room waits 10 s and a non-full room 20 s before packet 121 stage 0;
+   * the following warning lasts another 10 s before stage 2 removes the
+   * chief.  An odd-capacity room first has its own 5 s grace, stage 1 warning
+   * and stage 3 removal.  "Item/SuperChief" changes the native timer
+   * multiplier from 1 to 3, so every one of those periods becomes three
+   * times longer and the packet's E2 warningSeconds is 30 rather than 10.
+   * All elapsed comparisons are unsigned timeGetTime DWORD subtraction.
    */
   DeferBanChief(): void {
     if (this.m_fPlaying !== 0) {
@@ -1233,82 +1234,93 @@ export class CGameSession {
     if (slot < 0 || slot >= MAX_SESSION_SLOTS) return;
     const user = this.m_rgPlayer[slot]!;
     if (user === null || user.m_pSocket === null) return;
-    // neg/sbb/and 2/inc — "Item/SuperChief" stretches every gate ×3
-    const superChief = user.HasFunctionalItem(FunctionalItem.SuperChief) ? 3 : 1;
+
+    // 41C1AC..41C1C2: EDI is a multiplier (1 normally, 3 for SuperChief).
+    // It is passed to every GetWarningDelay/GetOddSlotInManner call; it is
+    // not the timeGetTime value kept separately in the native stack local.
+    const timerMultiplier = user.HasFunctionalItem(FunctionalItem.SuperChief) ? 3 : 1;
     const now = CGameClock.Now(); // timeGetTime
+    const bc = this.m_BanChief;
+    const warningDelay = bc.GetWarningDelay(timerMultiplier);
+    const warningSeconds = Math.trunc(warningDelay / 1000);
+
     let oddGate = false; // 41C238
     if (this.m_nGameType === 0) {
-      // [+34C] plain rooms: only 2+-player ones are gated
+      // Plain rooms only enter the odd-slot sub-gate at capacity 0 or 1.
       if (this.m_nMaxPlayerNum > 1) {
-        this.m_BanChief.SetOddSlot(0); // 41C202
+        bc.SetOddSlot(0); // 41C202
       } else if (CClientSocket.HasAuthority(22) !== 0) { // CUser::HasAuthority(22)
-        this.m_BanChief.SetOddSlot(0); // 41C1F5 → 41C202 (CUser::HasAuthority)
+        bc.SetOddSlot(0); // 41C1F5 → 41C202 (CUser::HasAuthority)
       } else {
         oddGate = true;
       }
     } else {
-      // event rooms: odd player counts are gated
+      // Event rooms enter the sub-gate when their configured capacity is odd.
       if (this.m_nMaxPlayerNum % 2 === 0) {
-        this.m_BanChief.SetOddSlot(0); // 41C1E4 even → 41C202
+        bc.SetOddSlot(0); // 41C1E4 even → 41C202
       } else if (CClientSocket.HasAuthority(22) !== 0) { // CUser::HasAuthority(22)
-        this.m_BanChief.SetOddSlot(0); // 41C1F5 → 41C202
+        bc.SetOddSlot(0); // 41C1F5 → 41C202
       } else {
         oddGate = true;
       }
     }
     if (oddGate) {
-      // 41C238 — the odd-slot grace (GetOddSlotInManner = now × 5000)
-      const bc = this.m_BanChief;
+      // 41C238 — GetOddSlotInManner receives the same 1/3 multiplier.
       if (bc.m_nOddSlot === 0) {
         bc.SetOddSlot(1);
-      } else if (now - bc.m_dwOddSlotTime > bc.GetOddSlotInManner(now)) {
+      } else if (((now - bc.m_dwOddSlotTime) >>> 0) > bc.GetOddSlotInManner(timerMultiplier)) {
         if (bc.m_nWarnedBanOddSlot === 0) {
           bc.SetWarnedBanOddSlot(1);
           const p = new CSendPacket(GS_ClientSend.OnNeedStartGame, CipherDegree.kPacketEncryptedCRC8);
           p.Encode1(1);
-          p.Encode2(Math.trunc(bc.GetWarningDelay(now) / 1000));
+          p.Encode2(warningSeconds);
           this.SendPacket(p);
-        } else if (now - bc.m_dwWarnedBanOddSlotTime > bc.GetWarningDelay(now)) {
+        } else if (((now - bc.m_dwWarnedBanOddSlotTime) >>> 0) > warningDelay) {
           const p = new CSendPacket(GS_ClientSend.OnNeedStartGame, CipherDegree.kPacketEncryptedCRC8);
           p.Encode1(3);
-          p.Encode2(Math.trunc(bc.GetWarningDelay(now) / 1000));
-          user.m_pSocket.SendPacket(p); // vtbl+68 — the chief only
-          // CBaseSessionTable vtbl+48 (the DestroyPlayer override) then +468 = 4
-          CGameSessionTable.ms_pInstance!.DestroyPlayer(user.m_pSocket, 0);
-          bc.SetCanStart(0); // 41C46C → SetCanStart(0)
+          p.Encode2(warningSeconds);
+          const chiefSocket = user.m_pSocket;
+          chiefSocket.SendPacket(p); // vtbl+68 — the chief only
+          CGameSessionTable.ms_pInstance!.DestroyPlayer(chiefSocket, 0); // table vtbl+48
+          chiefSocket.m_nPoolType = 4; // 41C347, after DestroyPlayer reset it to 1
+          bc.SetOddSlot(0); // 41C351 — not SetCanStart
           return;
         }
       }
     }
-    // 41C211 — the fresh-room start gate
+
+    // 41C211 — the ordinary start gate
     if (this.CanStartGame(1) !== 0) {
-      // vtbl+220 refused → restart the whole cycle
-      this.m_BanChief.SetCanStart(0);
+      bc.SetCanStart(0);
       return;
     }
-    if (this.m_BanChief.m_nCanStart === 0) {
-      this.m_BanChief.SetCanStart(1); // 41C231
+    if (bc.m_nCanStart === 0) {
+      bc.SetCanStart(1); // 41C231
       return;
     }
-    // 41C35B — the idle-game gate
+
+    // 41C35B — the first argument to IsBanChief is byte(+833) == byte(+832).
     if (CClientSocket.HasAuthority(22) !== 0) return; // CUser::HasAuthority(22)
-    const flag = this.m_nMaxPlayerNum - this.m_nCurPlayerNum < 0 ? 1 : 0;
-    if (!this.m_BanChief.IsBanChief(flag, this.m_nGameType, superChief)) return;
-    if (this.m_BanChief.m_nWarnedBan === 0) {
-      this.m_BanChief.SetWarnedBan(1);
+    const roomFull = this.m_nMaxPlayerNum === this.m_nCurPlayerNum ? 1 : 0;
+    if (!bc.IsBanChief(roomFull, this.m_nGameType, timerMultiplier)) return;
+    if (bc.m_nWarnedBan === 0) {
+      bc.SetWarnedBan(1);
       const p = new CSendPacket(GS_ClientSend.OnNeedStartGame, CipherDegree.kPacketEncryptedCRC8);
       p.Encode1(0);
-      p.Encode2(Math.trunc(this.m_BanChief.GetWarningDelay(now) / 1000));
+      p.Encode2(warningSeconds);
       this.SendPacket(p);
       return;
     }
-    if (now - this.m_BanChief.m_dwWarnedBanTime <= this.m_BanChief.GetWarningDelay(now)) return;
-    const p2 = new CSendPacket(GS_ClientSend.OnNeedStartGame, CipherDegree.kPacketEncryptedCRC8);
-    p2.Encode1(2);
-    p2.Encode2(Math.trunc(this.m_BanChief.GetWarningDelay(now) / 1000));
-    user.m_pSocket.SendPacket(p2); // vtbl+68 — the chief only
-    CGameSessionTable.ms_pInstance!.DestroyPlayer(user.m_pSocket, 0); // vtbl+48 (+468 = 4 in the tail)
-    this.m_BanChief.SetCanStart(0); // 41C46C
+    if (((now - bc.m_dwWarnedBanTime) >>> 0) <= warningDelay) return;
+
+    const p = new CSendPacket(GS_ClientSend.OnNeedStartGame, CipherDegree.kPacketEncryptedCRC8);
+    p.Encode1(2);
+    p.Encode2(warningSeconds);
+    const chiefSocket = user.m_pSocket;
+    chiefSocket.SendPacket(p); // vtbl+68 — the chief only
+    CGameSessionTable.ms_pInstance!.DestroyPlayer(chiefSocket, 0); // table vtbl+48
+    chiefSocket.m_nPoolType = 4; // 41C462, after DestroyPlayer reset it to 1
+    bc.SetCanStart(0); // 41C46C
   }
 
   /** CGameSession::DeferReturnPrepareStage (41B0B7) — 8 s after the end
@@ -3303,7 +3315,7 @@ export class CGameSession {
     for (let slot = 0; slot < MAX_SESSION_SLOTS; slot++) {
       if (!this.m_rgPlayer[slot]) this.m_rgUdpHost[slot]!.fill(0);
     }
-    this.m_BanChief = new CBanChief(); // CBanChief::Init: SetCanStart(0)/SetOddSlot(0)
+    this.m_BanChief.Init(); // CBanChief::Init: SetOddSlot(0), then SetCanStart(0)
     this.m_dwLastAirplaneTime = 0; // +12624 (dword 3156)
     this.SendPacket(packet);
   }

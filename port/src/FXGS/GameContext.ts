@@ -14,9 +14,16 @@ import { CClientSocket, CUser, GetInfoStr } from "./User";
 
 // ============================ CGameContext / in-play state ============================
 
+const BAN_CHIEF_WARNING_DELAY_MS = 10_000; // GetWarningDelay, 401084
+const BAN_CHIEF_WAIT_FULL_MS = 10_000; // IsBanChief's nonzero flag, 40102F
+const BAN_CHIEF_WAIT_NOT_FULL_MS = 20_000; // IsBanChief's zero flag, 40102F
+const BAN_CHIEF_ODD_SLOT_GRACE_MS = 5_000; // GetOddSlotInManner, 401091
+
 /**
  * CBanChief (+12576) — the idle-room start-gate timers
- * (FxServer.exe.lst:401010..401140).  All delays are timeGetTime ticks.
+ * (FxServer.exe.lst:401010..401140).  Stored times are timeGetTime DWORDs;
+ * GetWarningDelay/GetOddSlotInManner take the native 1-or-3 chief timer
+ * multiplier, never a timestamp.
  */
 export class CBanChief {
   m_dwCanStartTime = 0; // +4 (SetCanStart)
@@ -41,14 +48,16 @@ export class CBanChief {
   }
 
   /**
-   * CBanChief::IsBanChief (40102F) — true once timeGetTime-SetCanStart beats
-   * (flag ? 10000 : 20000) × superChief, superChief being the 1/3 flag from
-   * "Item/SuperChief".  The middle gameType argument is not read.
+   * CBanChief::IsBanChief (40102F) — true once the unsigned DWORD elapsed
+   * time since SetCanStart exceeds 10 s in a full room or 20 s otherwise,
+   * multiplied by 3 for "Item/SuperChief".  The middle gameType argument is
+   * present in the native signature but is not read.
    */
-  IsBanChief(nFlag: number, _gameType: number, superChief: number): boolean {
-    const elapsed = (CGameClock.Now() - this.m_dwCanStartTime) | 0;
-    const v = (nFlag !== 0 ? 10000 : 20000) * superChief;
-    return elapsed > v;
+  IsBanChief(nRoomFull: number, _gameType: number, timerMultiplier: number): boolean {
+    const elapsed = (CGameClock.Now() - this.m_dwCanStartTime) >>> 0;
+    const baseDelay = nRoomFull !== 0 ? BAN_CHIEF_WAIT_FULL_MS : BAN_CHIEF_WAIT_NOT_FULL_MS;
+    const delay = Math.imul(timerMultiplier, baseDelay) >>> 0;
+    return elapsed > delay;
   }
 
   /** CBanChief::SetWarnedBan (401065). */
@@ -57,14 +66,14 @@ export class CBanChief {
     this.m_dwWarnedBanTime = n !== 0 ? CGameClock.Now() : 0;
   }
 
-  /** CBanChief::GetWarningDelay (401084) — ticks × 10000 (32-bit wrap). */
-  GetWarningDelay(ticks: number): number {
-    return Math.imul(ticks, 10000) >>> 0;
+  /** CBanChief::GetWarningDelay (401084) — multiplier × 10 s as a DWORD. */
+  GetWarningDelay(timerMultiplier: number): number {
+    return Math.imul(timerMultiplier, BAN_CHIEF_WARNING_DELAY_MS) >>> 0;
   }
 
-  /** CBanChief::GetOddSlotInManner (401091) — ticks × 5000 (32-bit wrap). */
-  GetOddSlotInManner(ticks: number): number {
-    return Math.imul(ticks, 5000) >>> 0;
+  /** CBanChief::GetOddSlotInManner (401091) — multiplier × 5 s as a DWORD. */
+  GetOddSlotInManner(timerMultiplier: number): number {
+    return Math.imul(timerMultiplier, BAN_CHIEF_ODD_SLOT_GRACE_MS) >>> 0;
   }
 
   /** CBanChief::SetCanStart (4010BB) — also clears both warned states. */
