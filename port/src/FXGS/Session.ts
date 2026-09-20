@@ -1285,9 +1285,14 @@ export class CGameSession {
     this.m_BanChief.SetCanStart(0); // 41C46C
   }
 
-  /** CGameSession::DeferReturnPrepareStage (41B0B7) — 8 s after the end screen. */
+  /** CGameSession::DeferReturnPrepareStage (41B0B7) — 8 s after the end
+   *  screen.  The original compares two timeGetTime-domain dwords
+   *  (`timeGetTime() - m_dwEndTime > 0x1F40`); the same u32 domain is
+   *  mandatory here — a raw Date.now() against the masked m_dwEndTime is
+   *  always ≫ 0x1F40 and would end the result screen after one tick. */
   DeferReturnPrepareStage(): void {
-    if (Date.now() - this.m_GameClock.m_dwEndTime > RETURN_STAGE_DELAY) this.DoReturnPrepareStage();
+    const sinceEnd = (CGameClock.Now() - this.m_GameClock.m_dwEndTime) >>> 0;
+    if (sinceEnd > RETURN_STAGE_DELAY) this.DoReturnPrepareStage();
   }
 
   /** CGameSession::DoReturnPrepareStage (41B0DA). */
@@ -1298,7 +1303,7 @@ export class CGameSession {
     this.m_nGamePhase = 0;
     this.m_nBanSerial = 0; // +828
     this.m_nGameMapIdx = -1; // +1180
-    this.m_dwCreateTime = Date.now(); // +860
+    this.m_dwCreateTime = Date.now() & TICK_U32_MASK; // +860 (a timeGetTime dword)
     this.SetPlaying(0);
     for (let slot = 0; slot < MAX_SESSION_SLOTS; slot++) {
       this.m_aBomberIdx[slot] = -1; // +11572

@@ -1179,6 +1179,7 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
     (udp as unknown as { close?: () => void }).close?.();
   });
 
+
   test("session detail (68): the room answers 84 with the per-slot blocks", async () => {
     const chief = roomChief!;
     chief.send(68, (e) => {
@@ -1289,6 +1290,91 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
     expect(r2(created)).toBe(0); // slot 0 again — the dup-86 disconnect freed it
     gs.close();
   });
+
+  test("kill + finish → 163 GameResult faithful, and 164 waits the full 8 s", async () => {
+    const chief = roomChief!;
+    const member = roomMember!;
+    chief.pending.length = 0;
+    member.pending.length = 0;
+    // slot0 (the chief) reports being killed by slot 1: event 4 —
+    // [E1 slotcode][E2 x][E2 y][E1 killer][E1 drops]
+    chief.send(146, (e) => {
+      e.u8(0x40); // slot 0 (low nibble), event 4 (high nibble)
+      e.u16(280);
+      e.u16(39);
+      e.u8(1); // the killer seat
+      e.u8(0); // no item drops
+    });
+    const killRelayChief = await chief.recv(159);
+    expect(r1(killRelayChief)).toBe(0x40); // the raw slotcode relays
+    expect(r2(killRelayChief)).toBe(280);
+    expect(r2(killRelayChief)).toBe(39);
+    expect(r1(killRelayChief)).toBe(1); // the killer
+    expect(r1(killRelayChief)).toBe(0); // the drop count
+    const killRelayMember = await member.recv(159);
+    expect(r1(killRelayMember)).toBe(0x40);
+    // slot 1 (the member) finishes: event 6 — [E1 slotcode][E2 x][E2 y]
+    member.send(146, (e) => {
+      e.u8(0x61); // slot 1 (low nibble), event 6 (high nibble)
+      e.u16(280);
+      e.u16(54);
+    });
+    const finishRelay = await chief.recv(159); // SendPacketExclude — the chief only
+    expect(r1(finishRelay)).toBe(0x61);
+    expect(r2(finishRelay)).toBe(280);
+    expect(r2(finishRelay)).toBe(54);
+    // the next Proc tick ends the game and broadcasts the result
+    const results = await Promise.all([chief.recv(163), member.recv(163)]);
+    for (const res of results) {
+      expect(r1(res)).toBe(0); // the 5/6/7-state flag
+      expect(r1(res)).toBe(1); // winTeam — the finisher's colour; the launch re-seats
+      // through GetColorForNewComer, which deals 0 to the chief and 1 to the member
+      expect(r1(res)).toBe(0); // strategy vtbl+44 view type (a normal room)
+      expect(r1(res)).toBe(0); // session vtbl+156 ladder
+      expect(r1(res)).toBe(0); // the diff-team used-item flag
+      const serials: number[] = [];
+      for (let slot = 0; slot < 8; slot++) {
+        if (r1(res) === 0) continue; // the empty-slot marker
+        serials.push(r4(res));
+        const result = r1(res);
+        if (slot === 0) expect(result).toBe(2); // the killed chief lost
+        if (slot === 1) expect(result).toBe(0); // the finisher won
+        expect(r1(res)).toBe(0); // +12048
+        expect(r1(res)).toBe(0); // +12016
+        const pctOld = r2(res);
+        const pctNew = r2(res);
+        expect(pctOld).toBe(pctNew); // the sub-15 s time factor zeroes the reward
+        expect(r2(res)).toBeGreaterThan(0); // the look level
+        expect(r1(res)).toBe(0); // got-exp (only a level-up sets it)
+        expect(r1(res)).toBe(0); // the detail mark
+      }
+      expect(serials.length).toBe(2);
+      expect(serials[0]).not.toBe(serials[1]);
+      expect(res.off).toBe(res.buf.length); // nothing trailing
+    }
+    // the 164 return-to-stage must NOT ride an early tick: the official
+    // gate is timeGetTime() - m_dwEndTime > 0x1F40 (8 s) in the u32 stamp
+    // domain — a result screen cut short after one tick crashed clients
+    let early = false;
+    try {
+      await chief.recv(164, 1500);
+      early = true;
+    } catch {
+      /* the expected timeout */
+    }
+    try {
+      await member.recv(164, 1500);
+      early = true;
+    } catch {
+      /* the expected timeout */
+    }
+    expect(early).toBe(false);
+    // …and it does arrive once the gate opens
+    const back = await chief.recv(164, 10000);
+    expect(r1(back)).toBe(0);
+    const backMember = await member.recv(164, 4000);
+    expect(r1(backMember)).toBe(0);
+  }, 20000);
 
   test("the member leaving drops a 106 and hands the chief crown over", async () => {
     const chief = roomChief!;

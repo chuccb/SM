@@ -80,6 +80,11 @@ export class CUserPool {
     const now = Date.now() & 0x7fffffff;
     packet.Encode4(rttValue);
     packet.Encode4(now);
+    // the official stamps the socket's idle dword on EVERY RTT probe before
+    // any check (FxServer.exe.c:29295 `M_start[18] = Time`) — it is exactly
+    // the field DisconnectTimeoutSocket sweeps on.  Raw Date.now(): the
+    // sweep compares it against a raw Date.now() as well.
+    socket.m_dwIdleTime = Date.now();
     const last = socket.m_dwLastRTT;
     socket.m_dwLastRTT = now;
     socket.SendPacket(packet);
