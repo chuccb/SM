@@ -19,7 +19,9 @@
     "probe": "bun tools/compatibility-probe.ts && bun tools/compatibility-probe-2.ts",
     "billing": "bun run src/main.ts --only billing",
     "billing:credit": "bun tools/billing.ts credit",
-    "billing:balance": "bun tools/billing.ts balance"
+    "billing:balance": "bun tools/billing.ts balance",
+    "caitem:inspect": "bun tools/caitem.ts inspect",
+    "caitem:import": "bun tools/caitem.ts import"
   },
   "engines": {
     "bun": "1.4.3"

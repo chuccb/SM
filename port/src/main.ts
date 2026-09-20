@@ -22,6 +22,7 @@ import { main as shopMain } from "./FXSS/Shop.ts";
 import { main as utilMain } from "./FXUS/UtilServer.ts";
 import { CDBMan } from "./db/DBMan.ts";
 import { canUseLocalBilling, loadBillingConfig, registerLocalBilling } from "./Billing/Config.ts";
+import { EnsureCAItemCatalog } from "./db/CAItemImport.ts";
 import { startBilling } from "./Billing/Server.ts";
 
 const only = process.argv.includes("--only") ? process.argv[process.argv.indexOf("--only") + 1] : null;
@@ -50,6 +51,15 @@ const dbDir = process.argv.includes("--db")
   ? resolveCfg(process.argv[process.argv.indexOf("--db") + 1]!)
   : join(import.meta.dir, "..", "db");
 mkdirSync(dbDir, { recursive: true });
+
+// Bootstrap only catalog-consuming services; isolated tests/custom deployments
+// can explicitly opt out. No player, billing, guild or endpoint data is imported.
+if ((!only || only === "game" || only === "shop") && !process.argv.includes("--no-caitem-import")) {
+  const result = EnsureCAItemCatalog(dbDir);
+  console.log(`[CAItem] ${result.status}: ${JSON.stringify(result.rows)}${result.status === "imported" ? " (original backup FILE=1)" : " (existing data preserved)"}`);
+  if (result.status === "existing-catalog" && result.rows.FxStock === 0)
+    console.warn("[CAItem] Existing partial catalog has no stock; refusing automatic merge. Run caitem:inspect and review CAItem.db.");
+}
 
 // Start the optional local replacement BEFORE Shop reads BillingSvr. Existing
 // external endpoints are never overwritten or interpreted as the local mode.

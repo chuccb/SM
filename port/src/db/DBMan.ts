@@ -17,6 +17,7 @@
  * CRS*::OnReceiveRow select lists in the decompiled servers.
  */
 import { Database } from "bun:sqlite";
+import { SCHEMA_ITEM } from "./CAItemSchema.ts";
 import { mkdirSync, readFileSync } from "node:fs";
 import { LocateCAConfigBak, ParseCAConfigBak, CA_CONFIG_SEED_IP } from "./CAConfigBak.ts";
 import { join } from "node:path";
@@ -193,65 +194,6 @@ CREATE TABLE IF NOT EXISTS BillingSvr (
   SN   INTEGER PRIMARY KEY,
   ip   TEXT NOT NULL DEFAULT '',
   port INTEGER NOT NULL DEFAULT 0
-);
-`;
-
-/** FxItem / FxStock — the real column sets (CAItem.bak views + the
- *  UpdateUserItemTable / UpdateShopItemTable select filters). */
-const SCHEMA_ITEM = `
-CREATE TABLE IF NOT EXISTS FxItem (
-  SN       INTEGER PRIMARY KEY,
-  Category INTEGER NOT NULL DEFAULT 0,
-  strAttr  TEXT NOT NULL DEFAULT '',
-  nAttr1   INTEGER NOT NULL DEFAULT 0,
-  nAttr2   INTEGER NOT NULL DEFAULT 0,
-  nAttr3   INTEGER NOT NULL DEFAULT 0,
-  strName  TEXT NOT NULL DEFAULT '',
-  nLevel   INTEGER NOT NULL DEFAULT 0
-);
-CREATE TABLE IF NOT EXISTS FxStock (
-  SN             INTEGER PRIMARY KEY,
-  Category       INTEGER NOT NULL DEFAULT 0,
-  Name           TEXT NOT NULL DEFAULT '',
-  ItemSN         INTEGER NOT NULL DEFAULT 0,
-  Unit           INTEGER NOT NULL DEFAULT 1,
-  DataFile       TEXT NOT NULL DEFAULT '',
-  Price          INTEGER NOT NULL DEFAULT 0,
-  FixedPrice     INTEGER NOT NULL DEFAULT 0,
-  LimitLevel     INTEGER NOT NULL DEFAULT 0,
-  LimitEx        INTEGER NOT NULL DEFAULT 0,
-  ValidityPeriod INTEGER NOT NULL DEFAULT 0,
-  ValidityLevel  INTEGER NOT NULL DEFAULT 0,
-  StringDesc     INTEGER NOT NULL DEFAULT 0,
-  StringUsage    INTEGER NOT NULL DEFAULT 0,
-  CardNo         INTEGER NOT NULL DEFAULT 0,
-  MoneyType      INTEGER NOT NULL DEFAULT 0,
-  zorder         INTEGER NOT NULL DEFAULT 0,
-  IsValid        INTEGER NOT NULL DEFAULT 1,
-  DateCreated    TEXT,
-  Description    TEXT NOT NULL DEFAULT '',
-  Usage          INTEGER NOT NULL DEFAULT 0
-);
-CREATE TABLE IF NOT EXISTS FxString (
-  SN     INTEGER PRIMARY KEY,
-  String TEXT NOT NULL DEFAULT ''
-);
-CREATE TABLE IF NOT EXISTS FxPackageMap (
-  PackageSN     INTEGER NOT NULL,
-  StockSN       INTEGER NOT NULL,
-  Units         INTEGER NOT NULL DEFAULT 1,
-  Validitylevel INTEGER NOT NULL DEFAULT 0
-);
-CREATE TABLE IF NOT EXISTS FxCouponMap (
-  CouponSN       INTEGER NOT NULL,
-  ItemSN         INTEGER NOT NULL,
-  Units          INTEGER NOT NULL DEFAULT 1,
-  ValidityPeriod INTEGER NOT NULL DEFAULT 0,
-  Validitylevel  INTEGER NOT NULL DEFAULT 0
-);
-CREATE TABLE IF NOT EXISTS FxBonusMap (
-  Price   INTEGER NOT NULL,
-  StockSN INTEGER NOT NULL
 );
 `;
 

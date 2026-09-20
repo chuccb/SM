@@ -321,7 +321,7 @@ describe("login flow", () => {
     // center, LS and DB the other describes use.
     copyFileSync(DIR + "/game3.cfg", DATA_DIR + "/game77.cfg");
     guildGsProc = Bun.spawn(
-      [process.execPath, "run", "src/main.ts", "--only", "game", "--cfg", DATA_DIR + "/game77.cfg", "--db", DB_DIR],
+      [process.execPath, "run", "src/main.ts", "--only", "game", "--no-caitem-import", "--cfg", DATA_DIR + "/game77.cfg", "--db", DB_DIR],
       { cwd: DIR + "/..", stdout: "ignore", stderr: "ignore" },
     );
     for (let t = 0; t < 100 && !center.GetSvr(10, 3)?.socket; t++) await Bun.sleep(100);
@@ -1999,11 +1999,8 @@ test("expired transfer rejects a late GS establishment without resurrecting the 
 
 // Unlike shop.test.ts's isolated fixtures, do NOT inject Center users or arm
 // their connecting state here: LS -> GS -> Shop must establish it on the wire.
-test("GS -> Shop -> real local billing authorization/purchase -> GS round trip", async () => {
+test("GS -> Shop -> original CAItem auto-import, catalog and billing purchase -> GS round trip", async () => {
   const billingDB = new CDBMan(DB_DIR);
-  billingDB.item.exec(`INSERT INTO FxItem(SN,Category,nAttr1) VALUES(60000,1,100);
-    INSERT INTO FxStock(SN,Category,ItemSN,Unit,Price,MoneyType,IsValid) VALUES(60001,1,60000,2,25,0,1)`);
-  GSItemMan.ms_pInstance!.Init(billingDB); // refresh the test catalog before either client enters
   const billingStore = new BillingStore(billingDB);
   const billingServer = new BillingServer(billingStore);
   billingServer.listen();
@@ -2011,9 +2008,8 @@ test("GS -> Shop -> real local billing authorization/purchase -> GS round trip",
   const ready = Promise.withResolvers<void>();
   const shopProc = Bun.spawn([
     process.execPath, "--eval",
-    `import { main } from './src/FXSS/Shop.ts';
-     await main(${JSON.stringify(DIR + "/shop-transfer.cfg")}, ${JSON.stringify(DB_DIR)});
-     process.send?.('ready');`,
+    `await import('./src/main.ts'); process.send?.('ready');`,
+    "--", "--only", "shop", "--cfg", DIR + "/shop-transfer.cfg", "--db", DB_DIR,
   ], {
     cwd: DIR + "/..", stdout: "ignore", stderr: "inherit",
     env: { ...process.env, TC_NOWEB: "1" },
@@ -2026,6 +2022,10 @@ test("GS -> Shop -> real local billing authorization/purchase -> GS round trip",
   let entered: Awaited<ReturnType<typeof enterGame>> | undefined;
   try {
     await ready.promise;
+    // Production main, not this fixture, imported the original CAItem backup.
+    expect(billingDB.item.query("SELECT COUNT(*) AS n FROM FxStock WHERE IsValid>0").get()).toEqual({ n: 549 });
+    expect(billingDB.item.query("SELECT BackupSet FROM CAItemImport").get()).toEqual({ BackupSet: 1 });
+    GSItemMan.ms_pInstance!.Init(billingDB); // existing GS refreshes the shared catalog as on restart/CM14
     for (let i = 0; i < 100 && !center.GetSvr(11, 0)?.socket; i++) await Bun.sleep(10);
     expect(center.GetSvr(11, 0)?.socket).toBeTruthy();
     const name = "shopwalk";
@@ -2055,8 +2055,15 @@ test("GS -> Shop -> real local billing authorization/purchase -> GS round trip",
     expect(center.serialTable.get(sn)).toBe(user);
     expect([user.m_fConnecting, user.nChannel, user.nSvrIdx]).toEqual([0, 11, 0]);
     expect(shopClient.closed).toBe(false);
-    shopClient.send(213, () => {});
-    await shopClient.recv(200); // real Shop item-list response after admission
+    for (const [request, response, count] of [[213, 200, 549], [215, 205, 112], [220, 213, 988]]) {
+      shopClient.send(request, () => {});
+      const p = await shopClient.recv(response);
+      const wrapped = rbuf(p, r4(p));
+      expect(wrapped[0]).toBe(0x18);
+      const raw = wrapped[5] === 1 ? inflateSync(wrapped.subarray(10)) : Buffer.from(wrapped.subarray(6));
+      expect(raw.readUInt16LE()).toBe(count);
+      expect(p.off).toBe(p.buf.length);
+    }
 
     // No fake billing replies: use the actual independently listening service.
     shopClient.send(224, e => { e.str(name); e.str("wrong-password"); });
@@ -2068,15 +2075,15 @@ test("GS -> Shop -> real local billing authorization/purchase -> GS round trip",
     expect(r1(authorized)).toBe(12); expect(r4(authorized)).toBeGreaterThan(0); expect(r4(authorized)).toBeGreaterThan(0);
     const initialCash = await shopClient.recv(203);
     expect([r1(initialCash), r4(initialCash)]).toEqual([1, 100]);
-    shopClient.send(206, e => { e.u16(60001); });
+    shopClient.send(206, e => { e.u16(1102); });
     const purchase = await shopClient.recv(204);
     expect(r1(purchase)).toBe(0); expect(purchase.buf.length - purchase.off).toBe(8);
     shopClient.send(205, () => {});
     const remaining = await shopClient.recv(203);
-    expect([r1(remaining), r4(remaining)]).toEqual([1, 75]);
-    expect(billingStore.inspect(name).balance).toBe(75);
-    expect(billingDB.inventory[GetUserHashNo(name)].query("SELECT Amount FROM FxUserInventory WHERE UserID=? AND ItemSN=60000").get(name))
-      .toEqual({ Amount: 2 });
+    expect([r1(remaining), r4(remaining)]).toEqual([1, 71]);
+    expect(billingStore.inspect(name).balance).toBe(71);
+    expect(billingDB.inventory[GetUserHashNo(name)].query("SELECT Amount FROM FxUserInventory WHERE UserID=? AND ItemSN=1").get(name))
+      .toEqual({ Amount: 15 });
 
     // Follow the reciprocal redirect instead of leaving a pending transfer.
     shopClient.send(6, e => { e.u8(10); e.u32be(0); }); // Shop has no version word
@@ -2096,10 +2103,10 @@ test("GS -> Shop -> real local billing authorization/purchase -> GS round trip",
     await returnedGS.recv(202);
     const delivered = await returnedGS.recv(201);
     expect([r1(delivered), r2(delivered)]).toEqual([1, 1]); // one user, one live inventory row
-    expect([r4(delivered), r1(delivered), r4(delivered), rstr(delivered)]).toEqual([60000, 255, 2, ""]);
+    expect([r4(delivered), r1(delivered), r4(delivered), rstr(delivered)]).toEqual([1, 255, 15, ""]);
     expect(delivered.buf.length - delivered.off).toBe(8); // native variant date
-    expect(billingDB.inventory[GetUserHashNo(name)].query("SELECT Amount FROM FxUserInventory WHERE UserID=? AND ItemSN=60000").get(name))
-      .toEqual({ Amount: 2 }); // GS loading must not expire/delete a newly bought permanent item
+    expect(billingDB.inventory[GetUserHashNo(name)].query("SELECT Amount FROM FxUserInventory WHERE UserID=? AND ItemSN=1").get(name))
+      .toEqual({ Amount: 15 }); // GS loading must not expire/delete a newly bought permanent item
     expect(center.serialTable.get(sn)).toBe(user);
     expect([user.m_fConnecting, user.nChannel, user.nSvrIdx]).toEqual([0, 10, 0]);
   } finally {

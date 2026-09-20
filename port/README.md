@@ -9,6 +9,20 @@
 **啟動、加點、資料目錄、支援限制與驗證：** [本機 billing 操作及實作說明](docs/local-billing.md)。
 Gift/coupon/cart、premium、限時等未完成路徑明確拒絕，不以假成功替代。
 
+## 原版 CAItem／Shop 商品資料
+
+`bun run start`、`bun run game`、`bun run shop` 現在會在啟動時檢查 `CAItem.db`：
+只有整個商品庫為空且未曾匯入時，才補入 `DB/CAItem.bak` 的 **第一組備份、原版價格**。
+保留既有商品、玩家、庫存和 billing 資料；不使用第二組幾乎全為 1 點的價格。
+
+原版共 1,103 個道具定義、1,453 筆商品，其中 **549 筆上架**；另有 112 筆唯一文字及 988 筆套裝對照。
+更新後請重啟 **GS 和 Shop**，並讓兩者使用相同的 `--db` 目錄。
+可用 `bun run caitem:inspect` 檢查來源，或 `bun run caitem:import --db ./db` 明確匯入空庫。
+自訂或部分商品庫不會強制合併；`--no-caitem-import` 可停用啟動匯入。
+
+**來源核對、操作、原始資料問題與 client 資源限制：** [CAItem 商品庫還原](docs/caitem-catalog.md)。
+匯入完整商品資料不等於所有商品的交易功能都已支援，billing 限制仍如上。
+
 ## 統一的預覽版工具鏈
 
 2026-09-20 查詢並固定 **npm `typescript@next`／`bun@canary`／`bun-types@canary`**：
