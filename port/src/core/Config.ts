@@ -220,7 +220,16 @@ export class CServerConfig {
   }
 
   Init(cfgFileName: string): void {
-    const text = require("node:fs").readFileSync(cfgFileName, "latin1") as string;
+    // CServerConfig::Init (FxServer.exe.c:13596): a name without a '.' gets
+    // ".cfg" appended
+    if (!cfgFileName.includes(".")) cfgFileName += ".cfg";
+    let text: string;
+    try {
+      text = require("node:fs").readFileSync(cfgFileName, "latin1") as string;
+    } catch {
+      // the original's CAppException (FxServer.exe.c:13604)
+      throw new Error("Can't find server configuration file");
+    }
     this.ParseConfigString(text);
     // CServerConfig::Init's registered-value audit (CxCenter.exe.c:20360,
     // Relay :13616): every entry must carry a value — non-array entries
@@ -262,12 +271,6 @@ export class CServerConfig {
   /** CServerConfig::GetAttribute */
   GetAttribute(name: string): string {
     return this.attributes.get(name) ?? "";
-  }
-
-  /** CServerConfig::GetAttribute(name, idx) — `name<idx>` (CxCenter.exe.c
-   *  :19593).  The boots use the `name${idx}` spelling inline. */
-  GetIndexedAttribute(name: string, idx: number): string {
-    return this.GetAttribute(`${name}${idx}`);
   }
 
   /** CServerConfig::GetNumAttribute — GetAttribute + atoi (StrToNum). */
