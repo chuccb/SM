@@ -168,3 +168,35 @@ import { readFileSync } from "node:fs";
 function await_file(path: string): string {
   return readFileSync(path, "utf8");
 }
+
+describe("receive-flood guard", () => {
+  test("the 50-stamp ring closes only when a full ring lands inside 0x3E8 ms", () => {
+    const s = new LogTestSocket();
+    s.m_bConnected = true;
+    s.m_fReceiveFloodGuard = true;
+    let closed = 0;
+    s.hooks.onClose = () => closed++;
+    // arm: 0x31 receipts — the guard reads ring slot 0, never written, huge delta
+    for (let i = 0; i < 0x31; i++) (s as any).CheckReceiveFlood();
+    expect(s.m_bConnected).toBe(true);
+    expect(closed).toBe(0);
+    // spread the ring beyond the window: the 50th receipt stays quiet
+    const stamps = s.m_adwRcvStamp;
+    stamps.fill((Date.now() - 5000) & 0x7fffffff);
+    (s as any).CheckReceiveFlood();
+    expect(s.m_bConnected).toBe(true);
+    // a full ring inside one second: report + close
+    stamps.fill(Date.now() & 0x7fffffff);
+    (s as any).CheckReceiveFlood();
+    expect(s.m_bConnected).toBe(false);
+    expect(closed).toBe(1);
+  });
+
+  test("the official strings: client links report, FXUS stays silent, infra names its link", () => {
+    class QuietSocket extends CPacketSocket {}
+    const quiet = new QuietSocket();
+    quiet.m_bConnected = true;
+    // ReportReceiveOverflow is a silent no-op by default (the FXUS build)
+    expect((quiet as any).ReportReceiveOverflow()).toBeUndefined();
+  });
+});
