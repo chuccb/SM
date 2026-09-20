@@ -1374,6 +1374,65 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
     expect(r1(back)).toBe(0);
     const backMember = await member.recv(164, 4000);
     expect(r1(backMember)).toBe(0);
+
+    // ── round 2: the room is back at the prepare stage — start again.
+    // This is the path a crash-free client finally reaches; replay the
+    // whole launch (106 → 115/116 → the UDP type-1 re-arms the launch-ok
+    // bits → the kickoff 150) and prove the round is live once more.
+    chief.pending.length = 0;
+    member.pending.length = 0;
+    member.send(96, (e) => {
+      e.u8(1); // re-ready — DoReturnPrepareStage wiped the group codes
+    });
+    await chief.recv(107); // OnSetSlotState — the ready flip broadcasts 107
+    member.send(98, (e) => {
+      e.u8(1); // color 1 again — CanStartGame wants two teams
+    });
+    await chief.recv(108);
+    chief.send(106, (e) => {});
+    const can2 = await chief.recv(115);
+    expect(r1(can2)).toBe(0); // CanStartGame = go
+    await chief.recv(116);
+    await member.recv(116);
+    await chief.recv(173);
+    const udp2 = await Bun.udpSocket({});
+    const sendCheck2 = async (gserial: number): Promise<void> => {
+      const payload = new Uint8Array(35);
+      const dv = new DataView(payload.buffer);
+      payload[0] = 1; // MTUDP type-1 (mapCRC + attrs)
+      dv.setUint32(1, gserial >>> 0, false);
+      dv.setUint16(5, 0, false); // session idx
+      dv.setUint32(7, roomSerial, false);
+      dv.setUint32(11, 0x7f000001, false);
+      dv.setUint16(15, 40001, false);
+      dv.setUint32(17, 0x7f000001, false);
+      dv.setUint16(21, 40002, false);
+      dv.setUint32(23, 0);
+      dv.setUint32(27, testMapCrc);
+      payload[31] = 0; // bomber
+      payload[32] = 1; // bomb count
+      payload[33] = 1; // bomb power
+      payload[34] = 5; // speed
+      await udp2.send(BuildFrame(payload), 14849, "127.0.0.1");
+    };
+    await sendCheck2(loginSN);
+    await sendCheck2(roomMemberSN);
+    // the kickoff 150s — DoStartGame on the round-2 launch
+    const p150c2 = await chief.recv(150, 4000);
+    expect(r4(p150c2)).toBeGreaterThan(0);
+    const p150m2 = await member.recv(150, 4000);
+    expect(r4(p150m2)).toBeGreaterThan(0);
+    // the round is live: a kill relays again
+    chief.send(146, (e) => {
+      e.u8(0x40);
+      e.u16(1);
+      e.u16(2);
+      e.u8(1);
+      e.u8(0);
+    });
+    const relay2 = await member.recv(159, 4000);
+    expect(r1(relay2)).toBe(0x40);
+    (udp2 as unknown as { close?: () => void }).close?.();
   }, 20000);
 
   test("the member leaving drops a 106 and hands the chief crown over", async () => {
