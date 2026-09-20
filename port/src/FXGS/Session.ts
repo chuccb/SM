@@ -5,7 +5,8 @@
 import { Decode1, Decode2, Decode4, Encode1, Encode2, Encode4, EncodeBuffer } from "../core/BufferManipulator.ts";
 import { CReceivedPacket, CSendPacket, CipherDegree, kPacketEncryptedCRC8 } from "../core/Packet.ts";
 import { GS_ClientSend, SESSION_ReceivedPacket } from "../lib/PacketIDs.ts";
-import { ACCOUNTING_LOG_CHANNEL_TYPE, CHANNEL_TYPE_GUILD, DEATH_COORD, IS_LADDER_GAME, MAX_SESSION_SLOTS, RETURN_STAGE_DELAY, SLOTSTATE_BOMBER_CLEAR, SLOTSTATE_BOMBER_MASK, SLOTSTATE_CHIEF, SLOTSTATE_COLOR_CLEAR, SLOTSTATE_COLOR_MASK, SLOTSTATE_GROUP_CLEAR, SLOTSTATE_GROUP_MASK, SLOTSTATE_LAUNCH_OK, SLOTSTATE_READY, STR_BIG_LUCK_MSG, SUPREME_ROOM_SWAP_COUNT, THEME_IDX_BASE, TICK_U32_MASK } from "./Defs";
+import { timeGetTime } from "../core/timeGetTime.ts";
+import { ACCOUNTING_LOG_CHANNEL_TYPE, CHANNEL_TYPE_GUILD, DEATH_COORD, IS_LADDER_GAME, MAX_SESSION_SLOTS, RETURN_STAGE_DELAY, SLOTSTATE_BOMBER_CLEAR, SLOTSTATE_BOMBER_MASK, SLOTSTATE_CHIEF, SLOTSTATE_COLOR_CLEAR, SLOTSTATE_COLOR_MASK, SLOTSTATE_GROUP_CLEAR, SLOTSTATE_GROUP_MASK, SLOTSTATE_LAUNCH_OK, SLOTSTATE_READY, STR_BIG_LUCK_MSG, SUPREME_ROOM_SWAP_COUNT, THEME_IDX_BASE } from "./Defs";
 import { CBanChief, CDynInfoCalculator, CGameClock, CGameContext, CSyncGameObjMan, CUdpLossRegulator } from "./GameContext";
 import { CBomberAttr, CGameMapTmplList, CItemAttr } from "./GameData";
 import { UserInventory } from "./CUserItemMan";
@@ -143,7 +144,7 @@ export class CGameSession {
       this.m_nMaxPlayerNum = this.m_nMaxSlot;
       this.m_fPlaying = 0;
       this.m_fModified = 0;
-      this.m_dwCreateTime = Date.now() & TICK_U32_MASK;
+      this.m_dwCreateTime = timeGetTime();
       // ---- CGameSession::Init tail (FxServer.exe.c:31752) ----
       this.m_nGamePhase = 0; // +984
       for (const host of this.m_rgUdpHost) host.fill(0); // memset(+988, 0, 0xC0)
@@ -613,7 +614,7 @@ export class CGameSession {
       const user = this.m_rgPlayer[slot];
       if (!user) continue;
       if (this.m_rgUdpAlive[slot] !== 0) continue;
-      if (CGameClock.Now() - this.m_rgJoinTime[slot]! <= grace) continue;
+      if (((CGameClock.Now() - this.m_rgJoinTime[slot]!) >>> 0) <= grace) continue;
       const ip = user.m_pSocket ? GetInfoStr(user.m_pSocket) : "";
       console.error(
         `[GS] User[${ip}:${user.GetName()}] (${user.m_pSocket?.GetUserCount() ?? 0}P) banned from game session (${this.m_nIdx}) while ${this.m_fPlaying !== 0 ? "<STARTING>" : "<WAITING>"} by udp loss`,
@@ -1089,7 +1090,7 @@ export class CGameSession {
     // The official Update stamps +12548 once per playing tick and reads it
     // back as the bomb-clock delta (FxServer.exe.c:34851/35056); +12552 is
     // write-once-zeroed (:32898) and never touched again.
-    const time = Date.now();
+    const time = timeGetTime();
     const prevTick = this.m_dwLastTickTime;
     this.m_dwLastTickTime = time;
     if (this.m_nGamePhase === 0) {
@@ -1120,7 +1121,7 @@ export class CGameSession {
     // epoch-domain guard: the official runs on timeGetTime (bounded since
     // boot); Date.now() needs the 0 sentinel so the very first tick of a
     // process contributes no delta.
-    const elapsed = prevTick === 0 ? 0 : time - prevTick;
+    const elapsed = prevTick === 0 ? 0 : (time - prevTick) >>> 0;
     let exploded = 0;
     if (ctx.m_nBombCount > 0) {
       // 152 — the bomb clock: every armed bomb counts down by the elapsed ms
@@ -1293,9 +1294,8 @@ export class CGameSession {
 
   /** CGameSession::DeferReturnPrepareStage (41B0B7) — 8 s after the end
    *  screen.  The original compares two timeGetTime-domain dwords
-   *  (`timeGetTime() - m_dwEndTime > 0x1F40`); the same u32 domain is
-   *  mandatory here — a raw Date.now() against the masked m_dwEndTime is
-   *  always ≫ 0x1F40 and would end the result screen after one tick. */
+   *  (`timeGetTime() - m_dwEndTime > 0x1F40`); the >>> 0 keeps the delta
+   *  in that unsigned domain across the 49.7-day wrap. */
   DeferReturnPrepareStage(): void {
     const sinceEnd = (CGameClock.Now() - this.m_GameClock.m_dwEndTime) >>> 0;
     if (sinceEnd > RETURN_STAGE_DELAY) this.DoReturnPrepareStage();
@@ -1309,7 +1309,7 @@ export class CGameSession {
     this.m_nGamePhase = 0;
     this.m_nBanSerial = 0; // +828
     this.m_nGameMapIdx = -1; // +1180
-    this.m_dwCreateTime = Date.now() & TICK_U32_MASK; // +860 (a timeGetTime dword)
+    this.m_dwCreateTime = timeGetTime(); // +860 (a timeGetTime dword)
     this.SetPlaying(0);
     for (let slot = 0; slot < MAX_SESSION_SLOTS; slot++) {
       this.m_aBomberIdx[slot] = -1; // +11572
@@ -2314,7 +2314,7 @@ export class CGameSession {
   LaunchGameStage(): void {
     const packet = new CSendPacket(GS_ClientSend.OnStartGame, CipherDegree.kPacketEncryptedCRC8);
     // DoLaunchGameStageEx is an empty `retn` in the original
-    packet.Encode4(Date.now() & TICK_U32_MASK);
+    packet.Encode4(timeGetTime()); // the 116 tick — a raw timeGetTime dword
     // the map idx rides through vtbl+24 = Encode2 (FxServer.exe.c:37289:
     // +28 E4 tick / +24 E2 mapIdx / +20 E1 cur) — an E4 here makes the
     // client read a garbage map index and crash on load
@@ -2365,7 +2365,7 @@ export class CGameSession {
     this.m_rgGhostSlot.fill(-1); // memset(+904, -1, 0x20)
     this.m_nGhostCount = 0; // +936
     this.m_dwLastGhostTime = 0; // +940
-    this.m_dwLaunchTime = Date.now() & TICK_U32_MASK;
+    this.m_dwLaunchTime = timeGetTime();
     this.m_nGhostStart = tmpl ? tmpl.m_nArg60 : 0; // +12560 ← tmpl+60 (seconds; ×1000 at DoStartGame)
     this.m_nGhostFreq = tmpl ? tmpl.m_nArg64 : 0; // +12564 ← tmpl+64
     this.m_dwAirplaneItemProb = tmpl ? tmpl.m_dwAirplaneItemProb : 0; // +12776 ← tmpl+72
@@ -3083,7 +3083,7 @@ export class CGameSession {
   /** CGameSession::OnRequestAirplane (156, FxServer.exe.c:41D7C0). */
   OnRequestAirplane(n: CReceivedPacket, socket: CClientSocket): void {
     const now = CGameClock.Now();
-    if (this.m_dwLastAirplaneTime + 7000 > now) return;
+    if (((now - this.m_dwLastAirplaneTime) >>> 0) < 7000) return; // the 7 s airplane gate, wrap-safe
     const count = n.Decode1();
     if (count === 0 || count > 3) console.error(`[GS] Strange Request Airplane, nCount=${count}`);
     const packet = new CSendPacket(GS_ClientSend.OnRequestAirplaneRes, CipherDegree.kPacketEncryptedCRC8);
@@ -3108,7 +3108,7 @@ export class CGameSession {
       boxes.push(box);
     }
     for (const box of boxes) this.m_pCtx.m_rgnBoxItem[box] = 0;
-    this.m_dwLastAirplaneTime = now + 2000;
+    this.m_dwLastAirplaneTime = (now + 2000) >>> 0;
     this.SendPacket(packet);
   }
 

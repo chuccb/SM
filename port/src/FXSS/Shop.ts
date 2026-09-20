@@ -10,6 +10,7 @@
  * CWebSocket — first packet is the OnVerifyKey charge handshake).
  */
 import { CServerConfig, FXSHOP_STR_KEYS } from "../core/Config.ts";
+import { timeGetTime } from "../core/timeGetTime.ts";
 import { PacketLog } from "../core/PacketLog.ts";
 import { CDBMan } from "../db/DBMan.ts";
 import { CipherDegree, CReceivedPacket, CSendPacket, enSocket, type enSocket as EnSocket } from "../core/Packet.ts";
@@ -221,7 +222,7 @@ export class CClientSocket extends CPacketSocket {
 
   m_nLocalSerialNo = 0;
   m_dwLastRTT = 0;
-  m_dwIdleTime = Date.now() - 5000;
+  m_dwIdleTime = timeGetTime() - 5000;
   m_apUser: (CUser | null)[] = []; // +460
   m_nUserCount = 0; // +456
   m_nSelectedUserIdx = 0; // +464 (u16)
@@ -370,7 +371,7 @@ export class CUserPool {
     if (n.Decode1() !== SS_ReceivedPacket.OnEstimateRTT) return;
     const packet = new CSendPacket(SC_SendPacket.OnEstimateRTTRes, CipherDegree.kPacketEncryptedCRC8);
     const t = n.Decode4();
-    const now = Date.now() & 0x7fffffff;
+    const now = timeGetTime();
     packet.Encode4(t);
     packet.Encode4(now);
     socket.m_dwLastRTT = now;
@@ -396,9 +397,9 @@ export class CUserPool {
 
   /** CUserPool::DisconnectTimeoutSocket (:29065) — 0x7530 ms without RTT. */
   DisconnectTimeoutSocket(): void {
-    const now = Date.now();
+    const now = timeGetTime();
     for (const socket of [...this.m_setSocket]) {
-      if (now - socket.m_dwIdleTime > 0x7530) {
+      if (((now - socket.m_dwIdleTime) >>> 0) > 0x7530) {
         console.error(`[Shop] Disconnect Timeout Socket [${socket.m_apUser[0]?.GetName() ?? "NULL"}]`);
         socket.Close();
       }
@@ -1809,7 +1810,7 @@ export class CxShop {
         data: (t, data) => {
           const s = clientSockets.get(t);
           if (s) {
-            s.m_dwIdleTime = Date.now();
+            s.m_dwIdleTime = timeGetTime();
             s.OnReceive(new Uint8Array(data as Buffer));
           }
         },

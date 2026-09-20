@@ -15,6 +15,7 @@ import { CipherDegree,
   type enSocket as EnSocket,
 } from "./Packet.ts";
 import { PacketLog } from "./PacketLog.ts";
+import { timeGetTime } from "./timeGetTime.ts";
 
 /** CA_CIPHER_LIBERAL=1 — deliver checksum-failing packets with a loud log.
  *  Diagnostic probe only; the original always rejects, and with the correct
@@ -337,7 +338,7 @@ export abstract class CPacketSocket {
    *  second reports and closes (the unsigned delta survives tick wrap). */
   protected CheckReceiveFlood(): void {
     const n = ++this.m_nRcvStampSeq;
-    const now = Date.now() & 0x7fffffff;
+    const now = timeGetTime();
     this.m_adwRcvStamp[n % RCV_STAMP_RING] = now;
     if (n >= RCV_FLOOD_ARM_SEQ && ((now - this.m_adwRcvStamp[(n + 1) % RCV_STAMP_RING]!) >>> 0) <= RCV_FLOOD_WINDOW_MS) {
       console.error(`Time stamp for received packet overflow from (${this.bunSocket?.remoteAddress ?? ""})`);

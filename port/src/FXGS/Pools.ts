@@ -6,6 +6,7 @@ import { Decode1, Decode4, Encode1, Encode4 } from "../core/BufferManipulator.ts
 import { CReceivedPacket, CSendPacket, CipherDegree, kPacketEncryptedCRC8 } from "../core/Packet.ts";
 import { CDBMan } from "../db/DBMan.ts";
 import { GS_ClientSend, GS_ReceivedPacket } from "../lib/PacketIDs.ts";
+import { timeGetTime } from "../core/timeGetTime.ts";
 import { MC_ReceivedPacket } from "../lib/S2S.ts";
 import { CChannelPool } from "./Chat";
 import { CUserItemMan, PreInventory, UserInventory } from "./CUserItemMan";
@@ -77,14 +78,14 @@ export class CUserPool {
     const packet = new CSendPacket(GS_ClientSend.OnEstimateRTTRes, CipherDegree.kPacketEncryptedCRC8);
     const rttValue = n.Decode4(); // the client's stamp, echoed verbatim
     const hash = n.Decode4();
-    const now = Date.now() & 0x7fffffff;
+    const now = timeGetTime();
     packet.Encode4(rttValue);
     packet.Encode4(now);
     // the official stamps the socket's idle dword on EVERY RTT probe before
     // any check (FxServer.exe.c:29295 `M_start[18] = Time`) — it is exactly
-    // the field DisconnectTimeoutSocket sweeps on.  Raw Date.now(): the
-    // sweep compares it against a raw Date.now() as well.
-    socket.m_dwIdleTime = Date.now();
+    // the field DisconnectTimeoutSocket sweeps on, in the same timeGetTime
+    // domain the echo carries to the client.
+    socket.m_dwIdleTime = timeGetTime();
     const last = socket.m_dwLastRTT;
     socket.m_dwLastRTT = now;
     socket.SendPacket(packet);
@@ -137,10 +138,10 @@ export class CUserPool {
   /** CUserPool::DisconnectTimeoutSocket (:29397) — 0x9C40 ms without RTT,
    *  then the count summary Report. */
   DisconnectTimeoutSocket(): void {
-    const now = Date.now();
+    const now = timeGetTime();
     let count = 0;
     for (const socket of [...this.m_setSocket]) {
-      if (now - socket.m_dwIdleTime > SOCKET_TIMEOUT) {
+      if (((now - socket.m_dwIdleTime) >>> 0) > SOCKET_TIMEOUT) {
         console.error(`[GS] Disconnect timeout socket (${GetInfoStr(socket)})`);
         socket.PostClosePacket();
         count++;

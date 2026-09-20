@@ -9,6 +9,7 @@ import { CDBMan } from "../db/DBMan.ts";
 import { CIDFMan } from "./CData.ts";
 import { HOSTHANDLE, MTUDP_TYPE_PEER_INFO, MTUDP_TYPE_READY_FOR_IMMEDIATE_START, MTUDP_UDP_PORT_OFFSET, SplitDatagram } from "./MTUDP.ts";
 import { CLIENT_SOCKET_CENSUS_MS } from "../lib/S2S.ts";
+import { timeGetTime } from "../core/timeGetTime.ts";
 import { FXSERVER_STR_KEYS } from "../core/Config.ts";
 import { PACKET_NAME_TABLES } from "../lib/PacketIDs.ts";
 import { CChannelPool } from "./Chat";
@@ -127,7 +128,7 @@ export async function main(cfgFile: string, dbDir: string): Promise<void> {
       data: (t, data) => {
         const s = clientSockets.get(t);
         if (s) {
-          s.m_dwIdleTime = Date.now();
+          s.m_dwIdleTime = timeGetTime();
           s.OnReceive(new Uint8Array(data as Buffer));
         }
       },

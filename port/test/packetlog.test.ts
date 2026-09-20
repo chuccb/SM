@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { rmSync } from "node:fs";
 import { CPacketSocket } from "../src/core/CPacketSocket.ts";
+import { timeGetTime } from "../src/core/timeGetTime.ts";
 import { PacketLog } from "../src/core/PacketLog.ts";
 import { UpdateCRC32, UpdateCRC8 } from "../src/core/CRC.ts";
 import { CSendPacket, CipherDegree, enSocket } from "../src/core/Packet.ts";
@@ -182,11 +183,11 @@ describe("receive-flood guard", () => {
     expect(closed).toBe(0);
     // spread the ring beyond the window: the 50th receipt stays quiet
     const stamps = s.m_adwRcvStamp;
-    stamps.fill((Date.now() - 5000) & 0x7fffffff);
+    stamps.fill(timeGetTime() - 5000);
     (s as any).CheckReceiveFlood();
     expect(s.m_bConnected).toBe(true);
     // a full ring inside one second: report + close
-    stamps.fill(Date.now() & 0x7fffffff);
+    stamps.fill(timeGetTime());
     (s as any).CheckReceiveFlood();
     expect(s.m_bConnected).toBe(false);
     expect(closed).toBe(1);

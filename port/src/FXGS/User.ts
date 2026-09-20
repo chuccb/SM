@@ -7,6 +7,7 @@ import { CSendPacket, enSocket, type enSocket as EnSocket } from "../core/Packet
 import { CDBMan } from "../db/DBMan.ts";
 import { CLIENTSOCKET_HEADER_CODE_MODIFIER, CLIENTSOCKET_HEADER_CODE_RCV, CLIENTSOCKET_HEADER_CODE_SND, CLIENTSOCKET_SEQ, CLIENTSOCKET_SEQ_DELTA } from "../lib/PacketIDs.ts";
 import { CDynInfoCalculator_GetLevel, kLevelTableSize } from "../LS/LevelTable.ts";
+import { timeGetTime } from "../core/timeGetTime.ts";
 import { CChannelPool } from "./Chat";
 import { CHANNEL_TYPE_GUILD, DYN_FLUSH_BURST, SESSION_IDX_NONE } from "./Defs";
 import { CConnectPool } from "./Pools";
@@ -341,7 +342,7 @@ export class CClientSocket extends CPacketSocket {
   m_apUser: (CUser | null)[] = []; // +460
   m_nUserCount = 0; // +456
   m_anBeforeJoinSession: number[] = []; // +476..+496 (5-deep ring)
-  m_dwIdleTime = Date.now() - 5000;
+  m_dwIdleTime = timeGetTime() - 5000;
   /** The CBaseSession::PutPacket queue (this+56); FlushPacket drains it. */
   m_pendingPackets: CSendPacket[] = [];
 

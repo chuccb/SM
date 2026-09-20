@@ -18,6 +18,7 @@
  * six-server suite; the paths that would defer to it answer immediately.
  */
 import { CServerConfig, CXLOGIN_STR_KEYS } from "../core/Config.ts";
+import { timeGetTime } from "../core/timeGetTime.ts";
 import { PacketLog } from "../core/PacketLog.ts";
 import { CPacketSocket } from "../core/CPacketSocket.ts";
 import { CipherDegree, CReceivedPacket, CSendPacket, enSocket, type enSocket as EnSocket } from "../core/Packet.ts";
@@ -168,7 +169,7 @@ export class CClientSocket extends CPacketSocket {
   m_nFlushCount = 0; // +492
   m_nLoginCount = 0; // +496
   m_dwFlushTime = 0; // +500
-  m_dwLastRTT = (Date.now() - 5000) & 0x7fffffff; // +488 (ctor: timeGetTime()-5000)
+  m_dwLastRTT = timeGetTime() - 5000; // +488 (ctor: timeGetTime()-5000)
 
   constructor() {
     super(CPacketSocket.dwRcvBufferSize, CPacketSocket.dwSndBufferSize, {
@@ -351,12 +352,12 @@ export class CLoginPool {
 
   /** CUserPool::DisconnectTimeoutSocket (CxLogin.exe.c:23685) — drops the
    *  sockets whose last client-20 RTT stamp is older than 0x7530 ms. Both
-   *  stamps live on the 31-bit timeGetTime ring, so the difference is
-   *  reduced modulo 0x7fffffff before comparing. */
+   *  stamps live on the timeGetTime ring; >>> 0 keeps the delta unsigned
+   *  across the 49.7-day wrap. */
   DisconnectTimeoutSocket(): void {
-    const now = Date.now() & 0x7fffffff;
+    const now = timeGetTime();
     for (const socket of [...this.m_setSocket]) {
-      if (((now - socket.m_dwLastRTT) & 0x7fffffff) > 30000) {
+      if (((now - socket.m_dwLastRTT) >>> 0) > 30000) {
         console.log(`Disconnect Timeout Socket: ${socket.bunSocket?.remoteAddress ?? ""}`);
         socket.Close();
       }
@@ -400,7 +401,7 @@ export class CLoginPool {
   OnEstimateRTT(n: CReceivedPacket, socket: CClientSocket): void {
     const packet = new CSendPacket(LS_SendPacket.OnEstimateRTTRes, CipherDegree.kPacketEncryptedCRC8);
     const rttValue = n.Decode4(); // the client's stamp, echoed verbatim
-    const time = Date.now() & 0x7fffffff;
+    const time = timeGetTime();
     packet.Encode4(rttValue);
     packet.Encode4(time);
     socket.m_dwLastRTT = time;

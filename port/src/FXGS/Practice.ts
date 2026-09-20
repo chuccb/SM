@@ -3,7 +3,8 @@
 import { Encode1, Encode2 } from "../core/BufferManipulator.ts";
 import { CReceivedPacket, CSendPacket, CipherDegree, kPacketEncryptedCRC8 } from "../core/Packet.ts";
 import { GS_ClientSend, GS_INPLAY_SendInventory, SESSION_ReceivedPacket } from "../lib/PacketIDs.ts";
-import { AI_LEVEL_BAND, AI_LEVEL_BAND_TOP, MAX_SESSION_SLOTS, SLOTSTATE_BOMBER_MASK, SLOTSTATE_CHIEF, SLOTSTATE_CHIEF_CLEAR, SLOTSTATE_COLOR_MASK, SLOTSTATE_GROUP_CLEAR, TICK_U32_MASK } from "./Defs";
+import { timeGetTime } from "../core/timeGetTime.ts";
+import { AI_LEVEL_BAND, AI_LEVEL_BAND_TOP, MAX_SESSION_SLOTS, SLOTSTATE_BOMBER_MASK, SLOTSTATE_CHIEF, SLOTSTATE_CHIEF_CLEAR, SLOTSTATE_COLOR_MASK, SLOTSTATE_GROUP_CLEAR } from "./Defs";
 import { CGameSession } from "./Session";
 import { CClientSocket, CUser, GetInfoStr } from "./User";
 import { CBomberAttr, CGameMapTmplList } from "./GameData";
@@ -567,7 +568,7 @@ export class CPracticeSession extends CGameSession {
     this.m_nGamePhase = 0;
     this.m_nBanSerial = 0; // +828
     this.m_nGameMapIdx = -1; // +1180
-    this.m_dwCreateTime = Date.now() & TICK_U32_MASK; // +860
+    this.m_dwCreateTime = timeGetTime(); // +860
     this.SetPlaying(0);
     for (let slot = 0; slot < MAX_SESSION_SLOTS; slot++) {
       this.m_aBomberIdx[slot] = -1; // +11572

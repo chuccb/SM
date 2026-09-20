@@ -5,6 +5,7 @@ import { Decode1, Decode2, Decode4, Encode1, Encode2, Encode4 } from "../core/Bu
 import { CReceivedPacket, CSendPacket, CipherDegree, kPacketEncryptedCRC8 } from "../core/Packet.ts";
 import { HOSTHANDLE } from "./MTUDP.ts";
 import { GS_ClientSend, GS_INPLAY_SendInventory, SESSION_ReceivedPacket } from "../lib/PacketIDs.ts";
+import { timeGetTime } from "../core/timeGetTime.ts";
 import { CChannelPool } from "./Chat";
 import { CUserPool } from "./Pools";
 import { SESSION_IDX_CONNECTING, SESSION_IDX_MAX, SESSION_IDX_NONE } from "./Defs";
@@ -133,7 +134,7 @@ export class CGameSessionTable {
         if (idx === 0xffff) console.log("[GS] Lobby player sent session packet (OnPacket). Don't Disconnect.");
         else if (idx === SESSION_IDX_CONNECTING) console.error("[GS] Connecting player sent session packet (OnPacket). Don't Disconnect.");
         else console.error("[GS] Invalid game session slot index (OnPacket). Don't Disconnect.");
-        console.log(`[GS]     Time:${Date.now() & 0x7fffffff}`); // Report("    Time:%d", timeGetTime())
+        console.log(`[GS]     Time:${timeGetTime()}`); // Report("    Time:%d", timeGetTime())
       }
       return;
     }

@@ -4,8 +4,9 @@
 import { Decode1, Decode2, Decode4, Encode1, Encode2, Encode4, EncodeBuffer } from "../core/BufferManipulator.ts";
 import { CReceivedPacket, CSendPacket, CipherDegree, kPacketEncryptedCRC8 } from "../core/Packet.ts";
 import { GS_ClientSend } from "../lib/PacketIDs.ts";
+import { timeGetTime } from "../core/timeGetTime.ts";
 import { CDynInfoCalculator_GetLevel, CDynInfoCalculator_GetMaxExpInLevel } from "../LS/LevelTable.ts";
-import { MAX_SESSION_SLOTS, SLOTSTATE_COLOR_MASK, TICK_U32_MASK, UDP_REGULATE_DELAY } from "./Defs";
+import { MAX_SESSION_SLOTS, SLOTSTATE_COLOR_MASK, UDP_REGULATE_DELAY } from "./Defs";
 import { CGameSession } from "./Session";
 import { CGameSessionTable } from "./SessionTable";
 import { CMainSystem } from "./System";
@@ -347,7 +348,7 @@ export class CGameClock {
   m_dwSuspendAt = 0; // +12
 
   static Now(): number {
-    return Date.now() & TICK_U32_MASK;
+    return timeGetTime();
   }
 
   StartGame(): void {
@@ -569,7 +570,7 @@ export class CUdpLossRegulator {
 
   /** CUdpLossRegulator::DeferRegulateConnection (416595) — 8 s after the first 187. */
   DeferRegulateConnection(session: CGameSession): void {
-    if (this.m_fInit !== 0 && CGameClock.Now() - this.m_dwInitTime > UDP_REGULATE_DELAY) this.RegulateConnection(session);
+    if (this.m_fInit !== 0 && ((CGameClock.Now() - this.m_dwInitTime) >>> 0) > UDP_REGULATE_DELAY) this.RegulateConnection(session);
   }
 
   /**

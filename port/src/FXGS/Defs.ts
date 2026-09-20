@@ -16,8 +16,9 @@ export const MAP_VERSION_MIN = 1000;
 /** negative map indexes pick the theme table counting down from here
  *  (CGameMapTmplList dword 321 = the m_apTheme base). */
 export const THEME_IDX_BASE = 321;
-/** the original stamps are 32-bit GetTickCount() values; Date.now() is
- *  truncated to the same width before it goes on the wire or into a field. */
+/** Every 32-bit stamp in the original is a winmm timeGetTime() uptime
+ *  dword — the port routes those through core/timeGetTime (performance.now
+ *  wrapped at 2^32); the mask remains for the few raw-epoch leftovers. */
 export const TICK_U32_MASK = 0xffffffff;
 /** the practice AI level grid — levels live on 15-wide bands (0/15/30), the
  *  band top is 45 and the 110 handler steps ±15 inside a band, ±45 across. */
