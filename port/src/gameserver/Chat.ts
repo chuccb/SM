@@ -104,7 +104,7 @@ export class CChatPool extends CUserPool {
     p.EncodeStr(text);
     const idx = socket.GetUser(0)!.GetSessionIdx();
     if (idx === 0xffff) this.SendAll(p, 1);
-    else CGameSessionTable.ms_pInstance!.SendPacketIntoSession(idx, socket.GetUser(0)!.GetSessionSerialNo(), p);
+    else CGameSessionTable.ms_pInstance!.SendPacket(idx, socket.GetUser(0)!.GetSessionSerialNo(), p);
   }
 
   /** CChatPool::OnSpecialCommand — a stub in the original (`retn 8`). */
@@ -154,7 +154,7 @@ export class CChatPool extends CUserPool {
       console.error("[GS] Invalid item msg: tried to send to all in the session");
       return;
     }
-    CGameSessionTable.ms_pInstance!.SendPacketIntoSession(idx, socket.GetUser(0)!.GetSessionSerialNo(), p);
+    CGameSessionTable.ms_pInstance!.SendPacket(idx, socket.GetUser(0)!.GetSessionSerialNo(), p);
   }
 
   /** CChatPool::OnSystemMsg — packet 30 to the session or the lobby. */
@@ -164,7 +164,7 @@ export class CChatPool extends CUserPool {
     p.EncodeStr(msg);
     const idx = socket.GetUser(0)?.GetSessionIdx() ?? SESSION_IDX_NONE;
     if (idx === 0xffff) this.SendAll(p, 1);
-    else CGameSessionTable.ms_pInstance!.SendPacketIntoSession(idx, socket.GetUser(0)!.GetSessionSerialNo(), p);
+    else CGameSessionTable.ms_pInstance!.SendPacket(idx, socket.GetUser(0)!.GetSessionSerialNo(), p);
   }
 
   /** CChatPool::OnAdminNotifyMsg — packet 31 from an operator client. */

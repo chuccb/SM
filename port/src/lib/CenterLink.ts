@@ -34,6 +34,11 @@ PacketLog.Register("S2S", "recv", CM_ReceivedPacket);
 PacketLog.Register("S2S", "send", MC_ReceivedPacket);
 
 export class CLocalSocket extends CPacketSocket {
+  /** "Socket receive buffer overflow on LocalSocket" — the S2S link has no
+   *  receive-flood ring (FxServer.exe.c:19062, CxLogin.exe.c:12181). */
+  protected ReportReceiveOverflow(): void {
+    console.error("Socket receive buffer overflow on LocalSocket");
+  }
   constructor(hooks: Partial<IPacketSocketHooks>) {
     super(CPacketSocket.dwRcvBufferSize, CPacketSocket.dwSndBufferSize, hooks);
     this.m_szLogTable = "S2S";

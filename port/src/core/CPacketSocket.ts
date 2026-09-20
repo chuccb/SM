@@ -23,6 +23,15 @@ import { PacketLog } from "./PacketLog.ts";
  *  an artifact of the stale 0x63D50CC3 step constant). */
 export const CipherCompat = { liberal: process.env.CA_CIPHER_LIBERAL === "1" };
 
+/** CClientSocket::OnReceiveCompletionPacket's receive-flood ring — the stamp
+ *  table holds 50 entries, the guard arms on sequence 0x31 (the 49th receipt
+ *  reads the ring's oldest slot), and the window is 0x3E8 ms (a wrap-safe
+ *  unsigned delta).  Exceeding it reports and closes
+ *  (FxServer.exe.c:9673; identical in CxLogin/FxShop/CxUtil). */
+const RCV_STAMP_RING = 50;
+const RCV_FLOOD_ARM_SEQ = 0x31;
+const RCV_FLOOD_WINDOW_MS = 0x3e8;
+
 export interface IPacketSocketHooks {
   onPacket(sock: CPacketSocket, packet: CReceivedPacket): void;
   onClose(sock: CPacketSocket): void;
@@ -50,6 +59,15 @@ export abstract class CPacketSocket {
 
   m_bConnected = false;
   hooks: IPacketSocketHooks;
+
+  /** The receive-flood guard switch — the official CClientSocket of GS / LS /
+   *  Shop / FXUS counts receipts (FxServer.exe.c:9673); the S2S, monitor and
+   *  billing sockets never do. */
+  m_fReceiveFloodGuard = false;
+  /** +248 — the per-socket receipt counter (InterlockedIncrement). */
+  m_nRcvStampSeq = 0;
+  /** +252 — the 50-entry ring of timeGetTime stamps. */
+  m_adwRcvStamp = new Uint32Array(RCV_STAMP_RING);
 
   /** PacketLog name-table key override (e.g. "MON", "BILL", "S2S"); null =
    *  this socket's server tag (m_szLogTag). */
@@ -279,7 +297,9 @@ export abstract class CPacketSocket {
   /** Feed received raw bytes; pumps complete packets to hooks.onPacket. */
   OnReceive(data: Uint8Array): void {
     if (!this.m_bConnected) return;
+    if (this.m_fReceiveFloodGuard) this.CheckReceiveFlood();
     if (this.m_nRcvCnt + data.length > this.m_mbRcvBuffer.length) {
+      this.ReportReceiveOverflow();
       this.PostClosePacket();
       return;
     }
@@ -287,6 +307,25 @@ export abstract class CPacketSocket {
     this.m_nRcvCnt += data.length;
     this.OnReceiveCompletionPacket();
   }
+
+  /** CClientSocket::OnReceiveCompletionPacket's flood check — one stamp per
+   *  receive event; once 49 receipts have gone by, a full ring within one
+   *  second reports and closes (the unsigned delta survives tick wrap). */
+  protected CheckReceiveFlood(): void {
+    const n = ++this.m_nRcvStampSeq;
+    const now = Date.now() & 0x7fffffff;
+    this.m_adwRcvStamp[n % RCV_STAMP_RING] = now;
+    if (n >= RCV_FLOOD_ARM_SEQ && ((now - this.m_adwRcvStamp[(n + 1) % RCV_STAMP_RING]!) >>> 0) <= RCV_FLOOD_WINDOW_MS) {
+      console.error(`Time stamp for received packet overflow from (${this.bunSocket?.remoteAddress ?? ""})`);
+      this.PostClosePacket();
+    }
+  }
+
+  /** The receive-buffer-overflow report — every official socket class names
+   *  its own link here ("(%s), disconnected." on the client sockets, "on
+   *  LocalSocket" / "on Billing Socket" / "(%s), PostClosePacket called" on
+   *  the infra links); FXUS's CClientSocket stays silent. */
+  protected ReportReceiveOverflow(): void {}
 
   /** CClientSocket::GetPacket's error reports (CxLogin.exe.c:9484) — the
    *  original logs the exact failure and the full cipher state before

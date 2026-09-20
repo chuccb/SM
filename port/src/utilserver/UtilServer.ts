@@ -76,6 +76,9 @@ export class CUser {
 
 /** CClientSocket (CxUtil) — one connected admin tool. */
 export class CClientSocket extends CPacketSocket {
+  /** CClientSocket::OnReceiveCompletionPacket guards the client links; the
+   *  FXUS build reports the overflow silently (no ReportError on that path). */
+  m_fReceiveFloodGuard = true;
   static ms_nLocalSerialNo = 1;
   /** dword_49F968 — the per-connection header-type counter. It starts at 0
    *  and is separate from the serial: the first client connection gets

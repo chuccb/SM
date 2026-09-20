@@ -215,6 +215,13 @@ let ms_nLocalSocketHeaderTypeCounter = 0;
 /** Center-side socket for one attached local server. */
 export class CenterClientSocket extends CPacketSocket {
   owner: CLocalServer | null = null;
+
+  /** "Socket receive buffer overflow(name:addr), PostClosePacket called" —
+   *  the name comes from the identified CLocalServer (CxCenter.exe.c:15116). */
+  protected ReportReceiveOverflow(): void {
+    const addr = this.bunSocket?.remoteAddress ?? "";
+    console.error(`Socket receive buffer overflow(${this.owner?.m_strName ?? ""}:${addr}), PostClosePacket called`);
+  }
   private pending = new Uint8Array(0);
   private fGreeted = false;
   private fIdentified = false;
@@ -1005,6 +1012,12 @@ export class CxCenter {
 
 /** CMonitorSocket (center) — SetHeaderCode(102,102,231), no rolling seq (CxCenter.exe.c:16424). */
 export class MonitorSocket extends CPacketSocket {
+  /** "Socket receive buffer overflow(addr), PostClosePacket called"
+   *  (CxCenter.exe.c:16400); the monitor link has no flood ring. */
+  protected ReportReceiveOverflow(): void {
+    console.error(`Socket receive buffer overflow(${this.bunSocket?.remoteAddress ?? ""}), PostClosePacket called`);
+  }
+
   constructor(private center: CxCenter) {
     super(1024, 1024, {
       onPacket: (_sock, packet) => this.OnPacket(packet),

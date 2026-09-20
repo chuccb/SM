@@ -199,6 +199,13 @@ export class CUser {
 /** CClientSocket — the 9801 client connection (CListenThread accept).
  *  Every accepted socket gets SetCipherDegree(2) (CFxShopApp::SetUp). */
 export class CClientSocket extends CPacketSocket {
+  /** CClientSocket::OnReceiveCompletionPacket guards the client links only
+   *  (FxShop.exe.c:5890). */
+  m_fReceiveFloodGuard = true;
+
+  protected ReportReceiveOverflow(): void {
+    console.error(`Socket receive buffer overflow(${this.bunSocket?.remoteAddress ?? ""}), disconnected.`);
+  }
   static ms_nHeaderTypeCounter = 0;
   static ms_tblSN2Obj = new Map<number, CClientSocket>();
 
@@ -1191,6 +1198,10 @@ export class CTranxCtrl {
 /** CBillingSocketTw — the digicell billing link socket (CBillingSocket ctor,
  *  FxShop.exe.c:404E70): CServerSocket base + SetHeaderCode(41, 41, 0). */
 export class CBillingSocketTw extends CPacketSocket {
+  /** "Socket receive buffer overflow on Billing Socket" (FxShop.exe.c:3527). */
+  protected ReportReceiveOverflow(): void {
+    console.error("Socket receive buffer overflow on Billing Socket");
+  }
   constructor() {
     super(CPacketSocket.dwRcvBufferSize, CPacketSocket.dwSndBufferSize, {
       onPacket: (_sock, packet) => CBillingProcess.ms_pInstance?.OnPacket(packet),

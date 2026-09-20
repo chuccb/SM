@@ -296,6 +296,13 @@ export class CUser {
 
 /** CClientSocket — one connected game client (FxServer.exe.c:9818). */
 export class CClientSocket extends CPacketSocket {
+  /** CClientSocket::OnReceiveCompletionPacket guards the client links only
+   *  (FxServer.exe.c:9673). */
+  m_fReceiveFloodGuard = true;
+
+  protected ReportReceiveOverflow(): void {
+    console.error(`Socket receive buffer overflow(${this.bunSocket?.remoteAddress ?? ""}), disconnected.`);
+  }
   static ms_nHeaderTypeCounter = 0; // dword_4AF338
   static ms_tblSN2Obj = new Map<number, CClientSocket>();
 

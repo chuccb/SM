@@ -47,12 +47,57 @@ export class CGameSessionTable {
     }
   }
 
-  /** CBaseSessionTable::SendPacketIntoSession — to one session's members. */
-  SendPacketIntoSession(idx: number, serial: number, packet: CSendPacket): void {
+  /**
+   * CGameSessionTable::SendPacket (FxServer.exe.c:37954) — the CBaseSessionTable
+   * vtbl+4 primitive: lock the slot's lock group, then send to the room's
+   * members when the room is live and the serial matches the room's.
+   */
+  SendPacket(idx: number, serial: number, packet: CSendPacket): void {
     const session = this.m_apGameSession[idx];
     if (!session || session.fValid === 0 || session.m_nSerialNo !== serial) return;
     for (const user of session.m_rgPlayer) {
       if (user && user.GetSessionSerialNo() === serial) user.m_pSocket?.SendPacket(packet);
+    }
+  }
+
+  /**
+   * CGameSessionTable::SendPacketIntoPracticeSession (FxServer.exe.c:38207) —
+   * the same primitive over the second table half (+1320, the practice rooms)
+   * behind CPracticeSession::LockPracticeSessions.
+   */
+  SendPacketIntoPracticeSession(idx: number, serial: number, packet: CSendPacket): void {
+    const session = this.m_apPracticeSession[idx];
+    if (!session || session.fValid === 0 || session.m_nSerialNo !== serial) return;
+    for (const user of session.m_rgPlayer) {
+      if (user && user.GetSessionSerialNo() === serial) user.m_pSocket?.SendPacket(packet);
+    }
+  }
+
+  /**
+   * CGameSessionTable::SendPacketIntoSession (FxServer.exe.c:38441) over
+   * CBaseSessionTable::SendPacketIntoSession (FxServer.exe.c:31355) — resolve
+   * the socket's room slot and send to that room's members.  A practice-stage
+   * socket (+468 == 6) routes into the practice table half; both the
+   * null-socket and the (WORD)-1-slot shapes report the original errors.
+   */
+  SendPacketIntoSession(socket: CClientSocket | null, packet: CSendPacket): void {
+    if (socket === null) {
+      console.error("[GS] !pSocket, CBaseSessionTable::SendPacketIntoSession");
+      return;
+    }
+    const idx = socket.GetUser(0)!.GetSessionIdx();
+    if (socket.m_nPoolType === 6) {
+      if (idx === 0xffff) {
+        console.error("[GS] wSessionIdx == (WORD)-1, CGameSessionTable::SendPacketIntoSession");
+        return;
+      }
+      this.SendPacketIntoPracticeSession(idx, socket.GetUser(0)!.GetSessionSerialNo(), packet);
+    } else {
+      if (idx === 0xffff) {
+        console.error("[GS] wSessionIdx == (WORD)-1, CBaseSessionTable::SendPacketIntoSession");
+        return;
+      }
+      this.SendPacket(idx, socket.GetUser(0)!.GetSessionSerialNo(), packet);
     }
   }
 

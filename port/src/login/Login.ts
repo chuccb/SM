@@ -134,6 +134,13 @@ export class CUser {
 
 /** CClientSocket — one connected game client (CxLogin.exe.c:9880). */
 export class CClientSocket extends CPacketSocket {
+  /** CClientSocket::OnReceiveCompletionPacket guards the client links only
+   *  (CxLogin.exe.c:9753). */
+  m_fReceiveFloodGuard = true;
+
+  protected ReportReceiveOverflow(): void {
+    console.error(`Socket receive buffer overflow(${this.bunSocket?.remoteAddress ?? ""}), disconnected.`);
+  }
   static ms_nLocalSerialNo = 1;
   /** dword_49F968 — the per-connection header-type counter. It starts at 0
    *  and is separate from the serial: the first client connection gets
@@ -718,7 +725,11 @@ export function CheckVajinishi(ssn1: string, ssn2: string): [number, number] {
   return [adult, gender];
 }
 
-/** CDBMan::InitUser (CxLogin.exe.c:11337) — returns 0 ok, else the failure code. */
+/** CDBMan::InitUser (CxLogin.exe.c:11337) — returns 0 ok, else the failure
+ *  code (3 = the stored proc's -1: invalid id/password).  The original also
+ *  runs an inert _mbscmp(password, "Invalid User Id and Password!") whose
+ *  result no instruction reads (0040B3D3: call __mbscmp; next consumer of
+ *  eax never comes) — a dev leftover with no behavior to port. */
 function CDBMan_InitUser(db: CDBMan, user: CUser, id: string, pw: string): number {
   const res = db.prCAAuthUser(id, EncodePassword(pw));
   if (res.retval === -1) return 3;

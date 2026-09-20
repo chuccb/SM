@@ -180,6 +180,10 @@ export async function main(cfgFile: string, dbDir: string): Promise<void> {
   let flushTableCount = 0; // dword_4AF67C
   let flushUserCount = 0; // dword_4AF688
   let flushGuildCount = 0; // dword_4AF68C
+  // NB: the original's other timer thread (CTimerThreadTimeCritical::Proc)
+  // additionally runs CheckCPUUsage every 3rd iteration — a host-side PDH
+  // monitor logging "Abnormal CPU Usage" at >=80% (FxServer.exe.c:25855).
+  // It touches no client-visible state and has no Bun equivalent.
   setInterval(() => {
     connectPool.OnTimer(++poolOnTimerCount);
     channelPool.OnTimer(++poolOnTimerCount); // shared counter: +2 per tick → 120 s sweep
