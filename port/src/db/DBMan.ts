@@ -253,7 +253,10 @@ CREATE TABLE IF NOT EXISTS FxGuildAccount (
   Banner       INTEGER NOT NULL DEFAULT 0,
   DBNum        INTEGER NOT NULL DEFAULT 0,
   NumOfMembers INTEGER NOT NULL DEFAULT 1,
-  SecurityPwd  TEXT NOT NULL DEFAULT ''
+  SecurityPwd  TEXT NOT NULL DEFAULT '',
+  /** the guild-mark revision prGetGuildSimpleInfo2 hands the game server
+   *  (CChannelPool::OnGuildMarkRevision bumps it live, packet 38). */
+  MarkRevision INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS FxGuildDynamic (
   SN    INTEGER PRIMARY KEY,

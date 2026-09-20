@@ -25,7 +25,8 @@ import { SVRCLASS_UTIL, MC_ReceivedPacket } from "../src/lib/S2S.ts";
 import { CSendPacket, CipherDegree } from "../src/core/Packet.ts";
 import { CA_CONFIG_SEED_IP } from "../src/db/CAConfigBak.ts";
 import { SimpleStreamEncrypt3, SimpleStreamDecrypt3 } from "../src/core/StreamCipher.ts";
-import { mkdirSync, rmSync } from "node:fs";
+import { copyFileSync, mkdirSync, rmSync } from "node:fs";
+import { Database } from "bun:sqlite";
 import { inflateSync } from "node:zlib";
 
 const DIR = import.meta.dir;
@@ -126,6 +127,11 @@ import { UpdateCRC8 } from "../src/gameserver/MTUDP.ts";
 
 let center: CxCenter;
 
+/** The type-77 guild channel boots as its own process (the six original
+ *  servers are six processes, and the second FXGS's CMainSystem singletons
+ *  must not share this one's). */
+let guildGsProc: Bun.Subprocess | null = null;
+
 let loginSN = 0;
 
 beforeAll(async () => {
@@ -150,6 +156,8 @@ beforeAll(async () => {
 });
 
 afterAll(() => {
+  guildGsProc?.kill();
+  guildGsProc = null; // a re-run must not see a dead handle
   if (!process.env.KEEP_DB) rmSync(DB_DIR, { recursive: true, force: true });
 });
 
@@ -298,6 +306,15 @@ describe("login flow", () => {
     // (FXGS, game0.cfg) takes the fake's place: same identification bytes
     // (class 10, idx 0, game version 7, client version 3).
     await gameMain(DATA_DIR + "/game.cfg", DB_DIR);
+    // ...and the type-77 guild channel (game3.cfg → FXGSPort3 17888) as a
+    // real second process, so the guild strategy runs against the same
+    // center, LS and DB the other describes use.
+    copyFileSync(DIR + "/game3.cfg", DATA_DIR + "/game77.cfg");
+    guildGsProc = Bun.spawn(
+      ["bun", "run", "src/main.ts", "--only", "game", "--cfg", DATA_DIR + "/game77.cfg", "--db", DB_DIR],
+      { cwd: DIR + "/..", stdout: "ignore", stderr: "ignore" },
+    );
+    for (let t = 0; t < 100 && !center.GetSvr(10, 3)?.socket; t++) await Bun.sleep(100);
     await Bun.sleep(400);
   });
 
@@ -341,7 +358,7 @@ describe("login flow", () => {
     const cnt = r2(p13);
     expect(cnt).toBe(5);
     expect(r2(p13)).toBe(0); // channel 0: the fake GS attached, 0 users
-    for (let i = 1; i < cnt; i++) expect(r2(p13)).toBe(65535); // -1: no GS yet
+    for (let i = 1; i < cnt; i++) expect(r2(p13)).toBe(i === 3 ? 0 : 65535); // 3 = T77 attached, empty; the rest -1: no GS
     const p14 = await client.recv(14);
     expect(r1(p14)).toBe(5);
     for (let i = 0; i < 5; i++) {
@@ -511,7 +528,7 @@ describe("game server entry flow (FXGS)", () => {
     const cnt = r2(p13);
     expect(cnt).toBe(5);
     expect(r2(p13)).toBe(1); // channel 0 = this game server, 1 user
-    for (let i = 1; i < cnt; i++) expect(r2(p13)).toBe(65535);
+    for (let i = 1; i < cnt; i++) expect(r2(p13)).toBe(i === 3 ? 0 : 65535); // channel 3 = T77, empty
     const p14 = await gs.recv(14);
     if (process.env.P14_DEBUG) console.error("p14:", Array.from(p14.buf).map((b) => b.toString(16)).join(" "), "off", p14.off);
     expect(r1(p14)).toBe(5);
@@ -638,8 +655,14 @@ function encStrInto(e: Encoder, s: string, key: number): void {
 
 // ==================== room flow (CGameSession 96..116) ====================
 
-/** Register + log in through the LS, then walk the full GS entry path. */
-async function enterGame(name: string): Promise<{ ls: TestClient; gs: TestClient; sn: number }> {
+/** Register + log in through the LS, then walk the full GS entry path.
+ *  opts.gsIdx/gsPort pick the game server (the packet-6 E4 is the
+ *  small-loaded index the center routes by), guildSn is the guild serial the
+ *  GS entry reads, mid runs between the LS login and the GS connect. */
+async function enterGame(
+  name: string,
+  opts: { gsIdx?: number; gsPort?: number; guildSn?: number; mid?: () => void | Promise<void> } = {},
+): Promise<{ ls: TestClient; gs: TestClient; sn: number }> {
   const ls = new TestClient();
   await ls.connect(13838, { sndDeg: CipherDegree.kPacketEncryptedCRC8, rcvDeg: CipherDegree.kPacketEncryptedCRC8 });
   ls.pending.length = 0;
@@ -673,9 +696,10 @@ async function enterGame(name: string): Promise<{ ls: TestClient; gs: TestClient
   rstr(p3);
   expect(r1(p3)).toBe(1);
   const sn = r4(p3);
+  await opts.mid?.();
   ls.send(6, (e) => {
     e.u8(10);
-    e.u32be(0);
+    e.u32be(opts.gsIdx ?? 0);
     e.u16(7);
   });
   const p6 = await ls.recv(6);
@@ -683,17 +707,17 @@ async function enterGame(name: string): Promise<{ ls: TestClient; gs: TestClient
   expect(r1(p6)).toBe(10); // svr type
   r4(p6); // svr idx
   r4(p6); // ip
-  expect(r2(p6)).toBe(14848);
+  expect(r2(p6)).toBe(opts.gsPort ?? 14848);
   const gs = new TestClient();
   // the GS arms degree 2 in its accept path (FxServer.exe.c:18965) before the
     // first receive, so the client's own frames are SES3+CRC8 from the start
-    await gs.connect(14848, { sndDeg: CipherDegree.kPacketEncryptedCRC8, rcvDeg: CipherDegree.kPacketEncryptedCRC8 });
+    await gs.connect(opts.gsPort ?? 14848, { sndDeg: CipherDegree.kPacketEncryptedCRC8, rcvDeg: CipherDegree.kPacketEncryptedCRC8 });
   await gs.recv(0);
   gs.send(7, (e) => {
     e.u8(1);
     e.str(name);
     e.u32be(sn);
-    e.u32be(0); // guild
+    e.u32be(opts.guildSn ?? 0); // guild
     e.u32be(0x11221122);
     e.u32be(0);
     e.u8(1);
@@ -1426,5 +1450,96 @@ describe("guild strategy (type 77)", () => {
     expect(calls[0]).toEqual([7, 45, 1, 0, 0]); // sn, exp, win, draw, lose
     expect(guild.m_fModified).toBe(0); // ResetDynamicInfo ran
     expect(guild.m_nGames).toBe(0);
+  });
+});
+
+// ==================== guild channel end to end (T77, game3.cfg) ====================
+
+describe("guild channel end to end (T77, the game3.cfg subprocess)", () => {
+  test("the guild login fills the roster 105 and the room burst ends in the double 88", async () => {
+    // the guild row the account portal would have created
+    const guildDb = new Database(DB_DIR + "/Guild.db");
+    guildDb.run("INSERT OR IGNORE INTO FxGuildAccount (sn, Name, MasterID, MarkRevision) VALUES (7777, 'e2eGuild', 'tester77', 3)");
+    guildDb.run("INSERT OR IGNORE INTO FxGuildDynamic (SN, Exp, Win, Draw, Lose) VALUES (7777, 0, 0, 0, 0)");
+    guildDb.close();
+
+    // tester78 (guild-less) parks in the T77 lobby to watch the timer's 85
+    const { gs: lobby } = await enterGame("tester78", { gsIdx: 3, gsPort: 17888 });
+    lobby.send(83, (e) => {});
+    await lobby.recv(15);
+
+    // tester77 carries the guild: the account row is stamped between the LS
+    // login and the GS entry (the GS reads GuildSn once, in packet 7's
+    // prGetUserInfo, and CGuildTable::Insert loads the row from Guild.db).
+    const { gs } = await enterGame("tester77", {
+      gsIdx: 3,
+      gsPort: 17888,
+      guildSn: 7777,
+      mid: () => {
+        // 't' shards to GetUserHashNo('t')%6 = 2 → UserInfo02.db
+        const info = new Database(DB_DIR + "/UserInfo02.db");
+        info.run("UPDATE FxUserAccount SET GuildSn = 7777 WHERE ID = 'tester77'");
+        info.close();
+      },
+    });
+
+    // the guild strategy is bound (MainSystem+8 == 77), so the room create's
+    // roster burst is 105 + 107×7 + 112 + the strategy's 88 + the tail re-send
+    gs.send(80, (e) => {
+      e.str("guild room"); // title
+      e.str(""); // password
+      e.u8(0); // game type
+      e.u8(1); // one player
+      e.u8(0); // bomber select
+    });
+    const res = await gs.recv(80);
+    expect(r1(res)).toBe(0); // created
+    expect(r2(res)).toBe(0); // room idx 0
+    expect(r4(res)).toBeGreaterThan(0);
+    const p105 = await gs.recv(105);
+    expect(r1(p105)).toBe(0); // slot 0
+    expect(r4(p105)).toBeGreaterThan(0); // the global serial
+    expect(r1(p105)).toBe(1); // self
+    expect(r1(p105)).toBe(0); // community
+    expect(r1(p105)).toBe(255); // no category-4 deco
+    const state = rbuf(p105, 3);
+    expect(state[0]).toBe(0x02); // chief bit
+    expect(state[1]).toBe(0); // bomber 0
+    expect(state[2]).toBe(0); // color 0
+    expect(rstr(p105)).toBe("tester77");
+    r1(p105); // gender
+    r2(p105); // look level
+    r4(p105); // premium svr idx
+    expect(r4(p105)).toBe(7777); // guild sn (prGetUserInfo read the stamped row)
+    expect(r2(p105)).toBe(3); // the seeded mark revision
+    for (let i = 0; i < 7; i++) await gs.recv(107);
+    await gs.recv(112); // the Make's buffer first goes out as the plain 112
+    const p88a = await gs.recv(88);
+    expect(r4(p88a)).toBe(1); // one guild seated
+    expect(r4(p88a)).toBe(7777); // its serial
+    expect(r4(p88a)).toBe(1); // players
+    expect(r4(p88a)).toBe(0); // wins
+    const p88b = await gs.recv(88); // the tail PutPacket resends the rewritten buffer
+    expect(r4(p88b)).toBe(1);
+    expect(r4(p88b)).toBe(7777);
+    expect(r4(p88b)).toBe(1);
+    expect(r4(p88b)).toBe(0);
+
+    // the lobby watcher gets the timer's 85 with the guild colour-group append
+    const p85 = await lobby.recv(85, 3000);
+    expect(r2(p85)).toBe(0); // room idx
+    r4(p85); // the room serial
+    expect(rstr(p85)).toBe("guild room");
+    r1(p85); // hasPW
+    r1(p85); // game type
+    r1(p85); // cur
+    r1(p85); // max
+    // EncodeGuildSessionSimpleInfo: [E4 colours][per colour [E4 size][size×E4 serial]]
+    expect(r4(p85)).toBe(1); // one distinct seated colour
+    expect(r4(p85)).toBe(1); // the colour-0 group holds one guild
+    expect(r4(p85)).toBe(7777); // the guild serial
+
+    gs.close();
+    lobby.close();
   });
 });

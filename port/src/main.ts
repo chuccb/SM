@@ -8,6 +8,7 @@
  *        0.0.0.0, so this covers multi-host deployments)
  *   --cfg <file> overrides the per-piece cfg (game/shop default to the
  *        shipped FXGS_00{idx}.cfg / FXSS_00{idx}.cfg, --idx picks the file)
+ *   --db <dir>   overrides the SQLite directory (default port/db)
  */
 import { CServerConfig } from "./core/Config.ts";
 import { PacketLog } from "./core/PacketLog.ts";
@@ -24,9 +25,6 @@ const only = process.argv.includes("--only") ? process.argv[process.argv.indexOf
 if (process.argv.includes("--ip")) {
   CServerConfig.ms_strIpOverride = process.argv[process.argv.indexOf("--ip") + 1]!;
 }
-const dbDir = join(import.meta.dir, "..", "db");
-mkdirSync(dbDir, { recursive: true });
-
 // PacketLog (CA_PACKET_LOG) is off by default like every diagnostic; say so
 // once at boot so a silent trace is never mistaken for a broken one.
 if (!PacketLog.Enabled()) {
@@ -44,6 +42,11 @@ if (!PacketLog.Enabled()) {
 function resolveCfg(cfgFile: string): string {
   return isAbsolute(cfgFile) ? cfgFile : join(import.meta.dir, "..", cfgFile);
 }
+
+const dbDir = process.argv.includes("--db")
+  ? resolveCfg(process.argv[process.argv.indexOf("--db") + 1]!)
+  : join(import.meta.dir, "..", "db");
+mkdirSync(dbDir, { recursive: true });
 
 if (!only || only === "center") {
   const cfg = new CServerConfig();
