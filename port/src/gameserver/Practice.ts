@@ -166,7 +166,7 @@ export class CPracticeSession extends CGameSession {
    *  the room always empties with its owner. */
   DestroyPlayer(socket: CClientSocket, fSendReset: number): number {
     // CListSession::DestroyPlayer — CBaseSession::DestroyPlayer (:31250)
-    this.m_setSocket.delete(socket); // DeleteSocket
+    this.DeleteSocket(socket); // vtbl+68
     for (let i = 0; i < socket.GetUserCount(); i++) {
       const user = socket.GetUser(i);
       if (!user) continue;

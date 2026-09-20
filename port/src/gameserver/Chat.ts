@@ -13,7 +13,7 @@ import { CUserItemMan } from "./Rows";
 import { CGameSessionTable } from "./SessionTable";
 import { CCenterProcess, CMainSystem } from "./System";
 import { CGuildTable, CLocalUserTable } from "./Tables";
-import { CClientSocket, CUser } from "./User";
+import { CClientSocket, CUser, GetInfoStr } from "./User";
 
 // ============================ CChatPool ============================
 
@@ -23,7 +23,7 @@ export class CChatPool extends CUserPool {
   SendAll(packet: CSendPacket, fLobbyOnly: number): void {
     for (const socket of [...this.m_setSocket]) {
       if (!socket.m_bConnected) {
-        console.error(`[GS] CChatPool::FlushAll:: Not connected socket. Post Close Packet.`);
+        console.error(`[GS] CChatPool::FlushAll:: Not connected socket (${GetInfoStr(socket)}). Post Close Packet.`);
         socket.PostClosePacket();
         this.m_setSocket.delete(socket);
         continue;
@@ -484,9 +484,25 @@ export class CChannelPool extends CChatPool {
   /** CChannelPool::OnEnterChannelStage — packet 16. */
   OnEnterChannelStage(socket: CClientSocket): void {
     if (socket.m_nPoolType === 3) {
-      console.error(
-        `[GS] Front-stage user want to enter channel stage. Disconnect. CurrentPoolType=${socket.m_nPoolType} [${socket.GetUser(0)?.GetName() ?? "NULL"}]`,
-      );
+      const name = socket.GetUser(0)?.GetName() ?? "NULL";
+      console.error(`[GS] Front-stage user want to enter channel stage. Disconnect. CurrentPoolType=${socket.m_nPoolType} [${name}]`);
+      const idx = socket.m_nSessionIdx & 0xffff;
+      console.error(`[GS]     User[${name}], Game Session Slot Index: [${idx > 0x7fff ? idx - 0x10000 : idx}]. CurrentPoolType=${socket.m_nPoolType}.`);
+      if (idx > 998) {
+        // the seat slot doubles as the stage tag: 0xFFFF lobby, 0xFFFE connecting
+        if (idx === 0xffff) console.error("[GS]     Lobby player sent session packet (OnEnterChannelStage).");
+        else if (idx === 0xfffe) console.error("[GS]     Connecting player sent session packet (OnEnterChannelStage).");
+        else console.error("[GS]     Invalid game session slot index (OnEnterChannelStage).");
+      } else {
+        // a seat still registered: dump the room (CBaseSession vtbl+20) or
+        // report the mismatch, then run the table's DestroyPlayer anyway
+        CGameSessionTable.LockBaseSessions(idx);
+        const session = CGameSessionTable.ms_pInstance!.m_apGameSession[idx]!;
+        if (session.fValid !== 0 && session.m_nSerialNo === socket.m_nSessionSerialNo) session.DumpLog();
+        else console.error("[GS]       - illegal game session.");
+        CGameSessionTable.UnlockBaseSessions(idx);
+        CGameSessionTable.ms_pInstance!.DestroyPlayer(socket, 0);
+      }
       socket.PostClosePacket();
       return;
     }

@@ -975,6 +975,12 @@ export class CGameSession {
 
   // ---- leaving ----
 
+  /** CBaseSession::DeleteSocket (vtbl+68, FxServer.exe.c:30705) — the set
+   *  erase; erasing a socket that never joined reports. */
+  DeleteSocket(socket: CClientSocket): void {
+    if (!this.m_setSocket.delete(socket)) console.error("[GS] Try to delete Invalid Socket");
+  }
+
   /** CGameSession::DestroyPlayer — the full leave path (FxServer.exe.c:32692). */
   DestroyPlayer(socket: CClientSocket, fSendReset: number): number {
     let dissolve = false;
@@ -999,7 +1005,7 @@ export class CGameSession {
     // DeleteSocket (vtbl+68), DeleteAllUser (vtbl+52 — per user the vtbl+96
     // residency check then the virtual DeleteUser(slot); a non-resident
     // user reports), SendResetPlayer, socket +468 = 1.
-    this.m_setSocket.delete(socket);
+    this.DeleteSocket(socket);
     for (let i = 0; i < socket.GetUserCount(); i++) {
       const user = socket.GetUser(i);
       if (!user) continue;

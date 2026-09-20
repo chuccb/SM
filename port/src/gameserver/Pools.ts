@@ -12,7 +12,7 @@ import { CUserItemMan, PreInventory, UserInventory } from "./Rows";
 import { CGameSessionTable } from "./SessionTable";
 import { CCenterProcess, CMainSystem } from "./System";
 import { CGuildTable, CLocalUserTable } from "./Tables";
-import { CClientSocket, CUser } from "./User";
+import { CClientSocket, CUser, GetInfoStr } from "./User";
 import { CHANNEL_TYPE_GUILD, FxCLIENT_HASH_A, FxCLIENT_HASH_B, RTT_HASH, RTT_HASH_INV, RTT_MIN_INTERVAL, SOCKET_TIMEOUT } from "./Defs";
 
 // ============================ CUserPool (base) ============================
@@ -110,7 +110,7 @@ export class CUserPool {
     let count = 0;
     for (const socket of [...this.m_setSocket]) {
       if (now - socket.m_dwIdleTime > SOCKET_TIMEOUT) {
-        console.error(`[GS] Disconnect timeout socket [${socket.GetUser(0)?.GetName() ?? "NULL"}]`);
+        console.error(`[GS] Disconnect timeout socket (${GetInfoStr(socket)})`);
         socket.PostClosePacket();
         count++;
       }

@@ -106,17 +106,43 @@ export class CUser {
   }
 
   /**
-   * CUser::CheckConnectingToSvr (CxCenter.exe.c:4151B0) — fails on a second
-   * request while still connecting, on re-entering the currently attached
-   * server, on unregistered types and on shutdown targets; the
-   * enterable-type-41 premium branch (authencode != 1) answers 2.
+   * CUser::CheckConnectingToSvr (CxCenter.exe.c:4151B0) — the full gate: a
+   * freed user, a second request while still connecting and a re-enter of
+   * the currently attached server all answer 0 with their report; the index
+   * must sit inside the type's configured count ("unregistered"); the
+   * target must have a live socket ("shutdown"); and the enterable-type-41
+   * premium branch answers 2 unless the user carries the LS premium ticket.
    */
-  CheckConnectingToSvr(nServerType: number, SmallLoadedSvrIdx: number): number {
-    if (this.fFree !== 0) return 0; // Set-freed user
-    if (this.nConnectingType !== -1) return 0; // "connect twice"
-    if (this.nSvrIdx === SmallLoadedSvrIdx && this.nChannel === nServerType) return 0; // same server again
-    if (nServerType !== SVRCLASS_LOGIN && nServerType !== SVRCLASS_GAME && nServerType !== SVRCLASS_SHOP) return 0;
-    return 1;
+  CheckConnectingToSvr(man: CxCenter, nServerType: number, SmallLoadedSvrIdx: number): number {
+    if (this.fFree !== 0) {
+      console.error("[Center] Set-freed user try to connect to selected server");
+      return 0;
+    }
+    if (this.nConnectingType !== -1) {
+      console.error("[Center] User try to connect to selected server twice");
+      return 0;
+    }
+    if (this.nSvrIdx === SmallLoadedSvrIdx && this.nChannel === nServerType) {
+      console.error("[Center] User try to connect to currect connected server again");
+      return 0;
+    }
+    const count = man.GetSvrNo(nServerType);
+    if (
+      SmallLoadedSvrIdx < 0 ||
+      (nServerType !== SVRCLASS_LOGIN && nServerType !== SVRCLASS_GAME && nServerType !== SVRCLASS_SHOP) ||
+      SmallLoadedSvrIdx >= count
+    ) {
+      console.error("[Center] User try to connect to unregistered server");
+      return 0;
+    }
+    const svr = man.GetSvr(nServerType, SmallLoadedSvrIdx);
+    if (!svr || svr.socket === null) {
+      console.error("[Center] User try to connect to shutdown server");
+      return 0;
+    }
+    // the enterable-type-41 premium gate: CUser+56 is the LS premium ticket
+    if (svr.nType !== 41 || this.fSimpleInfoModified === 1) return 1;
+    return 2;
   }
 
   /** CUser::SetSvrIdx (CxCenter.exe.c:21164) — move the user and the
@@ -144,12 +170,22 @@ export class CUser {
     this.nConnectStamp = Date.now() & 0x7fffffff;
   }
 
-  /** CUser::CheckConnectionEstablished — the connecting state must match. */
+  /**
+   * CUser::CheckConnectionEstablished (CxCenter.exe.c:415570) — the
+   * connecting state must match the server that reported in; SetConnecting
+   * already moved nChannel/nSvrIdx, so the match reads the live fields.
+   */
   CheckConnectionEstablished(nServerType: number, SmallLoadedSvrIdx: number): number {
-    if (this.fFree !== 0) return 0;
-    if (this.nConnectingType !== -1 && this.nConnectingType === nServerType && this.nConnectingIdx === SmallLoadedSvrIdx) {
-      return 1;
+    if (this.fFree !== 0) {
+      console.error("[Center] Set-Freed user connected to server");
+      return 0;
     }
+    if (this.nConnectingType !== -1) {
+      if (nServerType === this.nChannel && SmallLoadedSvrIdx === this.nSvrIdx) return 1;
+      if (SmallLoadedSvrIdx !== this.nSvrIdx) console.error("[Center] User connected to server mismatched");
+      return 0;
+    }
+    console.error("[Center] User who is not connection state, try to notify connection established message");
     return 0;
   }
 
@@ -234,6 +270,20 @@ export class CenterClientSocket extends CPacketSocket {
   protected ReportPutError(err: EnSocket): void {
     if (err === enSocket.kioNotConnected) console.error("Not-connected local socket tried to put packet.");
     else if (err === enSocket.kioInvalidPacket) console.error("tried to send invalid( =\tNULL ) packet to local socket");
+  }
+
+  /** CLocalSocket::GetPacket's local-link family, center side (CxCenter.exe.c:14936). */
+  protected ReportInvalidPacketLine(addr: string): void {
+    console.error(`Invalid( = NULL ) packet received from local socket, close connection: [${addr}]`);
+  }
+  protected ReportTooLongPacketLine(addr: string, id: number): void {
+    console.error(`Too long packet length read from local socket, close connection: [${addr}], packet id[${id}]`);
+  }
+  protected ReportSequencingErrorLine(addr: string): void {
+    console.error(`Error in local packet sequencing, close connection: [${addr}]`);
+  }
+  protected ReportDecodingErrorLine(addr: string): void {
+    console.error(`Error in local packet decoding(Maybe CRC Mismatch), close connection: [${addr}]`);
   }
   private pending = new Uint8Array(0);
   private fGreeted = false;
@@ -387,6 +437,14 @@ export class CxCenter {
       port,
       socket: {
         open: (t) => {
+          // CxCenter.exe.c:14323 — only hosts whose address sits in the
+          // server table get past accept
+          const addr = (t as Bun.Socket<any>).remoteAddress ?? "";
+          if (!this.servers.some((s) => s.strIP === addr)) {
+            console.error(`[Center] Unregistered host tried to connect[${addr}]`);
+            t.end();
+            return;
+          }
           const sock = new CenterClientSocket(this);
           this.clientSockets.set(t, sock);
           sock.bunSocket = t as Bun.Socket<any>;
@@ -651,6 +709,7 @@ export class CxCenter {
     u.SetFree(this);
     this.serialTable.delete(u.nSID);
     this.userTable.delete(u.m_strName);
+    console.log(`[Center] Delete user by utilserver\`s rerquest[${name}].`);
   }
 
   /**
@@ -806,13 +865,9 @@ export class CxCenter {
     let result = 0;
     const users: (CUser | undefined)[] = serials.map((s) => this.serialTable.get(s));
     if (users.every((u) => u !== undefined && u.nSvrIdx === owner.nSvrIdx)) {
-      result = 1;
-      for (const u of users) {
-        if (u!.CheckConnectingToSvr(serverType, smallLoadedSvrIdx) !== 1) {
-          result = 0;
-          break;
-        }
-      }
+      // the official keeps the LAST user's CheckConnectingToSvr result — a
+      // premium-needed 2 on the final serial rides out as the answer
+      for (const u of users) result = u!.CheckConnectingToSvr(this, serverType, smallLoadedSvrIdx);
       if (result === 1) for (const u of users) u!.SetConnectingToSvr(serverType, smallLoadedSvrIdx, this);
     }
     const packet = new CSendPacket(CM_ReceivedPacket.OnCenterResConnectToSvr);
@@ -985,7 +1040,10 @@ export class CxCenter {
   /** CLocalServerMan::OnDisconnect (CxCenter.exe.c:14489). */
   OnDisconnect(sock: CenterClientSocket): void {
     const owner = sock.owner;
-    if (!owner) return;
+    if (!owner) {
+      console.error(`[Center] Local server[${sock.bunSocket?.remoteAddress ?? ""}] disconnected while identifying`);
+      return;
+    }
     console.log(`[Center] End of file, close connection(${owner.m_strName}:${owner.strIP})`);
     owner.socket = null;
     if (this.m_mapConnNo.has(owner.nServerClass)) {
@@ -1044,6 +1102,21 @@ export class MonitorSocket extends CPacketSocket {
   protected ReportPutError(err: EnSocket): void {
     if (err === enSocket.kioNotConnected) console.error("Not-connected monitor socket tried to put packet.");
     else if (err === enSocket.kioInvalidPacket) console.error("tried to send invalid( =\tNULL ) packet to local socket");
+  }
+
+  /** CMonitorSocket::GetPacket's failure family (CxCenter.exe.c:16236) — the
+   *  local-link wording again. */
+  protected ReportInvalidPacketLine(addr: string): void {
+    console.error(`Invalid( = NULL ) packet received from local socket, close connection: [${addr}]`);
+  }
+  protected ReportTooLongPacketLine(addr: string, id: number): void {
+    console.error(`Too long packet length read from local socket, close connection: [${addr}], packet id[${id}]`);
+  }
+  protected ReportSequencingErrorLine(addr: string): void {
+    console.error(`Error in local packet sequencing, close connection: [${addr}]`);
+  }
+  protected ReportDecodingErrorLine(addr: string): void {
+    console.error(`Error in local packet decoding(Maybe CRC Mismatch), close connection: [${addr}]`);
   }
 
   constructor(private center: CxCenter) {

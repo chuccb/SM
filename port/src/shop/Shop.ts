@@ -1246,6 +1246,21 @@ export class CBillingSocketTw extends CPacketSocket {
     if (err === enSocket.kioNotConnected) console.error("Not-connected Billing socket TW tried to put packet.");
     else if (err === enSocket.kioInvalidPacket) console.error("tried to send invalid( =\tNULL ) packet to local socket");
   }
+
+  /** CBillingSocketTw::CheckResult's billing family (FxShop.exe.c:3739) —
+   *  the too-long line carries no packet id in this build. */
+  protected ReportInvalidPacketLine(addr: string): void {
+    console.error(`Invalid( = NULL ) packet received from billing socket, close connection: [${addr}]`);
+  }
+  protected ReportTooLongPacketLine(addr: string, _id: number): void {
+    console.error(`Too long packet length read from billing socket, close connection: [${addr}]`);
+  }
+  protected ReportSequencingErrorLine(addr: string): void {
+    console.error(`Error in billing packet sequencing, close connection: [${addr}]`);
+  }
+  protected ReportDecodingErrorLine(addr: string): void {
+    console.error(`Error in local packet decoding(Maybe CRC Mismatch), close connection: [${addr}]`);
+  }
   constructor() {
     super(CPacketSocket.dwRcvBufferSize, CPacketSocket.dwSndBufferSize, {
       onPacket: (_sock, packet) => CBillingProcess.ms_pInstance?.OnPacket(packet),

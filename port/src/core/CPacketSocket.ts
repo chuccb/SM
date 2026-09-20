@@ -353,23 +353,31 @@ export abstract class CPacketSocket {
 
   /** CClientSocket::GetPacket's error reports (CxLogin.exe.c:9484) — the
    *  original logs the exact failure and the full cipher state before
-   *  closing; the port reproduces those lines verbatim. */
+   *  closing; the port reproduces those lines verbatim.  Each line names its
+   *  link family — the S2S local links and the billing socket have their own
+   *  wordings (CLocalSocket::GetPacket, CMonitorSocket::GetPacket,
+   *  CBillingSocketTw::CheckResult) and ride the overrides below. */
   protected ReportGetPacketError(err: EnSocket, packet: CReceivedPacket): void {
     const addr = this.bunSocket?.remoteAddress ?? "";
+    const id = packet.Decode1();
     if (err === enSocket.kioInvalidPacket) {
-      console.error(`Invalid( = NULL ) packet received, close connection: [${addr}]`);
+      this.ReportInvalidPacketLine(addr);
     } else if (err === enSocket.kioTooLongPacket) {
-      console.error(`Too long packet length read, close connection: [${addr}], packet id[${packet.Decode1()}]`);
+      this.ReportTooLongPacketLine(addr, id);
     } else if (err === enSocket.kioSequencingError) {
-      console.error(`Error in client packet sequencing, close connection: [${addr}]`);
+      this.ReportSequencingErrorLine(addr, packet);
     } else if (err === enSocket.kioDecodingError) {
-      console.error(`Error in client packet decoding(Maybe CRC Mismatch), close connection: [${addr}]`);
+      this.ReportDecodingErrorLine(addr);
+    } else {
+      // other codes (kioNotConnected after a close, …) hit the original's
+      // `default: break` — FxServer.exe.c:9504 returns silently, so the port
+      // must not invent an extra "Error N in packet pump" line here.
+      return;
     }
-    // other codes (kioNotConnected after a close, …) hit the original's
-    // `default: break` — FxServer.exe.c:9504 returns silently, so the port
-    // must not invent an extra "Error N in packet pump" line here.
+    // the official +- dump rides the sequencing path only (FxServer.exe.c:9478);
+    // the port prints it on every failure — an ops aid with zero client delta.
     console.error(
-      "    +- header type=%d, base=%d(r)/%d(s), modif=%d, seq=%d(r)/%d(s), deltaseq=%d(r), %d(s), header code=%d(r)/%d(s)",
+      "    +- header type=%d, base=%d(r)/%d(s), modif=%d, seq=%d(r)/%d(s), deltaseq=%d(r), %d(s), header code=%d(r)/%d(s), %d(packet)",
       this.m_nHeaderType,
       this.m_nHeaderCodeRcvBase,
       this.m_nHeaderCodeSndBase,
@@ -380,12 +388,27 @@ export abstract class CPacketSocket {
       this.m_nPacketSndSeqDelta,
       this.GetRcvHeaderCode(),
       this.GetSndHeaderCode(),
+      id,
     );
     // the frame bytes on any error path — the one datum that pins down a
     // foreign peer's cipher convention.
     console.error(
       `    +- rcv buffer (${this.m_nRcvCnt}B): ${Array.from(this.m_mbRcvBuffer.subarray(0, Math.min(this.m_nRcvCnt, 64))).map((x) => x.toString(16).padStart(2, "0")).join(" ")}`,
     );
+  }
+
+  /** the client-link family — every server's CClientSocket wording. */
+  protected ReportInvalidPacketLine(addr: string): void {
+    console.error(`Invalid( = NULL ) packet received, close connection: [${addr}]`);
+  }
+  protected ReportTooLongPacketLine(addr: string, id: number): void {
+    console.error(`Too long packet length read, close connection: [${addr}], packet id[${id}]`);
+  }
+  protected ReportSequencingErrorLine(addr: string, _packet: CReceivedPacket): void {
+    console.error(`Error in client packet sequencing, close connection: [${addr}]`);
+  }
+  protected ReportDecodingErrorLine(addr: string): void {
+    console.error(`Error in client packet decoding(Maybe CRC Mismatch), close connection: [${addr}]`);
   }
 
   /** CServerSocket::OnReceiveCompletionPacket — drain every complete packet. */

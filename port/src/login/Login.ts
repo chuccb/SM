@@ -741,7 +741,15 @@ export function CheckVajinishi(ssn1: string, ssn2: string): [number, number] {
  *  result no instruction reads (0040B3D3: call __mbscmp; next consumer of
  *  eax never comes) — a dev leftover with no behavior to port. */
 function CDBMan_InitUser(db: CDBMan, user: CUser, id: string, pw: string): number {
-  const res = db.prCAAuthUser(id, EncodePassword(pw));
+  let res: ReturnType<CDBMan["prCAAuthUser"]>;
+  try {
+    res = db.prCAAuthUser(id, EncodePassword(pw));
+  } catch {
+    // the original's ExecStoredProc < 0 path (CxLogin.exe.c:11433) — a DB
+    // layer failure answers code 1, distinct from the proc's own -1 → 3
+    console.error("[LS] Fail to open UserDB recordset");
+    return 1;
+  }
   if (res.retval === -1) return 3;
   user.strId = id;
   user.nFxexp = res.Fxexp;
@@ -773,7 +781,7 @@ function CDBMan_RegisterNewUser(
   identityNo: string,
   birthday: string,
 ): number {
-  return db.prCreateUser(
+  const ret = db.prCreateUser(
     id,
     name,
     EncodePassword(password),
@@ -788,9 +796,10 @@ function CDBMan_RegisterNewUser(
     passwordA,
     identityNo,
     birthday,
-  ) === 0
-    ? 0
-    : 1;
+  );
+  if (ret !== 0) return 1;
+  console.log(`[LS] New User [${id}] Created`); // CxLogin.exe.c:10767
+  return 0;
 }
 
 /** CCenterProcess — the LS side of the center link. */

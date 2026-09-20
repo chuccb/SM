@@ -314,6 +314,14 @@ export class CClientSocket extends CPacketSocket {
     if (err === enSocket.kioNotConnected) console.error(`Not-connected client [${addr}] socket tried to put packet.`);
     else if (err === enSocket.kioInvalidPacket) console.error("tried to send invalid( =\tNULL ) packet");
   }
+
+  /** CClientSocket::GetPacket's sequencing line carries the cipher detail
+   *  (FxServer.exe.c:9466) — only the GS build spells it out. */
+  protected ReportSequencingErrorLine(addr: string): void {
+    console.error(
+      `Error in client packet sequencing(m_nHeaderType, m_nPacketSeq = ${this.m_nHeaderType}, ${this.m_nHeaderCodeRcvBase}), close connection: [${addr}]`,
+    );
+  }
   static ms_nHeaderTypeCounter = 0; // dword_4AF338
   static ms_tblSN2Obj = new Map<number, CClientSocket>();
 

@@ -47,6 +47,21 @@ export class CLocalSocket extends CPacketSocket {
     console.error("LocalSocket send buffer overflow, terminate process");
   }
 
+  /** CLocalSocket::GetPacket's local-link family (FxServer.exe.c:19114,
+   *  CxCenter.exe.c:14936 — the monitor link shares the wording). */
+  protected ReportInvalidPacketLine(addr: string): void {
+    console.error(`Invalid( = NULL ) packet received from local socket, close connection: [${addr}]`);
+  }
+  protected ReportTooLongPacketLine(addr: string, id: number): void {
+    console.error(`Too long packet length read from local socket, close connection: [${addr}], packet id[${id}]`);
+  }
+  protected ReportSequencingErrorLine(addr: string): void {
+    console.error(`Error in local packet sequencing, close connection: [${addr}]`);
+  }
+  protected ReportDecodingErrorLine(addr: string): void {
+    console.error(`Error in local packet decoding(Maybe CRC Mismatch), close connection: [${addr}]`);
+  }
+
   /** CLocalSocket::PutPacket's wrapper switch (FxServer.exe.c:19180). */
   protected ReportPutError(err: EnSocket): void {
     if (err === enSocket.kioNotConnected) console.error("Not-connected local socket tried to put packet.");

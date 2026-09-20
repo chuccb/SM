@@ -4,7 +4,7 @@
  */
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { CServerConfig } from "../src/core/Config.ts";
-import { CxCenter } from "../src/center/Center.ts";
+import { CxCenter, CUser as CenterCUser } from "../src/center/Center.ts";
 import { main as loginMain } from "../src/login/Login.ts";
 import { inet_addr } from "../src/login/MultiServer.ts";
 import {
@@ -417,6 +417,15 @@ describe("login flow", () => {
     });
     const p3 = await client.recv(6);
     expect(r1(p3)).toBe(5); // not enterable
+    // out-of-range index: CheckConnectingToSvr's "unregistered" gate (the
+    // configured FXGSNumber is 5, so idx 99 misses the table)
+    client.send(6, (e) => {
+      e.u8(10);
+      e.u32be(99);
+      e.u16(7);
+    });
+    const p4 = await client.recv(6);
+    expect(r1(p4)).toBe(0); // refused
   });
 
   test("RequestDestoryService echoes the header type and disconnects nothing", async () => {
@@ -1339,6 +1348,51 @@ describe("audit regression: 82 auto-join, before-join ring, BomberAttr map", () 
     expect(attr.GetBombPower(0)).toBe(0); // +276 dword5
     expect(attr.IsValidSelectIdx(0)).toBe(true);
     expect(attr.IsValidSelectIdx(1)).toBe(true); // the random index (== total)
+  });
+
+  test("CUser::CheckConnectingToSvr (4151B0): the freed/twice/same/unregistered/shutdown/premium table", () => {
+    // three configured game servers: a normal one, a socket-less one and a
+    // type-41 premium one (the center.cfg T41 entry)
+    const svrs = [
+      { socket: {} as object, nType: 10 },
+      { socket: null, nType: 10 },
+      { socket: {} as object, nType: 41 },
+    ];
+    const man = {
+      GetSvrNo: (t: number) => (t === 10 ? 3 : 1),
+      GetSvr: (t: number, i: number) => (t === 10 ? (svrs[i] ?? null) : null),
+    } as unknown as CxCenter;
+    const mk = () => new CenterCUser("tester", 10, -0x80000000, 1, 1, 0x7f000001); // sentinel = not seated yet
+    expect(mk().CheckConnectingToSvr(man, 10, 0)).toBe(1); // the happy move
+    const freed = mk();
+    freed.fFree = 1;
+    expect(freed.CheckConnectingToSvr(man, 10, 0)).toBe(0); // Set-freed
+    const twice = mk();
+    twice.nConnectingType = 10;
+    expect(twice.CheckConnectingToSvr(man, 10, 0)).toBe(0); // still connecting
+    const same = mk();
+    same.nSvrIdx = 0;
+    same.nChannel = 10;
+    expect(same.CheckConnectingToSvr(man, 10, 0)).toBe(0); // the current server again
+    expect(mk().CheckConnectingToSvr(man, 10, 9)).toBe(0); // unregistered (idx >= count)
+    expect(mk().CheckConnectingToSvr(man, 10, 1)).toBe(0); // the socket-less server
+    expect(mk().CheckConnectingToSvr(man, 1, 0)).toBe(0); // GetSvr miss → shutdown
+    expect(mk().CheckConnectingToSvr(man, 10, 2)).toBe(2); // type-41 premium without the ticket
+    const ticketed = mk();
+    ticketed.fSimpleInfoModified = 1;
+    expect(ticketed.CheckConnectingToSvr(man, 10, 2)).toBe(1); // the ticket admits
+  });
+
+  test("CheckConnectionEstablished (415570): match/mismatch/not-connecting", () => {
+    const u = new CenterCUser("tester", 10, -0x80000000, 1, 1, 0x7f000001);
+    expect(u.CheckConnectionEstablished(10, 0)).toBe(0); // not connecting → report
+    u.nConnectingType = 10;
+    u.nChannel = 10;
+    u.nSvrIdx = 0;
+    expect(u.CheckConnectionEstablished(10, 0)).toBe(1); // the match
+    expect(u.CheckConnectionEstablished(10, 1)).toBe(0); // idx mismatch → report
+    u.fFree = 1;
+    expect(u.CheckConnectionEstablished(10, 0)).toBe(0); // Set-Freed
   });
 
   test("OnNotifyUDPLoss (185): the live :34093 relay — live target + seated asker → 54 [E1 seat]", () => {
