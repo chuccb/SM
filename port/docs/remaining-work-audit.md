@@ -13,11 +13,13 @@
 [A16 Taiwan billing transport](billing-transport-compatibility-fix.md)、
 [A06 NexonClub ID](nexonclub-id-compatibility-fix.md) 已修復各輪列明差異。
 A02 為保留需求，目前已列 A 待辦剩 **14 組**（不含 B 待全鏈追查工作）；兩份 probe 最新合計
-**38 個觀察／19 GAP／19 MATCH**。全套最新 **545 pass／0 fail**。
+**38 個觀察／12 GAP／26 MATCH**。全套最新 **591 pass／0 fail**。
 另完成 [GS ↔ Shop 轉服修復](shop-transfer-compatibility-fix.md)：回覆 opcode、Shop request 寬度與整組使用者檢查；新增雙向 TCP 回歸。
 另完成 [DigiQ 授權／餘額回覆](digiq-authorization-compatibility-fix.md) 的 224→341/342→209→301/302→203；後續新增[本機 billing](local-billing.md)，已驗證常駐商品／flat package 的原子結算及回 GS 的實際 inventory 回覆。
 本機政策不等於 native backend；A08/A17 其餘 gift/coupon/cart、receipt/reset、外部 settlement 等仍待修，這些工作仍保留待辦。
 另完成 [A20 GS 庫存／道具狀態／裝飾封包](user-inventory-compatibility-fix.md)，含原版道具登入／重入／201／71／105 TCP 回歸，三個 A20 probe 已為 MATCH。
+另修復 [爆炸頭／category 購買限制與遊戲金錢發貨期限](shop-purchase-compatibility-fix.md)：原價6034實際TCP購入、回GS與重新登入；A18三項、A19商城三項及A07已建模coupon reset probe轉MATCH。
+A07完整狀態、A18其餘交易／proc核對、A19預庫存與A13日期仍不宣稱完成，分組仍維持14。
 原版 CAItem 定義資料也已[安全匯入](caitem-catalog.md)；A15 其餘資料／遷移範圍不因此宣稱完成。
 工具鏈已固定為 npm 可用的最新預覽版，所有 src／test／tools 納入同一份 strict typecheck；
 GitHub 更晚的 Bun canary 下載失敗，未宣稱已升級，詳見 [工具鏈說明](../README.md)。
@@ -130,6 +132,9 @@ GitHub 更晚的 Bun canary 下載失敗，未宣稱已升級，詳見 [工具�
   其餘 gift／coupon 交易、A05 charge key、A07 Reset 或 A08／A17 handler。
 
 ### A07 · P1 · ResetTranxInfo 幾乎未實作
+
+**2026-09-21 部分修復：** [商城購入修復](shop-purchase-compatibility-fix.md) 清理目前已建模的 transaction／coupon／ID 字串、移除錯誤的2328映射，cash收尾呼叫接線已補；coupon reset probe為MATCH。
+原生數值／lists、全體caller生命週期仍未結案。以下保留原始清點。
 
 - TS：`Shop.ts::CUser.ResetTranxInfo` 只清 `m_nTranxSerial`。
 - 官方：`0041F170` 清理 TranxInfo 多個數值／字串／list，並清空 coupon

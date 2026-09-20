@@ -34,11 +34,11 @@ beforeAll(async () => {
   new CDBMan(DB_DIR); // create the schema files
   const db = new Database(DB_DIR + "/CAItem.db");
   db.run(`INSERT INTO FxItem (SN, Category, strAttr, nAttr1, nAttr2, nAttr3, strName, nLevel)
-          VALUES (300, 1, 'attr', 10, 0, 0, 'item300', 0)`);
+          VALUES (300, 13, 'attr', 10, 0, 0, 'item300', 0)`);
   db.run(`INSERT INTO FxStock (SN, Category, Name, ItemSN, Unit, DataFile, Price, FixedPrice,
              LimitLevel, LimitEx, ValidityPeriod, ValidityLevel, StringDesc, StringUsage,
              CardNo, MoneyType, zorder, IsValid)
-          VALUES (5000, 1, 'stock5000', 300, 1, '', 100, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1)`);
+          VALUES (5000, 13, 'stock5000', 300, 1, '', 100, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1)`);
   db.run("INSERT INTO FxString (SN, String) VALUES (1, 'HelloWorld')");
   db.close();
   const cfg = new Database(DB_DIR + "/CAConfig.db");
@@ -157,7 +157,7 @@ describe("shop flow", () => {
     const s = deStream(p200);
     expect(s.Decode2()).toBe(1); // one FxStock row
     expect(s.Decode4()).toBe(5000); // SN
-    expect(s.Decode1()).toBe(1); // Category
+    expect(s.Decode1()).toBe(13); // Category — dedicated limited-item fixture
     expect(s.DecodeStr()).toBe("stock5000");
     expect(s.Decode2()).toBe(0); // StringDesc
     expect(s.Decode2()).toBe(0); // StringUsage
@@ -205,7 +205,7 @@ describe("shop flow", () => {
     const p202 = await c.recv(202);
     expect(r2(p202)).toBe(1);
     expect(r4(p202)).toBe(300); // SN
-    expect(r1(p202)).toBe(1); // Category
+    expect(r1(p202)).toBe(13); // Category
     expect(rstr(p202)).toBe("attr"); // strAttr
     expect(r4(p202)).toBe(10); // nAttr1 — the purchase limit
     expect(r4(p202)).toBe(0);

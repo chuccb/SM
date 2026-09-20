@@ -141,7 +141,7 @@ function main(): void {
     Object.assign(limitedPart, { PackageSN: 2100, StockSN: 2101, Units: 1 });
     items.m_ltPackageMap.push(limitedPart);
     const limited = customer("auditlimit");
-    db.prAddInventoryShop(limited.user.GetName(), 211, 2101, 1, 30, 2000);
+    db.prAddInventoryShop(limited.user.GetName(), 211, 2101, 1, 30, 2000, true);
     pool.OnReqPurchaseStockItem(limited.user, 2100);
     report("A18.package-category13-limit", limited.replies.map((p) => p.Decode1()), [11]);
 

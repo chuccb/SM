@@ -31,7 +31,8 @@ import {
 import { CM_ReceivedPacket, CENTER_VERSION, CONN_HELLO_VERSION, MC_ReceivedPacket, SVRCLASS_SHOP, CLIENT_SOCKET_CENSUS_MS } from "../lib/S2S.ts";
 import { CDynInfoCalculator_GetLevel } from "../lib/LevelTable.ts";
 import { CItemMan, type ShopItem } from "./CItemMan.ts";
-import { NEXONCLUB_EMAIL_DOMAIN } from "./Defs.ts";
+import { ItemCategory, IsInventoryAddable } from "../lib/Item.ts";
+import { NEXONCLUB_EMAIL_DOMAIN, SHOP_PERMANENT_VALIDITY_DAYS, SHOP_PERMANENT_EXPIRY_LEVEL } from "./Defs.ts";
 import { CSendPacket as CBillingSendPacket, DecodeBillingString } from "./Packet.ts";
 import { CBillingSocketTw } from "./CBillingSocketTw.ts";
 import { usesLocalBilling } from "../Billing/Config.ts";
@@ -144,7 +145,7 @@ export class CUser {
   m_nBID = -1; // +3112 — CUser::GetBID/SetBID (the SID pair's second dword)
   m_strCoupon = ""; // +3008 — the client 219 coupon (CMainPool::OnRequestUseCoupon)
   m_strCouponId = ""; // +3032 — the client 219 registered id
-  m_strTranxInfo = ""; // +2900 — the per-user transaction string (ResetTranxInfo clears it)
+  m_strTranxInfo = ""; // +2904 — the per-user transaction string (ResetTranxInfo clears it)
   m_nUserAccountHiword = 0; // +152 = _USERACCOUNT+128 — the billing tail E2 (HIWORD)
   m_nCash = 0; // cached FxUserDynamic.Money (game currency, NOT billing cash)
   m_nBillingCash = 0; // +3104 — CUser::SetCash, independent of FxUserDynamic.Money
@@ -205,9 +206,13 @@ export class CUser {
     return end < 0 ? this.m_strNexonClubId : this.m_strNexonClubId.slice(0, end);
   }
 
-  /** CUser::ResetTranxInfo — clears the in-flight purchase state. */
+  /** CUser::ResetTranxInfo (0041F170), the native fields modeled here.
+   * Cart/connection guards and the separate local settlement marker are NOT
+   * reset by this native routine. Native transaction lists remain unmodeled. */
   ResetTranxInfo(): void {
-    this.m_nTranxSerial = 0;
+    this.m_strTranxInfo = "";
+    this.m_strCoupon = "";
+    this.m_strCouponId = "";
   }
 
   m_fTranxInProgress = 0; // user+20 — the billing-tranx guard (210/214/221/223)
@@ -216,7 +221,6 @@ export class CUser {
   m_nChargeKey = 0; // user+2280 — the OnVerifyKey charge key
   m_pChargeSocket: CWebSocket | null = null; // user+12 — bound by OnVerifyKey
   m_pPurchaseTranx: object | null = null; // port-side pending-purchase marker, not a native pointer offset
-  m_nTranxSerial = 0; // user+2328 — the billing correlation id
   m_anCart: { stockSN: number; cnt: number }[] = []; // user+2920 (2 dwords per entry)
   m_nCartCount = 0; // user+3052
 }
@@ -788,32 +792,33 @@ export class CMainPool extends CUserPool {
     }
     const id = user.GetName();
 
-    // package sub-items: every FxPackageMap row of this stock SN must pass
-    if (itemMan.GetPackageMapList(shopItem.SN).length !== 0) {
-      for (const pkg of itemMan.GetPackageMapList(shopItem.SN)) {
+    // FxShop 00415EA0 switches on the STOCK category. nAttr1 is an owned
+    // quantity limit only for category 13, not a universal maximum.
+    const packages = shopItem.Category === ItemCategory.Package ? itemMan.GetPackageMapList(shopItem.SN) : [];
+    if (shopItem.Category === ItemCategory.Package) {
+      for (const pkg of packages) {
         const sub = itemMan.GetShopItem(pkg.StockSN);
         if (!sub) {
           this.PurchaseError(user, 5, ERR_PURCHASE);
           user.ResetTranxInfo();
           return;
         }
-        const owned = this.db.prIsValidInventory(id, sub.ItemSN) + this.db.prIsValidPreInventory(id, sub.ItemSN);
-        if (owned !== 0 && sub.Category !== 1 && shopItem.Category !== 15 && sub.Category !== 13) {
+        const owned = (this.db.prIsValidInventory(id, sub.ItemSN) + this.db.prIsValidPreInventory(id, sub.ItemSN)) | 0;
+        // Native's category-15 exemption tests the PARENT, which is 11 in
+        // this branch. A category-15 CHILD is therefore not exempt.
+        if (owned !== 0 && sub.Category !== ItemCategory.Consumable && sub.Category !== ItemCategory.LimitedItem) {
           this.PurchaseError(user, 4, ERR_PURCHASE);
           user.ResetTranxInfo();
           return;
         }
         const ui = itemMan.GetUserItem(sub.ItemSN);
-        if (ui && owned >= ui.nAttr1 && sub.Category === 13) continue;
-        if (!ui || owned >= ui.nAttr1) {
-          this.PurchaseError(user, 11, formatLimit(ui?.nAttr1 ?? 0));
+        if (ui && sub.Category === ItemCategory.LimitedItem && owned >= ui.nAttr1) {
+          this.PurchaseError(user, 11, ERR_PURCHASE); // package branch has no formatted limit text
           user.ResetTranxInfo();
           return;
         }
       }
-    } else {
-      const owned =
-        this.db.prIsValidInventory(id, shopItem.ItemSN) + this.db.prIsValidPreInventory(id, shopItem.ItemSN);
+    } else if (shopItem.Category === ItemCategory.LimitedItem) {
       const ui = itemMan.GetUserItem(shopItem.ItemSN);
       if (!ui) {
         console.error(`[Shop] Invalid item sn (OnReqPurchaseStockItem) = ${shopItem.ItemSN}`);
@@ -821,12 +826,15 @@ export class CMainPool extends CUserPool {
         user.ResetTranxInfo();
         return;
       }
+      const owned = (this.db.prIsValidInventory(id, shopItem.ItemSN) + this.db.prIsValidPreInventory(id, shopItem.ItemSN)) | 0;
       if (owned >= ui.nAttr1) {
         this.PurchaseError(user, 11, formatLimit(ui.nAttr1));
         user.ResetTranxInfo();
         return;
       }
-      if (owned !== 0 && shopItem.Category !== 1 && shopItem.Category !== 15 && shopItem.Category !== 13) {
+    } else if (!IsInventoryAddable(shopItem.Category)) {
+      const owned = (this.db.prIsValidInventory(id, shopItem.ItemSN) + this.db.prIsValidPreInventory(id, shopItem.ItemSN)) | 0;
+      if (owned !== 0) {
         this.PurchaseError(user, 4, ERR_PURCHASE);
         user.ResetTranxInfo();
         return;
@@ -840,30 +848,45 @@ export class CMainPool extends CUserPool {
       return;
     }
 
-    // MoneyType != 0 = the cash path against the cached user+124 cash
-    if (shopItem.Price > user.m_nCash) {
+    // MoneyType != 0 uses game Money. Native flat packages grant each
+    // child's ItemSN and Units*Unit, but retain the PARENT StockSN/validity.
+    // Native also keeps earlier grants on failure; the last result wins.
+    // This is deliberately distinct from the local billing atomic settlement.
+    let ok = 1;
+    const grants = shopItem.Category === ItemCategory.Package
+      ? packages.map(pkg => {
+          const sub = itemMan.GetShopItem(pkg.StockSN)!;
+          return { itemSN: sub.ItemSN, units: Math.imul(pkg.Units, sub.Unit) };
+        })
+      : [{ itemSN: shopItem.ItemSN, units: shopItem.Unit }];
+    for (const grant of grants) {
+      if (shopItem.Price > user.m_nCash) ok = 0;
+      else if (shopItem.Category === ItemCategory.PremiumTicket) {
+        ok = this.db.prSetPremiumTicket(id, shopItem.ValidityPeriod);
+        if (ok !== 0) CCenterProcess.ms_pInstance?.SendAuthenCode(user.GetGlobalSerialNo(), 1);
+      } else {
+        const item = itemMan.GetUserItem(grant.itemSN);
+        const days = shopItem.ValidityPeriod || SHOP_PERMANENT_VALIDITY_DAYS;
+        const expiryLevel = shopItem.ValidityLevel === 0 ? SHOP_PERMANENT_EXPIRY_LEVEL : (user.m_nLevel + shopItem.ValidityLevel) | 0;
+        ok = item ? this.db.prAddInventoryShop(id, grant.itemSN, shopItem.SN, grant.units, days, expiryLevel, IsInventoryAddable(item.Category)) : 0;
+      }
+    }
+    if (ok !== 0) {
+      // Native ignores SetMoney's failure result: this is NOT an atomic
+      // cross-shard settlement. Do not confuse it with the local points path.
+      this.db.prSetMoney(id, -shopItem.Price);
+      user.m_nCash -= shopItem.Price;
+      if (user.m_fCartProcessing === 0) {
+        // success: client 204 [E1 0][8B SystemTimeToVariantTime double]
+        const p = new CSendPacket(SC_SendPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
+        p.Encode1(0);
+        p.EncodeBuffer(variantTime(new Date()), 8);
+        user.m_pSocket?.SendPacket(p);
+      }
+    } else if (user.m_fCartProcessing === 0) {
       this.PurchaseError(user, 1, ERR_PURCHASE);
-      return;
     }
-    let ok: number;
-    if (shopItem.Category === 9) {
-      // the premium-ticket stock: prSetPremiumTicket + authencode 1
-      ok = this.db.prSetPremiumTicket(id, shopItem.ValidityPeriod);
-      if (ok !== 0) CCenterProcess.ms_pInstance?.SendAuthenCode(user.GetGlobalSerialNo(), 1);
-    } else {
-      ok = this.db.prAddInventoryShop(id, shopItem.ItemSN, shopItem.SN, shopItem.Unit, shopItem.ValidityPeriod, user.m_nLevel);
-    }
-    if (ok === 0) {
-      this.PurchaseError(user, 1, ERR_PURCHASE);
-      return;
-    }
-    this.db.prSetMoney(id, -shopItem.Price);
-    user.m_nCash -= shopItem.Price;
-    // success: client 204 [E1 0][8B SystemTimeToVariantTime double]
-    const p = new CSendPacket(SC_SendPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
-    p.Encode1(0);
-    p.EncodeBuffer(variantTime(new Date()), 8);
-    user.m_pSocket?.SendPacket(p);
+    user.ResetTranxInfo();
   }
 
   PurchaseError(user: CUser, code: number, msg: string): void {

@@ -17,6 +17,7 @@
  * CRS*::OnReceiveRow select lists in the decompiled servers.
  */
 import { Database } from "bun:sqlite";
+import { INVENTORY_SLOT_NONE } from "../lib/Item.ts";
 import { SCHEMA_ITEM } from "./CAItemSchema.ts";
 import { mkdirSync, readFileSync } from "node:fs";
 import { LocateCAConfigBak, ParseCAConfigBak, CA_CONFIG_SEED_IP } from "./CAConfigBak.ts";
@@ -1192,24 +1193,33 @@ export class CDBMan {
       .all() as never;
   }
 
-  /** CDBMan::AddNewInventory (shop variant) — prAddInventory with the shop arg
-   *  set.  The @UserSN lookup runs on the user shard, the row lands on the
-   *  inventory shard (two separate databases).  Returns 1 on success, 0 on
-   *  failure — CDBMan::AddNewInventory's convention. */
-  prAddInventoryShop(id: string, itemSN: number, stockSN: number, unit: number, validityPeriod: number, userLevel: number): number {
-    const acc = this.userInfo[GetUserHashNo(id)]!
-      .query("SELECT COALESCE(SN, 0) AS UserSN FROM FxUserAccount WHERE ID = ?")
-      .get(id) as { UserSN: number } | undefined;
-    if (!acc) return 0;
-    const r = this.inventory[GetUserHashNo(id)]!
-      .query(
-        `INSERT INTO FxUserInventory (UserSN, UserID, ItemSN, StockSN, Slot, Amount, DateCreated, LevelCreated, Verbose)
-         VALUES (?, ?, ?, ?, 255, ?, datetime('now'), ?, '')
-         ON CONFLICT(UserID, ItemSN) DO UPDATE SET Amount = Amount + excluded.Amount
-         RETURNING ItemSN`,
-      )
-      .get(acc.UserSN, id, itemSN, stockSN, unit, userLevel) as { ItemSN: number } | undefined;
-    return r ? 1 : 0;
+  /** Shop AddNewInventory adapter. Caller resolves stock validity/defaults
+   * and FxItem-derived Addable. Return 1=new row, 2=stack update (native
+   * prAddInventory return 10), 0=failure. This transaction protects ONE
+   * inventory grant, not a cross-shard Money + package settlement.
+   * Existing stacks keep their original stock/slot/expiry metadata. */
+  prAddInventoryShop(id: string, itemSN: number, stockSN: number, unit: number, validityPeriod: number, expiryLevel: number, addable: boolean): number {
+    try {
+      const acc = this.userInfo[GetUserHashNo(id)]!
+        .query<{ UserSN: number }, [string]>("SELECT COALESCE(SN, 0) AS UserSN FROM FxUserAccount WHERE ID = ?").get(id);
+      if (!acc) return 0;
+      const db = this.invDB(id);
+      return db.transaction(() => {
+        if (addable) {
+          const updated = db.query("UPDATE FxUserInventory SET Amount=Amount+? WHERE UserID=? AND ItemSN=?").run(unit, id, itemSN);
+          if (updated.changes) return 2;
+        } else if (db.query("SELECT 1 FROM FxPreInventory WHERE UserID=? AND ItemSN=? LIMIT 1").get(id, itemSN)) {
+          return 0;
+        }
+        const inserted = db.query(`INSERT INTO FxUserInventory
+          (UserSN,UserID,ItemSN,StockSN,Slot,Amount,DateCreated,LevelCreated,Verbose)
+          VALUES(?,?,?,?,?,?,?,?,'')`).run(acc.UserSN, id, itemSN, stockSN, INVENTORY_SLOT_NONE, unit, sqliteNowPlus(validityPeriod), expiryLevel);
+        return inserted.changes === 1 ? 1 : 0;
+      }).immediate();
+    } catch (error) {
+      console.error("[Shop] AddNewInventory failed", error);
+      return 0;
+    }
   }
 
   prGetStringAttr(attrId: string): { retval: number; strVal: string } {

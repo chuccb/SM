@@ -2000,7 +2000,7 @@ test("expired transfer rejects a late GS establishment without resurrecting the 
 
 // Unlike shop.test.ts's isolated fixtures, do NOT inject Center users or arm
 // their connecting state here: LS -> GS -> Shop must establish it on the wire.
-test("GS -> Shop -> original CAItem auto-import, catalog and billing purchase -> GS round trip", async () => {
+test("GS -> Shop -> original CAItem, points + afro game-Money purchase -> GS and relogin", async () => {
   const billingDB = new CDBMan(DB_DIR);
   const billingStore = new BillingStore(billingDB);
   const billingServer = new BillingServer(billingStore);
@@ -2030,7 +2030,7 @@ test("GS -> Shop -> original CAItem auto-import, catalog and billing purchase ->
     for (let i = 0; i < 100 && !center.GetSvr(11, 0)?.socket; i++) await Bun.sleep(10);
     expect(center.GetSvr(11, 0)?.socket).toBeTruthy();
     const name = "shopwalk";
-    entered = await enterGame(name);
+    entered = await enterGame(name, { mid: () => { billingDB.prResetMoney(name, 200000); } });
     const { ls, gs, sn } = entered;
     const user = center.serialTable.get(sn)!;
     expect([user.m_fConnecting, user.nChannel, user.nSvrIdx]).toEqual([0, 10, 0]);
@@ -2086,6 +2086,20 @@ test("GS -> Shop -> original CAItem auto-import, catalog and billing purchase ->
     expect(billingDB.inventory[GetUserHashNo(name)].query("SELECT Amount FROM FxUserInventory WHERE UserID=? AND ItemSN=1").get(name))
       .toEqual({ Amount: 15 });
 
+    // Reported wire 94 b2 fb: E2 0xb2fb ^ 0xa569 = original stock 6034.
+    // Category-12 afro costs GAME Money, not the local billing wallet.
+    shopClient.send(206, e => e.u16(6034));
+    const afro = await shopClient.recv(204);
+    expect(r1(afro)).toBe(0); expect(afro.buf.length - afro.off).toBe(8);
+    expect((billingDB.prGetUserDynamic(name) as { Money: number }).Money).toBe(70000);
+    expect(billingStore.inspect(name).balance).toBe(71);
+    const ownedAfro = billingDB.GetUserInventoryRows(name).find(r => r.ItemSN === 678)!;
+    expect([ownedAfro.Amount, ownedAfro.Slot, ownedAfro.LevelCreated]).toEqual([1, 255, 2000]);
+    expect(Math.round((Date.parse(ownedAfro.DateCreated!) - Date.now()) / 86400000)).toBe(100000);
+    shopClient.send(206, e => e.u16(6034));
+    expect(r1(await shopClient.recv(204))).toBe(4); // already owned, not the bogus "-1" limit
+    expect((billingDB.prGetUserDynamic(name) as { Money: number }).Money).toBe(70000);
+
     // Follow the reciprocal redirect instead of leaving a pending transfer.
     shopClient.send(6, e => { e.u8(10); e.u32be(0); }); // Shop has no version word
     const back = await shopClient.recv(6);
@@ -2103,13 +2117,33 @@ test("GS -> Shop -> original CAItem auto-import, catalog and billing purchase ->
     expect(r1(await returnedGS.recv(210))).toBe(1); // CM12 enabled the actual inventory loader
     await returnedGS.recv(202);
     const delivered = await returnedGS.recv(201);
-    expect([r1(delivered), r2(delivered)]).toEqual([1, 1]); // one user, one live inventory row
+    expect([r1(delivered), r2(delivered)]).toEqual([1, 2]); // needle + original afro
     expect([r4(delivered), r1(delivered), r4(delivered), rstr(delivered)]).toEqual([1, 255, 15, ""]);
-    expect(delivered.buf.length - delivered.off).toBe(8); // native variant date
+    rbuf(delivered, 8); // needle's native variant date
+    expect([r4(delivered), r1(delivered), r4(delivered), rstr(delivered)]).toEqual([678, 255, 1, ""]);
+    expect(delivered.buf.length - delivered.off).toBe(8); // afro's native variant date
+    expect(billingDB.GetUserInventoryRows(name).find(r => r.ItemSN === 678)?.Amount).toBe(1);
     expect(billingDB.inventory[GetUserHashNo(name)].query("SELECT Amount FROM FxUserInventory WHERE UserID=? AND ItemSN=1").get(name))
       .toEqual({ Amount: 15 }); // GS loading must not expire/delete a newly bought permanent item
     expect(center.serialTable.get(sn)).toBe(user);
     expect([user.m_fConnecting, user.nChannel, user.nSvrIdx]).toEqual([0, 10, 0]);
+
+    // Full fresh login too: no reseeding, price edits, expiry bypass or cached
+    // Shop inventory. Both purchases must survive a second GS DB load.
+    returnedGS.close(); ls.close();
+    for (let i = 0; i < 100 && center.serialTable.has(sn); i++) await Bun.sleep(10);
+    expect(center.serialTable.has(sn)).toBe(false);
+    entered = await enterGame(name, { existingAccount: true, onInventory: p => {
+      expect([r1(p), r2(p)]).toEqual([1, 2]);
+      for (const [item, amount] of [[1, 15], [678, 1]]) {
+        expect([r4(p), r1(p), r4(p), rstr(p)]).toEqual([item, 255, amount, ""]);
+        rbuf(p, 8);
+      }
+      expect(p.off).toBe(p.buf.length);
+    } });
+    expect((billingDB.prGetUserDynamic(name) as { Money: number }).Money).toBe(70000);
+    expect(billingStore.inspect(name).balance).toBe(71);
+    expect(billingDB.GetUserInventoryRows(name).map(r => [r.ItemSN, r.Amount])).toEqual([[1, 15], [678, 1]]);
   } finally {
     clearTimeout(deadline);
     entered?.ls.close(); entered?.gs.close(); shopClient.close(); returnedGS.close();
