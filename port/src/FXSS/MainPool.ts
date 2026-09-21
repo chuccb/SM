@@ -195,7 +195,7 @@ export class CMainPool extends CUserPool {
     // Zero-count native code uses an invalid target; keep the port safe.
     if (!target || !target.m_pSocket) return;
     const result = n.Decode1();
-    const p = new CSendPacket(SC_SendPacket.OnResConnectToSvr, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(SC_SendPacket.OnReqConnectToSvrRes, CipherDegree.kPacketEncryptedCRC8);
     p.Encode1(result);
     if (result === 1) {
       const svrType = n.Decode1();

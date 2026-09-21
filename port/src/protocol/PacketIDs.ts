@@ -327,7 +327,8 @@ export const SS_ReceivedPacket = {
 // direction: 200/205/213 are the cached CItemMan table packets.
 export const SC_SendPacket = {
   OnConnect: 0, // CMainSystem::OnConnEstablished — [E2 CENTER_VERSION][E2 CONN_HELLO_VERSION][E4 headerType][EStr url]
-  OnResConnectToSvr: 6, // CMainPool::OnCenterResConnectToSvr
+  OnReqConnectToSvrRes: 6, // CMainPool::OnCenterResConnectToSvr (matches request OnReqConnectToSvr)
+  OnResConnectToSvr: 6, // backwards-compatible alias
   OnInitialInfo: 18, // CMainPool::OnCenterResConnEstablished — account + bonus map
   OnEstimateRTTRes: 20,
   OnAdminNotifyMsg: 26, // CCenterProcess::OnAdminNotifyMsg broadcast
