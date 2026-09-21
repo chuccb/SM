@@ -2,11 +2,18 @@
 
 日期：2026-09-21。接續 [第一輪 A01–A15](remaining-work-audit.md)。
 
-**2026-09-21 最新修復：** [A12 交易紀錄／225→211分頁修復](transaction-log-compatibility-fix.md)
+**2026-09-21 最新修復：** [A23 帳號首byte分片與舊資料安全遷移](user-shard-compatibility-fix.md)
+已由LS／FXGS／FXSS三份PE完整函式bytes固定「第一個unsigned byte、只折疊ASCII A–Z、再%6」，
+並提供涵蓋UserInfo／Inventory／local-billing的唯讀盤點、全衝突preflight、十二DB一致backup及
+copy-before-delete可重入遷移；未知帳號登入自動註冊保留，舊shard同ID則拒絕空白重建。
+第二份probe增為25 MATCH，兩份合計 **44 MATCH／0 GAP**；完整`bun run check`為 **704 pass／0 fail／27,019 expect() calls／39 files**，
+並通過toolchain／160-module import（0 cycle）／103-unit、112-class boundary／strict typecheck。
+A類待辦降為 **5組**：A07、A08、A15、A17、A18。
+
+**前一批 A12 修復：** [交易紀錄／225→211分頁修復](transaction-log-compatibility-fix.md)
 已依FxShop PE實作日期檔、MSVC text-mode append+flush、500-byte logical cursor、換日／重啟及local-billing成功322整合。
-第一份probe現為19 MATCH、兩份合計 **43 MATCH／0 GAP**；完整`bun run check`為
+該批第一份probe為19 MATCH、兩份合計 **43 MATCH／0 GAP**；完整`bun run check`為
 **693 pass／0 fail／26,693 expect() calls／38 files**，並通過toolchain／159-module import／boundary／strict typecheck。
-A類待辦降為 **6組**：A07、A08、A15、A17、A18、A23。
 外部billing／gift／coupon仍屬A08／A17，不因交易檔本身完成而宣稱可用。
 
 **前一批 A13／A14修復：** [日期時間／Login CRT RNG 修復紀錄](time-and-login-rng-compatibility-fix.md)
@@ -40,7 +47,7 @@ Windows多worker排程仍是明示架構界線，固定probes全MATCH也不代�
 原生 source-unit／class boundary 與 lifecycle ownership 亦已整理並由 audit 驗證：103 native units、23 port-only boundaries、112 classes，158 modules 無 static value-import cycle；Relay server／dispatcher ownership、monotonic DWORD clocks、CRC 單一來源與 fixed-width codecs 均已補回歸。
 工具鏈統一與尚未取得的 GitHub Bun canary 限制見 [port README](../README.md)。
 Center 全域 serial／SID、其餘建立回報與位置查詢另列第一輪 B，不含於上述完成範圍。
-以下除已修項目的註記外，保留第二輪清點當時的結果。A16–A23 中 A16 transport、A20 live-row／裝飾鏈與 A21 個人資料範圍完成；
+以下除已修項目的註記外，保留第二輪清點當時的結果。A16–A23 中 A16 transport、A20 live-row／裝飾鏈、A21個人資料及A23分片／遷移範圍完成；
 不能因此把 billing 業務 handler、商城、其餘庫存生命週期或公會結算視為已修復。
 
 ## 範圍、需求與結果
@@ -229,11 +236,21 @@ A19 上游與 A13 日期仍開放；以下保留修復前證據。
 - **驗收**：低於／等於／介於／超過門檻、空表、重複 Price、unsigned key，
   同一快照下選贈品與 wire table 的順序／count 一致。尚未解決其他 hash_map 的迭代問題。
 
-## A23 · P1 · 帳號 shard 應只折疊 ASCII A–Z，不能用 Unicode toLowerCase
+## A23 · 已修復（原 P1）· 帳號 shard 只折疊 ASCII A–Z，並安全遷移舊Unicode公式資料
+
+**2026-09-21 完成更新：** runtime selector已直接實作首unsigned byte／ASCII fold，不再依賴整串
+`MakeLower`或Unicode轉換；三份PE完整bytes、1..255 raw-byte、Big5雙byte、自動註冊、全部
+UserInfo／inventory／local-billing caller均有回歸；舊shard同ID會阻止空白auto-registration。
+另新增offline工具，涵蓋account companion／孤立child／inventory／pre-inventory／cart及
+四張local-billing表；先全域衝突盤點，再建十二DB SQLite snapshot+SHA-256 backup，
+copy commit後才exact-delete來源。SN／PK／held衝突零寫入，
+copy後中斷可重跑只清來源。集中式`Guild.db`不誤搬。詳見[A23修復紀錄](user-shard-compatibility-fix.md)。
+以下保留修復前證據；先前boundary refactor的byte-aware `MakeLower`曾使probe恰好MATCH，但沒有
+處理更早版本已建立的錯誤分片資料，本輪才完整結案。
 
 - 官方 LS `GetUserHashNo` `0040A280`、FXGS `00408E41`：取第一個 **unsigned byte**，
   只在0x41..0x5a加32，再%6；FXSS低階DB路徑也可見同式。
-- TS `DBMan.ts::GetUserHashNo` 呼叫 `id.toLowerCase().charCodeAt(0)&0xff`；
+- 修復前 TS `DBMan.ts::GetUserHashNo` 呼叫 `id.toLowerCase().charCodeAt(0)&0xff`；
   這會把原始 ANSI／Big5 byte 映入 JS字串後的0xc0等值當成Unicode字母，錯誤變成0xe0。
 - **重現**：逐一餵非NUL首byte 1..255，30種首byte的shard不一致：
   `0xc0..0xd6`、`0xd8..0xde`。例如0xc0應進shard0，目前進shard2。
@@ -271,12 +288,10 @@ bun test
 - 全新臨時SQLite、capture sockets與明確的fixture/failure injection；沒有listener／外網連線。
   DB在finally關閉及刪除；不讀寫正式使用者資料。單例只在該standalone process中使用。
 - probe的GAP是差異報告，不是刻意把錯誤當正解的測試；exit0只表示harness完成。
-- 清點時第二輪為 **24 probes / 23 GAP / 1 MATCH**、第一輪為 **14 / 13 / 1**；逐組修復後目前為第二輪 **24/24 MATCH**、第一輪（增補A10兩項、A12及A13／A14）**19/19 MATCH**。
-- Bun **1.4.3-canary.1 (26e7a4b36)**：**178 pass / 0 fail，1583 expect() calls，11 files，17.50s**。
-- TypeScript **7.0.2**與preview **7.1.0-dev.20260920.1**的`tsc --noEmit`通過；
-  兩個probe另以`--ignoreConfig --strict --target ESNext --module ESNext --moduleResolution Bundler
-  --types bun-types --skipLibCheck --allowImportingTsExtensions --noEmit`一起檢查通過。
-- 既有全綠測試仍未攔住上述差異；它們與38個diagnostic observations分開計算。
+- 清點時第二輪為 **24 probes / 23 GAP / 1 MATCH**、第一輪為 **14 / 13 / 1**；逐組修復及A23 migration scope增補後目前為第二輪 **25/25 MATCH**、第一輪（增補A10兩項、A12及A13／A14）**19/19 MATCH**，合計 **44 MATCH／0 GAP**。
+- 最新完整`bun run check`使用Bun **1.4.3-canary.1 (26e7a4b36)**：**704 pass／0 fail／27,019 expect() calls／39 files**；import graph **160 modules／0 cycles**，boundary **103 native units／112 native classes**。
+- 專案固定的preview TypeScript **7.1.0-dev.20260920.1**以`tsc --project tsconfig.json`檢查全部src／test／tools通過；兩份probe亦由同一套Bun／TS專案執行。
+- 清點時既有全綠測試未攔住上述差異；當時38個、目前44個diagnostic observations始終與tests分開計算。
 
 ## 建議下一輪工作界線
 
@@ -287,6 +302,6 @@ bun test
 1. Tw transport A16 → 301/302/311/312及相關handler A08/A17 → 付款、贈送、coupon、receipt/reset。
 2. 遊戲金錢單品／套裝 A18；已完成的DB期限／預庫存A19、GS庫存／裝飾A20、A22贈品及A13日期持續作回歸護欄。
 3. 結算／離房 → dyn state → detail A11 → DB flush／重入 A21。
-4. A23分片與SQL／編碼一起規劃migration；A02自動註冊持續保留，A03補交易回滾。
+4. A23分片與安全migration後續已完成；A02自動註冊持續保留，A03建帳交易回滾亦已完成。其餘SQL collation／完整restore仍留在第一輪B表，不混入A23完成宣稱。
 
 每條鏈都需要正常／拒絕／故障／重入及wire/DB/狀態驗收，不能只消除本輪固定fixture的GAP。

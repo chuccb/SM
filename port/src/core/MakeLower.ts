@@ -1,3 +1,14 @@
+const ASCII_UPPERCASE_A = 0x41;
+const ASCII_UPPERCASE_Z = 0x5a;
+const ASCII_CASE_OFFSET = 0x20;
+
+/** Fold one ASCII uppercase value without applying Unicode case conversion. */
+export function MakeLowerAscii(value: number): number {
+  return value >= ASCII_UPPERCASE_A && value <= ASCII_UPPERCASE_Z
+    ? value + ASCII_CASE_OFFSET
+    : value;
+}
+
 /**
  * MakeLower (shared server utility) — lowercase ASCII bytes while preserving
  * each Korean DBCS lead/trail pair verbatim. Protocol strings live in the
@@ -17,9 +28,7 @@ export function MakeLower(source: string): string {
       i++;
       continue;
     }
-    result += value >= 0x41 && value <= 0x5a
-      ? String.fromCharCode(value + 0x20)
-      : source[i]!;
+    result += String.fromCharCode(MakeLowerAscii(value));
     i++;
   }
   return result;

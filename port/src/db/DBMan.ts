@@ -9,15 +9,15 @@
  *                        FxUserOptions / FxAdvertisement / FxGuildServerList / CACommuSvr
  *   Guild              : FxGuildAccount / FxGuildDynamic / FxGuildMember / FxGuildLimit
  *
- * CDBMan::GetUserHashNo = (lowercase first byte of the account id) % 6 — the
- * single shard selector used by every user/inventory proc.
+ * CDBMan::GetUserHashNo = (ASCII-folded first unsigned account byte) % 6 —
+ * the single shard selector used by every user/inventory proc.
  *
  * Schema + proc semantics are taken from the MTF backups (UserInfo*.bak /
  * UserInventory*.bak / Guild.bak / CAConfig.bak / CAItem.bak) and the
  * CRS*::OnReceiveRow select lists in the decompiled servers.
  */
 import { Database } from "bun:sqlite";
-import { MakeLower } from "../core/MakeLower.ts";
+import { MakeLowerAscii } from "../core/MakeLower.ts";
 import { AddLocalCalendarDays } from "../core/LocalTime.ts";
 import { INVENTORY_SLOT_NONE } from "../shared/Item.ts";
 import { SCHEMA_ITEM } from "./CAItemSchema.ts";
@@ -38,11 +38,22 @@ export interface _USERDYNINFO {
 /** Number of UserInfo/UserInventory shards in the original deployment. */
 export const USER_DB_SHARD_COUNT = 6;
 
-/** CDBMan::GetUserHashNo — lower(name[0]) % USER_DB_SHARD_COUNT. */
+/**
+ * CDBMan::GetUserHashNo — the first unsigned ANSI byte, ASCII A–Z folded,
+ * modulo the six native user databases. Protocol strings are Latin-1 byte
+ * carriers; Unicode case conversion would change Big5 lead bytes 0xC0–0xDE.
+ * Empty input is outside the valid account domain; returning shard 0 here is
+ * the port's safe boundary instead of relying on native empty-string storage.
+ */
 export function GetUserHashNo(id: string): number {
-  const lowered = MakeLower(id);
-  const c = lowered.length > 0 ? lowered.charCodeAt(0) & 0xff : 0;
-  return c % USER_DB_SHARD_COUNT;
+  const firstByte = id.length === 0 ? 0 : id.charCodeAt(0) & 0xff;
+  return MakeLowerAscii(firstByte) % USER_DB_SHARD_COUNT;
+}
+
+/** Historical selector used only to find data written by the pre-A23 port. */
+export function GetLegacyPortUserHashNo(id: string): number {
+  const firstByte = id.length === 0 ? 0 : id.toLowerCase().charCodeAt(0) & 0xff;
+  return firstByte % USER_DB_SHARD_COUNT;
 }
 
 /**
@@ -324,6 +335,13 @@ export class CDBMan {
     return GetUserHashNo(id);
   }
 
+  /** Upgrade guard: old-shard data must be migrated, never duplicated. */
+  private hasLegacyPortUserAccount(id: string, nativeShard = GetUserHashNo(id)): boolean {
+    const legacyShard = GetLegacyPortUserHashNo(id);
+    return legacyShard !== nativeShard
+      && Boolean(this.userInfo[legacyShard]!.query("SELECT 1 FROM FxUserAccount WHERE ID = ?").get(id));
+  }
+
   /** Release file handles for standalone billing tools/tests. Servers retain
    * their DB manager for their whole process lifetime. */
   Close(): void {
@@ -447,7 +465,8 @@ export class CDBMan {
     GuildSn: number;
     SID: number;
   } {
-    const db = this.userInfo[GetUserHashNo(id)]!;
+    const nativeShard = GetUserHashNo(id);
+    const db = this.userInfo[nativeShard]!;
     const accountQuery = db.query<
       { SID: number; Email: string; GuildSn: number; CommunitySvr: number },
       [string, string]
@@ -458,7 +477,13 @@ export class CDBMan {
       // replace an existing account or its password, even after a create race.
       const known = db.query("SELECT 1 FROM FxUserAccount WHERE ID = ?").get(id);
       if (!known) {
-        this.prCreateUser(id, id, pwd, "", 0, 0, "", "", 0, "", "", "", "", "");
+        if (this.hasLegacyPortUserAccount(id, nativeShard)) {
+          // Never turn a pre-A23 account into a blank auto-registration merely
+          // because the corrected selector cannot see its old shard.
+          console.error("[DB] Account data uses the pre-A23 shard formula; run the offline user-shard migration.");
+        } else {
+          this.prCreateUser(id, id, pwd, "", 0, 0, "", "", 0, "", "", "", "", "");
+        }
       }
       // A competing process can win before the existence check OR our INSERT.
       // Re-authenticate the committed row, including its password; never treat
@@ -492,10 +517,11 @@ export class CDBMan {
 
   /** prConfirmUnregisteredId — 1 when the id exists, 0 when free. */
   prConfirmUnregisteredId(id: string): number {
-    const row = this.userInfo[GetUserHashNo(id)]!
+    const nativeShard = GetUserHashNo(id);
+    const row = this.userInfo[nativeShard]!
       .query("SELECT COUNT(*) AS c FROM FxUserAccount WHERE ID = ?")
       .get(id) as { c: number };
-    return row.c >= 1 ? 1 : 0;
+    return row.c >= 1 || this.hasLegacyPortUserAccount(id, nativeShard) ? 1 : 0;
   }
 
   /**
@@ -524,7 +550,9 @@ export class CDBMan {
     identityNo: string,
     birthday: string,
   ): number {
-    const db = this.userInfo[GetUserHashNo(id)]!;
+    const nativeShard = GetUserHashNo(id);
+    if (this.hasLegacyPortUserAccount(id, nativeShard)) return -1;
+    const db = this.userInfo[nativeShard]!;
     try {
       return db.transaction(() => {
         const previousSerial = (db.query("SELECT MAX(SN) AS m FROM FxUserAccount").get() as { m: number | null }).m ?? 0;

@@ -8,7 +8,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CReceivedPacket, CSendPacket, enSocket } from "../src/core/Packet.ts";
-import { CDBMan, GetUserHashNo } from "../src/db/DBMan.ts";
+import { CDBMan, GetLegacyPortUserHashNo, GetUserHashNo } from "../src/db/DBMan.ts";
 import { CServerConfig } from "../src/core/ServerConfig.ts";
 import {
   CBillingProcess, CBillingSocketTw, CLocalUserTable,
@@ -260,6 +260,15 @@ function main(): void {
       if (GetUserHashNo(String.fromCharCode(b) + "user") !== expected) differingBytes.push(b);
     }
     report("A23.first-byte-shard-mismatches", differingBytes, []);
+    const legacyMismatchBytes = Array.from({ length: 255 }, (_, index) => index + 1)
+      .filter(byte => {
+        const id = String.fromCharCode(byte) + "user";
+        return GetLegacyPortUserHashNo(id) !== GetUserHashNo(id);
+      });
+    report("A23.legacy-migration-byte-scope", legacyMismatchBytes, [
+      ...Array.from({ length: 0xd6 - 0xc0 + 1 }, (_, index) => 0xc0 + index),
+      ...Array.from({ length: 0xde - 0xd8 + 1 }, (_, index) => 0xd8 + index),
+    ]);
     report("A23.ascii-shard-control", [GetUserHashNo("Alpha"), GetUserHashNo("alpha")], [97 % 6, 97 % 6]);
     console.log(JSON.stringify({ probes, gaps, matches: probes - gaps,
       note: "Static-native expectations versus isolated TS observations; no Windows binary execution." }));

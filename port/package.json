@@ -23,7 +23,8 @@
     "billing:credit": "bun tools/billing.ts credit",
     "billing:balance": "bun tools/billing.ts balance",
     "caitem:inspect": "bun tools/caitem.ts inspect",
-    "caitem:import": "bun tools/caitem.ts import"
+    "caitem:import": "bun tools/caitem.ts import",
+    "db:shards": "bun tools/user-shards.ts"
   },
   "engines": {
     "bun": "1.4.3"

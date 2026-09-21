@@ -1,3 +1,4 @@
 node_modules/
 *.db-wal
 *.db-shm
+.user-shard-migration.lock

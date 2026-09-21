@@ -40,6 +40,20 @@ Gift/coupon/cart、premium、限時等未完成路徑明確拒絕，不以假成
 **來源核對、操作、原始資料問題與 client 資源限制：** [CAItem 商品庫還原](docs/caitem-catalog.md)。
 匯入完整商品資料不等於所有商品的交易功能都已支援，billing 限制仍如上。
 
+## 帳號 shard 盤點／遷移
+
+A23已恢復原版「第一個unsigned byte、只折疊ASCII `A–Z`、再 `%6`」的UserInfo／
+UserInventory selector。曾使用舊Unicode公式的DB必須先以唯讀模式盤點；不要直接啟動新版後把
+找不到的非ASCII帳號當成新帳號：
+
+```sh
+bun run db:shards -- inspect --db ./db
+```
+
+真正遷移須停止所有server及local billing，並指定不存在的backup目錄及明示確認參數。
+完整table範圍、衝突停止、copy-before-delete crash recovery及操作指令見
+[A23帳號分片與舊資料安全遷移](docs/user-shard-compatibility-fix.md)。
+
 ## 統一的預覽版工具鏈
 
 2026-09-21 再次查詢並固定 **npm `typescript@next`／`bun@canary`／`bun-types@canary`**：
@@ -116,6 +130,7 @@ ESNext 是 compiler/runtime 提供的語言與標準庫目標，不是另一個�
 - [差異清點二](docs/remaining-work-audit-2.md)
 - [A05／A09／A10／A19／A22：charge、cart、service config、pre-inventory、BonusMap 修復](docs/five-gap-compatibility-fix.md)
 - [A06：NexonClub ID 與本輪工具鏈驗證](docs/nexonclub-id-compatibility-fix.md)
+- [A23：帳號首byte分片與舊Unicode公式資料安全遷移](docs/user-shard-compatibility-fix.md)
 - [爆炸頭：商城 category 限制、遊戲金錢發貨與購入後期限修復](docs/shop-purchase-compatibility-fix.md)
 - [Practice：立即開局、練習地圖選擇與 UDP-loss 誤踢修復](docs/practice-start-compatibility-fix.md)
 - [A20：GS 庫存、功能／外觀狀態與裝飾封包修復](docs/user-inventory-compatibility-fix.md)
