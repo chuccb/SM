@@ -13,8 +13,8 @@ export class CItemMan {
   m_mapShopItem = new Map<number, ShopItem>(); // hash_map<uint, ShopItem> @ +148
   m_mapString = new Map<number, string>(); // hash_map<uint, string> @ +620
   m_ltPackageMap: PackageMap[] = []; // list @ +652
+  m_mapBonusMap = new Map<number, BonusMap>(); // map<uint, BonusMap> @ +664
   m_ltCouponMap: CouponMap[] = []; // list @ +748
-  m_vtBonusMap: BonusMap[] = []; // vector @ +664 (this+166 dwords)
 
   m_pStringTablePacket: CSendPacket | null = null; // this+4 (type 205)
   m_pShopItemListPacket: CSendPacket | null = null; // this+28 (type 200)
@@ -114,25 +114,41 @@ export class CItemMan {
     }
   }
 
-  /** CItemMan::UpdateBonusMapTable — FxBonusMap → m_vtBonusMap (row order). */
-  UpdateBonusMapTable(db: CDBMan): void {
-    this.m_vtBonusMap = [];
-    for (const r of db.GetFxBonusMapRows()) {
-      const b = new BonusMap();
-      b.Price = r.Price;
-      b.StockSN = r.StockSN;
-      this.m_vtBonusMap.push(b);
+  /** CItemMan::UpdateBonusMapTable — FxBonusMap → map<uint, BonusMap>.
+   * `insert_unique` keeps the first row for a duplicate unsigned Price key;
+   * native map traversal is ascending by that key, independent of row order. */
+  UpdateBonusMapTable(db: CDBMan): number {
+    let rows: ReturnType<CDBMan["GetFxBonusMapRows"]>;
+    try {
+      rows = db.GetFxBonusMapRows();
+    } catch {
+      // Native OpenSelFilteredRowset failure returns 0 before taking the
+      // writer lock or clearing the currently published map.
+      return 0;
     }
+
+    const byPrice = new Map<number, BonusMap>();
+    for (const row of rows) {
+      const key = row.Price >>> 0;
+      if (byPrice.has(key)) continue;
+      const bonus = new BonusMap();
+      bonus.Price = row.Price | 0;
+      bonus.StockSN = row.StockSN >>> 0;
+      byPrice.set(key, bonus);
+    }
+    this.m_mapBonusMap = new Map([...byPrice].toSorted(([left], [right]) => left - right));
+    return 1;
   }
 
-  /** CItemMan::AddBonusCartItem — when the billing total crosses a bonus
-   *  Price, the bonus StockSN is appended to the user's cart (1 ×). */
+  /** CItemMan::AddBonusCartItem — walk the Price-keyed map and leave the
+   * highest traversed eligible bonus in the supplied next-empty cart slot.
+   * The eligibility compare itself is signed (`cmp`/`jl` at 0040EB94). */
   AddBonusCartItem(total: number, user: { m_anCart: { stockSN: number; cnt: number }[] }, cartSlot: number): number {
     let added = 0;
-    for (const row of this.m_vtBonusMap) {
-      if (total >= row.Price) {
+    for (const bonus of this.m_mapBonusMap.values()) {
+      if ((total | 0) >= bonus.Price) {
         added = 1;
-        user.m_anCart[cartSlot] = { stockSN: row.StockSN, cnt: 1 };
+        user.m_anCart[cartSlot] = { stockSN: bonus.StockSN, cnt: 1 };
       }
     }
     return added;
@@ -254,10 +270,10 @@ export class CItemMan {
   }
 
   /** CItemMan::MakeBonusMap — appended to client 18:
-   *  [E2 count][count × (E4 Price, E4 StockSN)]. */
+   * [E2 count][count × (E4 Price, E4 StockSN)] in unsigned Price-key order. */
   MakeBonusMap(packet: CSendPacket): void {
-    packet.Encode2(this.m_vtBonusMap.length);
-    for (const bonus of this.m_vtBonusMap) {
+    packet.Encode2(this.m_mapBonusMap.size);
+    for (const bonus of this.m_mapBonusMap.values()) {
       packet.Encode4(bonus.Price);
       packet.Encode4(bonus.StockSN);
     }

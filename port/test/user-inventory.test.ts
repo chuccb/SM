@@ -23,7 +23,7 @@ import { CGameSession } from "../src/FXGS/GameSession.ts";
 import { CGameSessionTable } from "../src/FXGS/GameSessionTable.ts";
 import { LoadCAItemBak } from "../src/db/CAItemBak.ts";
 import { SESSION_IDX_MAX } from "../src/FXGS/Defs.ts";
-import { USER_INVENTORY_LOAD_LIMIT } from "../src/shared/Item.ts";
+import { ItemCategory, USER_INVENTORY_LOAD_LIMIT } from "../src/shared/Item.ts";
 import { MAX_LOCAL_INVENTORY_ROWS } from "../src/LocalBilling/Defs.ts";
 
 function snapshot() {
@@ -42,7 +42,7 @@ beforeEach(() => {
   CServerConfig.ms_pInstance = cfg;
   const main = new CMainSystem(cfg); main.m_fInventoryDB = 1;
   pool = new CConnectPool(db); items = new CUserItemMan(); new CLocalUserTable(); new CGuildTable(db);
-  new CChannelPool(db); const center = new CCenterProcess(db); center.SendPacket = () => enSocket.kioOk;
+  new CChannelPool(db, cfg); const center = new CCenterProcess(db, cfg); center.SendPacket = () => enSocket.kioOk;
   CGameSessionTable.ms_pInstance = Object.assign(Object.create(CGameSessionTable.prototype), {
     m_apGameSession: [], m_apPracticeSession: [], m_acTableFlags: new Uint8Array(SESSION_IDX_MAX),
   });
@@ -95,6 +95,200 @@ test("empty inventory succeeds; shared 400 is a loader budget, not a SQL LIMIT",
   expect(load()).toBe(true); expect(loaded()).toEqual([]);
   expect(USER_INVENTORY_LOAD_LIMIT).toBe(400); expect(MAX_LOCAL_INVENTORY_ROWS).toBe(400);
 });
+
+test("FXGS owners keep their service config after another emulated service replaces the singleton", () => {
+  const other = new CServerConfig([["ServerIndex", ""]]);
+  other.ParseConfigString("ServerIndex 9");
+  CServerConfig.ms_pInstance = other;
+
+  CCenterProcess.ms_pInstance!.OnLocalServerInfo(body(p => {
+    p.Encode4(3);
+    for (const [name, maxUsers, type, serverClass, port] of [
+      ["zero", 100, 10, 2, 16_300],
+      ["one", 101, 11, 2, 16_301],
+      ["game", 102, 77, 2, 16_302],
+    ] as const) {
+      p.EncodeStr(name); p.Encode4(maxUsers); p.Encode1(type); p.Encode1(serverClass); p.Encode2(port); p.Encode1(1);
+    }
+  }));
+  expect(CMainSystem.ms_pInstance!.m_nChannelType).toBe(77);
+
+  const packets: CSendPacket[] = [];
+  socket.SendPacket = packet => { packets.push(packet); return enSocket.kioOk; };
+  CChannelPool.ms_pInstance!.SendUserDetailInfo(socket, user);
+  const detail = reader(packets.pop()!);
+  expect(detail.e1()).toBe(1); detail.str(); detail.str(); detail.str(); detail.e1();
+  detail.e4(); detail.e4(); detail.e4(); detail.e4(); detail.e4();
+  detail.e2(); detail.e4(); detail.e1();
+  expect(detail.e4()).toBe(2);
+
+  expect(CLocalUserTable.ms_pInstance!.Insert(user)).toBe(1);
+  CChannelPool.ms_pInstance!.OnRequestUserLocation(body(p => p.EncodeStr(user.GetName())), socket);
+  const location = reader(packets.pop()!);
+  expect(location.e1()).toBe(1);
+  expect(location.str()).toBe(user.GetName());
+  location.e1();
+  expect(location.e4()).toBe(2);
+});
+
+test("pre-inventory claim adds ValidityLevel to the current level and survives the live loader", () => {
+  const clock = spyOn(Date, "now").mockReturnValue(NOW);
+  try {
+    item(40);
+    db.prAddPreInventory(user.GetName(), 0, 40, 4000, 3, 30, 6, "claim-attr", "claim-desc");
+    expect(pool["InitPreInventory"](user)).toBe(true);
+    const claimed = db.GetUserInventoryRows(user.GetName());
+    expect(claimed).toHaveLength(1);
+    expect(claimed[0]).toMatchObject({ ItemSN: 40, StockSN: 4000, Amount: 3, LevelCreated: 16 });
+    expect(Date.parse(claimed[0]!.DateCreated!) - NOW).toBe(30 * 86_400_000);
+    expect(user.m_nPreInventoryCount).toBe(1);
+    expect(user.m_apPreInventory[0]).toMatchObject({
+      ItemSn: 40, StockSn: 4000, Amount: 3, ValidityPeriod: 30, ValidityLevel: 6,
+      strAttr: "claim-attr", Description: "claim-desc",
+    });
+
+    expect(load()).toBe(true);
+    expect(loaded()).toEqual([40]);
+    expect(db.GetUserInventoryRows(user.GetName())).toHaveLength(1);
+  } finally {
+    clock.mockRestore();
+  }
+});
+
+test("native pre-inventory types 100/101 keep their packet meanings", () => {
+  item(50, { Type: ItemCategory.Money });
+  item(51, { Type: ItemCategory.Experience });
+  db.prAddPreInventory(user.GetName(), 0, 50, 5000, 7, 30, 6, "money", "M");
+  db.prAddPreInventory(user.GetName(), 0, 51, 5100, 8, 30, 6, "exp", "E");
+  expect(pool["InitPreInventory"](user)).toBe(true);
+  expect([user.dyn.money, user.dyn.exp, user.m_nLevel]).toEqual([7, 8, 1]);
+
+  const packet = new CSendPacket(207, 2);
+  user.MakePreInventoryPacket(packet);
+  const decoded = reader(packet);
+  expect(decoded.e1()).toBe(2);
+  expect([decoded.e1(), decoded.e4(), decoded.e2(), decoded.e2(), decoded.e2(), decoded.str(), decoded.str()])
+    .toEqual([ItemCategory.Money, 50, 7, 0, 30, "M", "money"]);
+  expect([decoded.e1(), decoded.e4(), decoded.e2(), decoded.e2(), decoded.e2(), decoded.str(), decoded.str()])
+    .toEqual([ItemCategory.Experience, 51, 8, 1, 30, "E", "exp"]);
+  decoded.end();
+});
+
+test("money side effects precede a failed row claim, as in the native call order", () => {
+  item(52, { Type: ItemCategory.Money });
+  db.prAddPreInventory(user.GetName(), 0, 52, 5200, 7, 30, 6);
+  const loader = spyOn(db, "prLoadInventory").mockReturnValue(-1);
+  try {
+    expect(pool["InitPreInventory"](user)).toBe(true);
+  } finally {
+    loader.mockRestore();
+  }
+  expect(user.dyn.money).toBe(7);
+  expect(user.m_nPreInventoryCount).toBe(0);
+  expect(db.GetPreInventoryRows(user.GetName()).map((row) => row.ItemSN)).toEqual([52]);
+});
+
+test("pre-inventory ValidityLevel zero means current level, not Shop's permanent-level sentinel", () => {
+  item(41);
+  db.prAddPreInventory(user.GetName(), 0, 41, 4100, 1, 30, 0);
+  expect(pool["InitPreInventory"](user)).toBe(true);
+  expect(db.GetUserInventoryRows(user.GetName())[0]?.LevelCreated).toBe(10);
+  expect(load()).toBe(true);
+  expect(db.GetUserInventoryRows(user.GetName())).toEqual([]); // level >= LevelCreated expires exactly
+});
+
+test("failed premium-ticket grant consumes the truncate-only row but never invents an auth upgrade", () => {
+  expect(db.prCreateUser(user.GetName(), user.GetName(), "fixture", "", 0, 0, "", "", 0, "", "", "", "", "")).toBe(0);
+  item(42, { Type: ItemCategory.PremiumTicket });
+  db.prAddPreInventory(user.GetName(), 0, 42, 4200, 1, 30, 6);
+  const ticket = spyOn(db, "prSetPremiumTicket").mockReturnValue(0);
+  const auth = spyOn(CCenterProcess.ms_pInstance!, "SendAuthenCode").mockImplementation(() => {});
+  try {
+    expect(pool["InitPreInventory"](user)).toBe(true);
+    expect(ticket).toHaveBeenCalledWith(user.GetName(), 30);
+    expect(auth).not.toHaveBeenCalled();
+    expect(db.GetPreInventoryRows(user.GetName())).toEqual([]);
+    expect(db.GetUserInventoryRows(user.GetName())).toEqual([]);
+    expect(user.m_nPreInventoryCount).toBe(1);
+  } finally {
+    ticket.mockRestore();
+    auth.mockRestore();
+  }
+});
+
+for (const authencode of [0, 1]) test(`successful premium-ticket claim with authencode ${authencode} sends only a needed upgrade`, () => {
+  expect(db.prCreateUser(user.GetName(), user.GetName(), "fixture", "", 0, 0, "", "", 0, "", "", "", "", "")).toBe(0);
+  item(43, { Type: ItemCategory.PremiumTicket });
+  db.prAddPreInventory(user.GetName(), 0, 43, 4300, 1, 30, 6);
+  user.SetAuthenCode(authencode);
+  const ticket = spyOn(db, "prSetPremiumTicket").mockReturnValue(1);
+  const auth = spyOn(CCenterProcess.ms_pInstance!, "SendAuthenCode").mockImplementation(() => {});
+  try {
+    expect(pool["InitPreInventory"](user)).toBe(true);
+    expect(auth).toHaveBeenCalledTimes(authencode === 1 ? 0 : 1);
+    if (authencode !== 1) expect(auth).toHaveBeenCalledWith(123, 1);
+  } finally {
+    ticket.mockRestore();
+    auth.mockRestore();
+  }
+});
+
+test("pre-inventory rowset/open failure returns false instead of escaping the login path", () => {
+  const rows = spyOn(db, "GetPreInventoryRows").mockImplementation(() => { throw new Error("injected rowset failure"); });
+  try {
+    expect(pool["InitPreInventory"](user)).toBe(false);
+  } finally {
+    rows.mockRestore();
+  }
+  expect(errors).toHaveBeenCalledWith("[GS] InitPreInventory: failed to open pre-inventory rowset", expect.any(Error));
+});
+
+test("the 30-row claim budget counts successful prLoadInventory calls, not failed attempts", () => {
+  for (let n = 0; n < 32; n++) {
+    item(100 + n);
+    db.prAddPreInventory(user.GetName(), 0, 100 + n, 5_000 + n, 1, 30, 6);
+  }
+  const original = db.prLoadInventory.bind(db);
+  let calls = 0;
+  const loader = spyOn(db, "prLoadInventory").mockImplementation((...args: Parameters<CDBMan["prLoadInventory"]>) => {
+    if (calls++ === 0) return -1;
+    return original(...args);
+  });
+  try {
+    expect(pool["InitPreInventory"](user)).toBe(true);
+  } finally {
+    loader.mockRestore();
+  }
+
+  expect(calls).toBe(31);
+  expect(user.m_nPreInventoryCount).toBe(30);
+  expect(db.GetUserInventoryRows(user.GetName())).toHaveLength(30);
+  expect(db.GetPreInventoryRows(user.GetName()).map((row) => row.ItemSN)).toEqual([100, 131]);
+});
+
+test("an exception claiming one pre-inventory row is isolated and the next row is still claimed", () => {
+  item(140); item(141);
+  db.prAddPreInventory(user.GetName(), 0, 140, 5140, 1, 30, 6);
+  db.prAddPreInventory(user.GetName(), 0, 141, 5141, 1, 30, 6);
+  const original = db.prLoadInventory.bind(db);
+  let calls = 0;
+  const loader = spyOn(db, "prLoadInventory").mockImplementation((...args: Parameters<CDBMan["prLoadInventory"]>) => {
+    if (calls++ === 0) throw new Error("injected claim failure");
+    return original(...args);
+  });
+  try {
+    expect(pool["InitPreInventory"](user)).toBe(true);
+  } finally {
+    loader.mockRestore();
+  }
+
+  expect(user.m_nPreInventoryCount).toBe(1);
+  expect(user.m_apPreInventory[0]?.ItemSn).toBe(141);
+  expect(db.GetUserInventoryRows(user.GetName()).map((row) => row.ItemSN)).toEqual([141]);
+  expect(db.GetPreInventoryRows(user.GetName()).map((row) => row.ItemSN)).toEqual([140]);
+  expect(errors).toHaveBeenCalledWith("[GS] LoadOnUserInventory failed", expect.any(Error));
+});
+
 test("unknown definition is logged and retained even if expired; later known rows still load", () => {
   own(1, 255, "2000-01-01T00:00:00Z", 0); item(2); own(2);
   expect(load()).toBe(true); expect(loaded()).toEqual([2]); expect(rows()).toEqual([1, 2]);

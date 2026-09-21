@@ -8,6 +8,9 @@ import { CItemMan } from "./ItemMan.ts";
 import type { _USERACCOUNT, _USERDYNINFO } from "./Recordsets.ts";
 import { ItemCategory, IsInventoryAddable } from "../shared/Item.ts";
 import {
+  CART_RECEIPT_CODE,
+  CART_RECEIPT_RESULT,
+  CHARGE_VERIFY_RESULT,
   SHOP_PERMANENT_EXPIRY_LEVEL,
   SHOP_PERMANENT_VALIDITY_DAYS,
   TRANSACTION_PAGE_BYTES,
@@ -507,16 +510,17 @@ export class CMainPool extends CUserPool {
     this.db.prUpdateInventoryVerbose(user.GetName(), itemSN, verbose);
   }
 
-  /** CMainPool::OnRequestCharge — client 214, nothing decoded.  Guards on
-   *  user+20 (the in-billing-tranx flag) and answers client 206:
-   *  [E1 CMainSystem+4 FX attr][E4 serial][E4 cash]; then flags user+3048. */
+  /** CMainPool::OnRequestCharge — client 214, nothing decoded. Guards on
+   * user+20 and answers client 206 with
+   * [E1 CMainSystem+4 FX attr][E4 serial][E4 user+0xBE4 charge key], then
+   * flags user+0xBE8. The last DWORD is not either cash balance. */
   OnRequestCharge(_n: CReceivedPacket, socket: CClientSocket): void {
     const user = socket.GetUser(socket.m_nSelectedUserIdx);
     if (!user || user.m_fTranxInProgress !== 0) return;
     const p = new CSendPacket(SC_SendPacket.OnReqPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
     p.Encode1(CMainSystem.ms_pInstance!.m_nFXAttr & 0xff);
     p.Encode4(user.GetGlobalSerialNo());
-    p.Encode4(user.m_nCash);
+    p.Encode4(user.m_nChargeKey);
     socket.SendPacket(p);
     user.m_fRemainCashRequested = 1;
   }
@@ -602,62 +606,83 @@ export class CMainPool extends CUserPool {
   }
 
   /** CMainPool::OnReqPurchaseCartList — client 223
-   *  [E1 count][count×(E2 stockSN, E1 cnt)], guarded by user+20.  The cart
-   *  lands on the user (user+2920 pairs), AddBonusCartItem may append one
-   *  bonus row, then PurchaseCartList walks it: every cash (MoneyType != 0)
-   *  entry is bought cnt times; the first billing (MoneyType == 0) entry
-   *  hands the purchase to the billing link and the receipt
-   *  [204][0][8B variant time] closes the cart. */
+   * [E1 count][count×(E2 stockSN, E1 cnt)], guarded by user+20. Native stores
+   * count as the next empty slot: a bonus remains at that index, while a miss
+   * decrements it to the last client row. It then consumes the current row's
+   * first unit before entering PurchaseCartList. */
   OnReqPurchaseCartList(n: CReceivedPacket, socket: CClientSocket): void {
     const user = socket.GetUser(socket.m_nSelectedUserIdx);
     if (!user || user.m_fTranxInProgress !== 0) return;
     if (this.billingProcess.m_fLocalBilling) { this.PurchaseError(user, 1, BILLING_ERROR.unsupported); return; }
+
     user.m_fCartProcessing = 1;
-    const count = n.Decode1();
+    user.m_nCartCount = n.Decode1();
     user.m_anCart = [];
     let billingTotal = 0;
-    for (let i = 0; i < count; i++) {
+    let hasUnknownStock = false;
+    for (let i = 0; i < user.m_nCartCount; i++) {
       const stockSN = n.Decode2();
       const cnt = n.Decode1();
       user.m_anCart.push({ stockSN, cnt });
       const item = CItemMan.ms_pInstance!.GetShopItem(stockSN);
-      if (item && item.MoneyType === 0) billingTotal += item.Price;
+      if (!item) {
+        hasUnknownStock = true;
+      } else if (item.MoneyType === 0) {
+        billingTotal = (billingTotal + item.Price) | 0;
+      }
     }
-    // CItemMan::AddBonusCartItem — the total crossing a FxBonusMap Price
-    // appends {StockSN, 1}; a miss drops the slot again
-    if (CItemMan.ms_pInstance!.AddBonusCartItem(billingTotal, user, user.m_anCart.length) === 0) {
-      // no bonus row appended
-    } else {
-      // the appended row becomes cart entry `count`
+    if (hasUnknownStock) {
+      // Native dereferences the missing ShopItem while summing the cart.
+      // Reject that undefined path before any purchase side effect.
+      user.m_fCartProcessing = 0;
+      return;
     }
+
+    // AddBonusCartItem writes {StockSN,1} at the next-empty-slot index. With
+    // no matching threshold, native changes that index to the final input row.
+    if (CItemMan.ms_pInstance!.AddBonusCartItem(billingTotal, user, user.m_nCartCount) === 0) {
+      user.m_nCartCount--;
+    }
+    const first = user.m_anCart[user.m_nCartCount];
+    if (!first) {
+      // Zero/malformed carts index outside the native fixed array. Reject that
+      // undefined path without leaving the port's user permanently cart-busy.
+      user.m_fCartProcessing = 0;
+      return;
+    }
+    first.cnt = (first.cnt - 1) | 0;
     this.PurchaseCartList(user);
   }
 
-  /** CMainPool::PurchaseCartList — walk the cart from the top. */
+  /** CMainPool::PurchaseCartList — consume the cart from its highest index. */
   PurchaseCartList(user: CUser): void {
     for (;;) {
-      const entry = user.m_anCart[user.m_nCartCount] ?? user.m_anCart[user.m_anCart.length - 1];
-      if (!entry) break;
+      const entry = user.m_anCart[user.m_nCartCount];
+      if (!entry) {
+        user.m_fCartProcessing = 0;
+        return;
+      }
       this.OnReqPurchaseStockItem(user, entry.stockSN);
       const item = CItemMan.ms_pInstance!.GetShopItem(entry.stockSN);
-      if (item === null || item.MoneyType === 0) break; // billing items leave the tranx open, no receipt
+      if (item === null || item.MoneyType === 0) return; // billing entry pauses this native walk
       user.ResetTranxInfo();
-      const idx = user.m_nCartCount;
-      if ((user.m_anCart[idx]?.cnt ?? 0) <= 0) user.m_nCartCount = idx - 1;
+
+      if (entry.cnt <= 0) user.m_nCartCount--;
       if (user.m_nCartCount < 0) {
-        // the cart receipt: client 215 [E1 9][E1 0][EBuffer 8 variant time]
-        // (CMainPool::PurchaseCartList tail, FxShop.exe.c 00416CF0)
+        // Native clears user+0xBF0 before client 215 [E1 9][E1 0][8B date].
+        user.m_fCartProcessing = 0;
         if (user.m_pSocket) {
           const p = new CSendPacket(SC_SendPacket.OnPurchaseCartListRes, CipherDegree.kPacketEncryptedCRC8);
-          p.Encode1(9);
-          p.Encode1(0);
+          p.Encode1(CART_RECEIPT_CODE);
+          p.Encode1(CART_RECEIPT_RESULT);
           p.EncodeBuffer(EncodeVariantTime(new Date()));
           user.m_pSocket.SendPacket(p);
         }
         user.ResetTranxInfo();
         return;
       }
-      user.m_anCart[user.m_nCartCount]!.cnt--;
+      const next = user.m_anCart[user.m_nCartCount]!;
+      next.cnt = (next.cnt - 1) | 0;
     }
   }
 
@@ -708,24 +733,26 @@ export class CMainPool extends CUserPool {
   }
 
   /** CMainPool::OnVerifyKey — the web mall charge handshake (9802).
-   *  [E4 serial][E4 key] → the result int goes back raw: 1 ok, -3 unmatched,
-   *  -4 unknown user. */
+   * [E4 serial][E4 key] → a raw little-endian int: 1 ok, -3 unmatched,
+   * -4 absent/busy. user+20 is the only state gate; success does not bind or
+   * consume the key, so later verification requests can validate it again. */
   OnVerifyKey(n: CReceivedPacket, socket: CWebSocket): void {
     const serial = n.Decode4();
     const key = n.Decode4();
     const user = CLocalUserTable.ms_pInstance!.FindUserFromGlobalSerialNo(serial);
     let result: number;
-    if (!user || user.m_pChargeSocket !== null) {
-      result = -4;
+    if (!user || user.m_fTranxInProgress !== 0) {
+      result = CHARGE_VERIFY_RESULT.Unavailable;
       console.log("[Shop] ChargeKey failed..");
     } else if (user.m_nChargeKey === key) {
-      result = 1;
-      user.m_pChargeSocket = socket;
+      result = CHARGE_VERIFY_RESULT.Success;
     } else {
-      result = -3;
+      result = CHARGE_VERIFY_RESULT.KeyMismatch;
       console.log(`[Shop] ChargeKey unmatched.. ${user.GetName()}`);
     }
-    socket.SendBuffer(Int32Array.of(result).buffer as ArrayBuffer);
+    const reply = new ArrayBuffer(Int32Array.BYTES_PER_ELEMENT);
+    new DataView(reply).setInt32(0, result, true);
+    socket.SendBuffer(reply);
   }
 }
 

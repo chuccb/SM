@@ -52,6 +52,8 @@ export const DYN_FLUSH_BURST = 0x19;
 export const USER_MONEY_MAX = 1_000_000;
 /** CDBMan::InitPreInventory / CUser fixed pre-inventory pointer table. */
 export const MAX_PRE_INVENTORY_ROWS = 30;
+/** CUser::MakePreInventoryPacket's upper clamp before its E2 encode. */
+export const PRE_INVENTORY_VALIDITY_CLAMP = 100_000;
 
 /**
  * CBaseSession m_rgSlotState triple (+68+3·slot) bit fields — byte0: bits 2-4

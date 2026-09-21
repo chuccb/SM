@@ -1,5 +1,5 @@
 /** Native source unit: FX/FxServer/CenterProcess.cpp. */
-import { CServerConfig } from "../core/ServerConfig.ts";
+import type { CServerConfig } from "../core/ServerConfig.ts";
 import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
 import { CDBMan } from "../db/DBMan.ts";
 import { CLocalSocket } from "../shared/LocalSocket.ts";
@@ -37,7 +37,10 @@ export class CCenterProcess {
   m_anChannelPort: number[] = []; // +44312 (u16)
   m_anChannelEnterable: number[] = []; // +46360
 
-  constructor(public db: CDBMan) {
+  constructor(
+    public db: CDBMan,
+    private readonly cfg: CServerConfig,
+  ) {
     this.m_pSocket = new CLocalSocket({
       onPacket: (_sock, packet) => this.OnPacket(packet),
       onClose: () => {
@@ -50,12 +53,13 @@ export class CCenterProcess {
   }
 
   /** CCenterProcess::Init — connect, greet, identify. */
-  async Init(cfg: CServerConfig): Promise<void> {
+  async Init(): Promise<void> {
+    const cfg = this.cfg;
     await this.m_pSocket.ConnectToCenter(
       cfg.GetAttribute("CenterIP"),
       cfg.GetNumAttribute("CenterPort"),
       SVRCLASS_GAME,
-      cfg.GetNumAttribute("ServerIndex"),
+      cfg.GetServerIdx(),
       // gameVersion/clientVersion default from S2S GAME_VERSION/CLIENT_VERSION
       // (FxServer.exe.c:3703 — [E2 7][E2 3])
     );
@@ -166,9 +170,10 @@ export class CCenterProcess {
       this.m_anChannelPort.push(n.Decode2());
       this.m_anChannelEnterable.push(n.Decode1());
     }
-    // MainSystem+8 = chByteType[ServerIndex]
-    const idx = CServerConfig.ms_pInstance!.GetNumAttribute("ServerIndex");
-    CMainSystem.ms_pInstance!.m_nChannelType = this.m_anChannelType[idx] ?? 0;
+    // MainSystem+8 = chByteType[this FXGS process's ServerIndex]. The port
+    // captures that service config because all six emulated EXEs can share
+    // one Bun process and must not observe another service's singleton.
+    CMainSystem.ms_pInstance!.m_nChannelType = this.m_anChannelType[this.cfg.GetServerIdx()] ?? 0;
     for (const waiter of this.m_channelInfoWaiter.splice(0)) waiter();
   }
 

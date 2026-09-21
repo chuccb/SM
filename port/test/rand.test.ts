@@ -7,8 +7,8 @@ import { CRand, RAND_MAX } from "../src/core/CRand.ts";
 
 /** Translate PE32 virtual addresses via section headers (no objdump needed
  * to run the regression suite, and no copied executable fixture). */
-function nativeCode(va: number, length: number): Buffer {
-  const pe = readFileSync(join(import.meta.dir, "..", "..", "FXGS", "FxServer.exe"));
+function peCode(executable: "FXGS/FxServer.exe" | "FXSS/FxShop.exe", va: number, length: number): Buffer {
+  const pe = readFileSync(join(import.meta.dir, "..", "..", executable));
   const nt = pe.readUInt32LE(0x3c);
   const opt = nt + 24;
   const rva = va - pe.readUInt32LE(opt + 28);
@@ -24,7 +24,9 @@ function nativeCode(va: number, length: number): Buffer {
   throw new Error(`No raw PE section for VA ${va.toString(16)}`);
 }
 
-describe("CRT rand/srand (0046EA52/0046EA5F)", () => {
+const nativeCode = (va: number, length: number) => peCode("FXGS/FxServer.exe", va, length);
+
+describe("CRT rand/srand (FxServer 0046EA52; FxShop 00462800)", () => {
   test("the executable confirms the recurrence, TLS state offset, mask and initial seed", () => {
     expect(nativeCode(0x46ea52, 13).toString("hex")).toBe(
       "e8ba5b0000" + // call __getptd
@@ -38,6 +40,16 @@ describe("CRT rand/srand (0046EA52/0046EA5F)", () => {
       "8948148bc1c1e81025ff7f0000c3",    // store; shr 16; and 7FFFh; ret
     );
     expect(nativeCode(0x474659, 7).toString("hex")).toBe("c7461401000000"); // initial state = 1
+  });
+
+  test("FxShop links the same TLS recurrence used by charge-key generation", () => {
+    expect(peCode("FXSS/FxShop.exe", 0x462800, 13).toString("hex")).toBe(
+      "e8534e00008b4c2404894814c3",
+    );
+    expect(peCode("FXSS/FxShop.exe", 0x46280d, 34).toString("hex")).toBe(
+      "e8464e00008b481469c9fd43030081c1c39e26008948148bc1c1e81025ff7f0000c3",
+    );
+    expect(peCode("FXSS/FxShop.exe", 0x467650, 7).toString("hex")).toBe("c7401401000000");
   });
 
   test.each([

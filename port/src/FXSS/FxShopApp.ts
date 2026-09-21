@@ -58,7 +58,7 @@ export class CFxShopApp {
 
     // CBillingProcess::Init
     // CBillingSocketTw ctor seeds GetWorld() (+252) from CServerConfig::GetServerIdx()
-    this.billing.m_nSvrTag = this.cfg.GetNumAttribute("ServerIndex");
+    this.billing.m_nSvrTag = this.cfg.GetServerIdx();
     await this.billing.Init();
 
     // InitChargeUrl / InitAuthUrl — ConfigDB prGetStringAttr @ChargeUrl/@AuthUrl

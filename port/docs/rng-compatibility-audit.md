@@ -1,6 +1,11 @@
 # FXGS CRT 隨機數與消耗順序核對
 
-日期：2026-09-20
+日期：2026-09-21
+
+> **後續 FXSS 更新：** A05 修復已直接讀取 `FxShop.exe` 的 `srand 00462800`、`rand 0046280D`、
+> CRT初值 `00467650`；演算法與FXGS相同，但由Shop自己的長存邏輯worker stream持有，供CUser constructor／SetChargeKey消耗。
+> PE bytes、固定seed 1前兩個key `42/18468`及不使用host random已有回歸。詳見
+> [五組修復紀錄](five-gap-compatibility-fix.md)。LS 的 A14 consumer 仍未因此完成。
 
 ## 範圍與結論
 
@@ -150,7 +155,7 @@ boolean，保留載入失敗前的完整 record 前綴，而不把半筆資料�
 
 新增 **36 個測試**：
 
-- `test/rand.test.ts`：12 個；PE 指令、固定 seed vectors、五種邊界 seed
+- `test/rand.test.ts`：原輪12個，後續加 FxShop PE bytes 後目前13個；PE 指令、固定 seed vectors、五種邊界 seed
   共 50,000 draws 的獨立 BigInt 參考、reseed、stream isolation、不用 host
   RNG、forward shuffle 與消耗次數。
 - `test/game-random.test.ts`：15 個；epoch 秒 seed、房間／練習共用、timer
@@ -175,8 +180,6 @@ preview TypeScript `7.1.0-dev.20260920.1`。preview 工具裝在 repository
 - `git diff --check` 通過。
 
 單元／整合回歸與靜態核對不取代原生 Windows 併發差分。
-LS 的既有 `Math.random()` 本輪未遷移；FXSS 的原生 RNG 消費點也尚未遷移。
-後續[剩餘工作清點](remaining-work-audit.md) 查明 FXSS 目前不是呼叫
-`Math.random()`，而是 charge key 固定為 0，並有相關封包欄位差異。
-不能拿 FXGS 的 CRT 證據直接斷言其他 EXE 使用相同實作或執行緒邊界；
-其餘服務與 SQLite 替代層也未因此取得全面等價認證。
+LS 的既有 `Math.random()` 尚未遷移。FXSS charge-key consumer 後續已以 **FxShop 自己的 PE 證據**完成，
+不是把 FXGS 結論直接套用；兩服務仍持有彼此獨立的 logical-worker stream。
+其他 EXE／執行緒邊界、Windows multi-worker 排程與 SQLite 替代層未因此取得全面等價認證。

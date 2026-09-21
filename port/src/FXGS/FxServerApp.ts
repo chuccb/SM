@@ -27,6 +27,7 @@ import { CTimerThreadNormal, CTimerThreadTimeCritical } from "./TimerThread.ts";
 
 /** CFxServerApp — native owner of the FxServer setup sequence. */
 export class CFxServerApp {
+  cfg: CServerConfig | null = null;
   db: CDBMan | null = null;
   centerProcess: CCenterProcess | null = null;
   listenThread: CListenThread | null = null;
@@ -45,7 +46,8 @@ export class CFxServerApp {
     const { cfgFile, dbDir } = this;
     const cfg = new CServerConfig(FXSERVER_STR_KEYS);
     cfg.Init(cfgFile);
-    CServerConfig.ms_pInstance = cfg;
+    this.cfg = cfg;
+    CServerConfig.ms_pInstance = cfg; // native singleton compatibility; delayed FXGS owners capture `cfg`
 
     PacketLog.Configure("GS");
     PacketLog.Register("GS", "recv", ...PACKET_NAME_TABLES.GS.recv);
@@ -67,13 +69,13 @@ export class CFxServerApp {
     new CLocalUserTable();
     const mainSystem = new CMainSystem(cfg);
     const connectPool = new CConnectPool(db);
-    const channelPool = new CChannelPool(db);
+    const channelPool = new CChannelPool(db, cfg);
     new CGuildTable(db);
-    const center = new CCenterProcess(db);
+    const center = new CCenterProcess(db, cfg);
     this.centerProcess = center;
     // CCenterProcess::Init (FxServer.exe.c:13383) — the WinMain order is the
     // center attach (with the endless 3 s retry loop) BEFORE CListenThread.
-    await center.Init(cfg);
+    await center.Init();
     // The session ctors bind their strategy from MainSystem+8 (:37220), so
     // the channel table has to be in before CGameSessionTable constructs its
     // 510 sessions (the original races this against its DB opens).
@@ -89,7 +91,7 @@ export class CFxServerApp {
     // the bind so an occupied port fails startup instead of leaving a TCP-only
     // server whose clients freeze while loading the map.
     const udpDispatcher = new CUDPPacketDispatcher();
-    const mtudpServer = new MTUDPServer((payload, host) => udpDispatcher.OnUDPPacket(payload, host));
+    const mtudpServer = new MTUDPServer((payload, host) => udpDispatcher.OnUDPPacket(payload, host), cfg);
     this.udpDispatcher = udpDispatcher;
     this.mtudpServer = mtudpServer;
     await mtudpServer.StartupBase(0);
@@ -116,6 +118,7 @@ export class CFxServerApp {
     this.timerThreadTimeCritical = null;
     this.centerProcess = null;
     this.db = null;
+    this.cfg = null;
   }
 }
 

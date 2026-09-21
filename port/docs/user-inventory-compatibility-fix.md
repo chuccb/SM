@@ -1,7 +1,9 @@
 # A20：GS 庫存載入、道具狀態與裝飾封包修復
 
 日期：2026-09-21。範圍是**已存在的 live inventory → GS 登入載入 → 功能／外觀狀態 → 201、個人資料 71、入房 105 → 重新登入**。
-不是完整商城交易／預庫存領取／裝備切換功能的完成聲明；A18、A19、A13 仍分別追蹤。
+本文件原輪不是完整商城交易／預庫存領取／裝備切換功能的完成聲明；A18、A19、A13 當時分別追蹤。
+後續 A19 pre-inventory 領取已完成其列明期限／premium／failure-budget 範圍，見
+[五組修復紀錄](five-gap-compatibility-fix.md)；A13與其他完整交易生命週期仍獨立保留。
 
 > 後續動態回報找出本文件當時漏核的 201 count 寬度：外層玩家數是 E1，但每位玩家的 inventory count 是 **E4**，不是原 TS 的 E2。現已依 vtable assembly 修正並加入購入、裝備、回 GS 及完整重新登入回歸；詳見 [商城道具裝備後重新登入黑屏修復](item-relogin-compatibility-fix.md)。本文件其餘 loader／欄位與 71／105 結論不變。
 
@@ -120,5 +122,5 @@ E2 category3Count
 不需重新匯入 CAItem、刪 DB、改價格或重發物品，沒有 DB schema migration。
 未知帳號登入自動註冊與本機 billing 原子結算均保留，整套既有測試也已重跑。
 
-A18 遊戲金錢購買、A19 預庫存／期限寫入、A13 本地日曆與 OLE DATE、A22 bonus、A23 shard／migration，以及裝備切換等其他尚未完整核對路徑仍未因此完成。
+本文件完成當時尚開放的 A19 預庫存／期限與 A22 bonus 後續均已依原版修復；A18其餘交易邊界、A13本地日曆與OLE DATE、A23 shard／migration，以及裝備切換等仍未因此完成。
 沒有宣稱所有道具功能／所有 GS packet 已與 Windows client 動態差分一致；本輪證據為靜態原生對照、SQLite 故障與狀態測試，以及 TS 服務的真實 TCP 回歸。

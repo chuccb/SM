@@ -19,6 +19,8 @@ export const ItemCategory = {
   LimitedItem: 13,
   Bomb: 14,
   StackableItem: 15,
+  Money: 100,
+  Experience: 101,
 } as const;
 
 /** Resource names passed to native HasFunctionalItem, also present verbatim

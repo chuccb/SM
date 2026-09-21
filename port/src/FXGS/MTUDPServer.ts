@@ -1,5 +1,5 @@
 /** Native source unit: common/MTUDPServer.cpp (FxServer.map: MTUDPServer.obj). */
-import { CServerConfig } from "../core/ServerConfig.ts";
+import type { CServerConfig } from "../core/ServerConfig.ts";
 import { PacketLog } from "../core/PacketLog.ts";
 import { MTUDP_UDP_PORT_OFFSET, type HOSTHANDLE } from "../shared/MTUDP.ts";
 import { MTUDPBase, type MTUDPFrameHandler } from "./MTUDPBase.ts";
@@ -23,7 +23,10 @@ export class MTUDPServer extends MTUDPBase {
 
   private readonly logTag = PacketLog.tag;
 
-  constructor(onFrame: MTUDPFrameHandler) {
+  constructor(
+    onFrame: MTUDPFrameHandler,
+    private readonly cfg: CServerConfig,
+  ) {
     super(onFrame, true);
     MTUDPServer.ms_pInstance = this;
   }
@@ -31,9 +34,7 @@ export class MTUDPServer extends MTUDPBase {
   /** MTUDPServer::StartupBase — bind INADDR_ANY to ServerPort + 1. */
   async StartupBase(nAddr = 0): Promise<void> {
     void nAddr; // the native caller passes INADDR_ANY (zero)
-    const cfg = CServerConfig.ms_pInstance;
-    if (!cfg) throw new Error("MTUDPServer::StartupBase requires CServerConfig");
-    const port = cfg.GetNumAttribute("ServerPort") + MTUDP_UDP_PORT_OFFSET;
+    const port = this.cfg.GetNumAttribute("ServerPort") + MTUDP_UDP_PORT_OFFSET;
 
     this.m_nSocket = await Bun.udpSocket({
       hostname: "0.0.0.0",

@@ -5,6 +5,7 @@
  * writes) and the misc handlers (214/226/20) — against the real code paths.
  */
 import { GetTickCount } from "../src/core/GetTickCount.ts";
+import { RAND_MAX } from "../src/core/CRand.ts";
 import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { mkdirSync, rmSync } from "node:fs";
@@ -304,11 +305,10 @@ describe("shop flow", () => {
     const p206 = await c.recv(206);
     expect(r1(p206)).toBe(0); // the FX attr (CMainSystem+4)
     expect(r4(p206)).toBe(7); // the global serial
-    // the cached cash mirrors the DB after every successful purchase so far
-    const u0 = new Database(`${DB_DIR}/UserInfo${String(GetUserHashNo("tester")).padStart(2, "0")}.db`);
-    const cash = (u0.query("SELECT Money FROM FxUserDynamic WHERE ID = 'tester'").get() as { Money: number }).Money;
-    u0.close();
-    expect(r4(p206)).toBe(cash);
+    const key = r4(p206);
+    expect(key).toBe(CLocalUserTable.ms_pInstance!.FindUserFromGlobalSerialNo(7)!.m_nChargeKey);
+    expect(key).toBeGreaterThanOrEqual(1);
+    expect(key).toBeLessThanOrEqual(RAND_MAX + 1);
     c.close();
   });
 

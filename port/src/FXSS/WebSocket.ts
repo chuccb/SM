@@ -10,8 +10,9 @@ import {
 } from "../protocol/PacketIDs.ts";
 import { CMainPool } from "./MainPool.ts";
 
-/** CWebSocket — the ServerPort+1 web-mall listener socket.  The framing is
- *  the standard CPacketSocket one; the first packet is OnVerifyKey. */
+/** CWebSocket — the ServerPort+1 web-mall listener socket. The framing is
+ * the standard CPacketSocket one; every complete packet is an OnVerifyKey
+ * request (CWorkerThread::Proc, FxShop 00422B7D). */
 export class CWebSocket extends CPacketSocket {
   /** CWebSocket::OnReceiveCompletionPacket runs the same 50-stamp receive
    *  flood ring and the "(%s), disconnected." overflow report as the client
@@ -35,21 +36,10 @@ export class CWebSocket extends CPacketSocket {
   static ms_tblSerialNo2Socket = new Map<number, CWebSocket>();
 
   m_nLocalSerialNo = 0;
-  m_bVerified = 0;
 
   constructor() {
     super(CPacketSocket.dwRcvBufferSize, CPacketSocket.dwSndBufferSize, {
-      onPacket: (_sock, packet) => {
-        const pool = CMainPool.ms_pInstance;
-        if (!pool) return;
-        if (!this.m_bVerified) {
-          pool.OnVerifyKey(packet, this);
-          this.m_bVerified = 1;
-          return;
-        }
-        // post-verify web traffic (charge receipts) — logged, no in-game effect
-        console.log(`[Shop] web packet type ${packet.m_nPacketType}`);
-      },
+      onPacket: (_sock, packet) => CMainPool.ms_pInstance?.OnVerifyKey(packet, this),
     });
     this.m_szLogTag = "Shop";
     this.m_fClientLink = true;

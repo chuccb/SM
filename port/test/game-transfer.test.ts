@@ -8,6 +8,7 @@ import { CClientSocket } from "../src/FXGS/ClientSocket.ts";
 import { CLocalUserTable } from "../src/FXGS/LocalUserTable.ts";
 import { CCenterProcess } from "../src/FXGS/CenterProcess.ts";
 import { CReceivedPacket, CSendPacket, enSocket } from "../src/core/Packet.ts";
+import { CServerConfig } from "../src/core/ServerConfig.ts";
 import type { CDBMan } from "../src/db/DBMan.ts";
 import {
   CMainPool as CShopMainPool, CClientSocket as CShopClientSocket,
@@ -119,7 +120,7 @@ for (const serials of [[999, 123], [123, 999], []]) {
 
 test("the user's exact Shop request is forwarded without a version word or front-stage check", () => {
   const { socket, sent } = client();
-  const center = new CCenterProcess({} as CDBMan);
+  const center = new CCenterProcess({} as CDBMan, new CServerConfig([]));
   const forwarded: CSendPacket[] = [];
   const send = spyOn(center, "SendPacket").mockImplementation(p => { forwarded.push(p); });
   const check = spyOn(center, "CheckEnterGame");
@@ -137,7 +138,7 @@ test("the user's exact Shop request is forwarded without a version word or front
 
 test("local CheckEnterGame refusal also uses client packet 6", () => {
   const { socket, sent } = client(); socket.m_nPoolType = 3;
-  const center = new CCenterProcess({} as CDBMan);
+  const center = new CCenterProcess({} as CDBMan, new CServerConfig([]));
   const check = spyOn(center, "CheckEnterGame").mockReturnValue(4);
   const send = spyOn(center, "SendPacket");
   restorers.push(() => { check.mockRestore(); send.mockRestore(); });

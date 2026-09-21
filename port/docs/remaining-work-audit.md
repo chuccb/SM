@@ -1,19 +1,27 @@
 # 剩餘工作與官方差異清點
 
-日期：2026-09-20。範圍：目前工作樹（含前兩輪尚未提交的地圖／RNG 修改）。
+日期：2026-09-21。範圍：目前工作樹及前兩輪相容性清點。
+
+**2026-09-21 最新修復：** [A05／A09／A10／A19／A22 修復紀錄](five-gap-compatibility-fix.md)
+已依 repository 內原版 binary artifacts 修正 charge key／206／重複 verify、cart cursor／count／完成旗標、
+FXGS service-owned config、pre-inventory 期限／premium gate／成功30筆，以及 Price-keyed BonusMap。
+兩份 probes 現為 **40 observations／0 GAP／40 MATCH**（第一份因補 A10 的71／location欄位增至16項）；
+完整 `bun run check` 為 **681 pass／0 fail／26,609 expect() calls／35 files**，並通過最新preview工具鏈身分、import-cycle、source-boundary及strict typecheck。
+這只表示固定的 isolated observations 已一致，不取代 Windows differential 或下列仍開放分組。
+目前 A 類待辦由14組降為 **9組**：A07、A08、A12–A15、A17、A18、A23及其列明未完成邊界。
 
 **續輪清點已完成：** [第二輪 A16–A23](remaining-work-audit-2.md) 新增 8 組，
 合計 22 組待辦；A02 自動註冊依使用者要求保留，不列待修。兩份 harness 重跑共
 38 個觀察：36 GAP、2 MATCH。以下 A01–A15 與原回歸時間保留作第一輪紀錄。
 
-**最新修復進度：** [A01 共用 TCP 發送鏈](transport-compatibility-fix.md)、
+**本次五組修復前的基準進度（歷史數字）：** [A01 共用 TCP 發送鏈](transport-compatibility-fix.md)、
 [A11／A21 個人動態資料鏈](user-dyninfo-compatibility-fix.md)、
 [A03 建帳交易與競爭](account-registration-compatibility-fix.md)、
 [A04 Center 逾時與狀態清理](center-timeout-compatibility-fix.md)、
 [A16 Taiwan billing transport](billing-transport-compatibility-fix.md)、
 [A06 NexonClub ID](nexonclub-id-compatibility-fix.md) 已修復各輪列明差異。
-A02 為保留需求，目前已列 A 待辦剩 **14 組**（不含 B 待全鏈追查工作）；兩份 probe 最新合計
-**38 個觀察／11 GAP／27 MATCH**。全套最新 **653 pass／0 fail／26,475 assertions／32 files**。
+A02 為保留需求；在本次五組修復前，已列 A 待辦為 **14 組**（不含 B 待全鏈追查工作），兩份 probe 基準為
+**38 個觀察／11 GAP／27 MATCH**，全套基準為 **653 pass／0 fail／26,475 assertions／32 files**。
 另完成 [Practice 立即開局／練習選圖／UDP-loss 誤踢修復](practice-start-compatibility-fix.md)：
 恢復普通房間空 stub 與 Practice override 的 vtable 分流；真實 TCP 不送 UDP 即收到150，普通房間 gate 保留。
 另完成 [GS ↔ Shop 轉服修復](shop-transfer-compatibility-fix.md)：回覆 opcode、Shop request 寬度與整組使用者檢查；新增雙向 TCP 回歸。
@@ -21,7 +29,7 @@ A02 為保留需求，目前已列 A 待辦剩 **14 組**（不含 B 待全鏈�
 本機政策不等於 native backend；A08/A17 其餘 gift/coupon/cart、receipt/reset、外部 settlement 等仍待修，這些工作仍保留待辦。
 另完成 [A20 GS 庫存／道具狀態／裝飾封包](user-inventory-compatibility-fix.md)，含原版道具登入／重入／201／71／105 TCP 回歸，三個 A20 probe 已為 MATCH。
 另修復 [爆炸頭／category 購買限制與遊戲金錢發貨期限](shop-purchase-compatibility-fix.md)：原價6034實際TCP購入、回GS與重新登入；A18三項、A19商城三項及A07已建模coupon reset probe轉MATCH。
-A07完整狀態、A18其餘交易／proc核對、A19預庫存與A13日期仍不宣稱完成，分組仍維持14。
+該基準當時 A07完整狀態、A18其餘交易／proc、A19預庫存與A13日期仍未完成；A19預庫存後續已由本次五組修復完成其列明範圍。
 原版 CAItem 定義資料也已[安全匯入](caitem-catalog.md)；A15 其餘資料／遷移範圍不因此宣稱完成。
 另修正 LS `cUnreliableQueueIn` 的 TS storage 映射：原生 `this+36` 是 byte store 起點，
 不是 JS typed array 內仍需保留的 index；FIFO／截斷 dequeue／原生 `count+len+2` 邊界已有專項回歸，
@@ -36,8 +44,8 @@ GitHub 更晚的 Bun canary 下載失敗，未宣稱已升級，詳見 [工具�
 本輪是**清點、查證與重現，不是修復輪次**；沒有把下列業務行為直接改掉。
 不能把「六個服務都有入口」或「178 個測試通過」當成完整官方相容。
 
-- **A：已確認的差異／缺實作**。保留 A01–A15 穩定編號，其中 A02 已依使用者要求改列需求差異；剩餘 14 組待辦。
-  一組可能包含數個相關錯誤。
+- **A：已確認的差異／缺實作**。保留 A01–A15 穩定編號，其中 A02 已依使用者要求改列需求差異；跨兩輪目前剩餘 9 組待辦。
+  一組可能包含數個相關錯誤；下文未加更新註記的發現文字是清點時歷史紀錄。
   A01–A11 原有共 14 個隔離 probe；A02 現為需求驗證，其餘 13 個重現差異；A12–A14 為靜態對照，A15 為資料部署缺口。
 - **B：仍需核實**。只有風險或尚未完成的核對，不計入已確認錯誤數量。
 - **C：不能誤列成缺功能**。官方自己就是空函式、停用流程，或刻意的安全邊界。
@@ -111,7 +119,11 @@ GitHub 更晚的 Bun canary 下載失敗，未宣稱已升級，詳見 [工具�
 - 詳見 [A04 有界修復報告](center-timeout-compatibility-fix.md)。不認證 Windows 排程、
   全域 serial 配發、整個 establishment handler 或位置查詢；這些另列 B 全鏈追查。
 
-### A05 · P0 · 商城儲值 key、206 封包及 web 驗證三處不一致
+### A05 · 已修復（原 P0）· 商城儲值 key、206 封包及 web 驗證
+
+> 已按 FxShop CRT PE bytes 與 `004200E8/0041EE90/00415520/004158E0/00422B7D` 修復；
+> 長存 Shop worker stream、206 charge-key 欄、little-endian raw result及可重複 verify 均有回歸。
+> 詳見 [五組修復紀錄](five-gap-compatibility-fix.md)。以下是修復前清點。
 
 - TS：`FXSS/User.ts::CUser.m_nChargeKey` 固定 0，constructor 未抽取；
   `OnRequestCharge` 在 206 最後寫的是 `m_nCash`；`OnVerifyKey` 成功後另寫
@@ -173,7 +185,12 @@ A08 prefix probe 已 MATCH（成功 fixture 移除多餘 tail；strict parser �
   使用者已離線、找不到 serial、DB 失敗、重複／延遲回覆、交易狀態 reset。
   本輪只證實以上列出的缺口，沒有把未讀完的其餘 billing handlers 認證為正確。
 
-### A09 · P0 · 購物車起始索引及數量消耗錯誤
+### A09 · 已修復（原 P0）· 購物車起始索引及數量消耗
+
+> 已按 `00416E30/00416CF0` 修復 next-empty／bonus miss、首次預減、反向逐量消耗、billing pause與正常完成旗標／215。
+> 對 `PurchaseCartList` 的完整 xref／user+3056 access audit 顯示原版 billing row 本身不在此函式續走；清點時寫的「暫停後續接」不是已證實的 A09 原生行為，外部 billing 補償仍歸 A08/A17。
+> count=0／unknown stock 的原生未定義路徑採明示安全拒絕。
+> 詳見 [五組修復紀錄](five-gap-compatibility-fix.md)。以下是修復前清點。
 
 - 清點時的 TS（現位於 `FXSS/MainPool.ts`）：`OnReqPurchaseCartList` 沒把 `m_nCartCount` 設成解碼 count，
   也沒做原生的第一筆預先 decrement；`PurchaseCartList` 還有最後一筆 fallback。
@@ -182,10 +199,13 @@ A08 prefix probe 已 MATCH（成功 fixture 移除多餘 tail；strict parser �
   完成時還有 `+3056=0`，TS 目前未清 `m_fCartProcessing`。
 - 重現：兩筆 `(10,1),(20,1)`，無 bonus、皆非 billing item；攔截購買呼叫，
   TS 是 `[10,10]`，原生順序為 `[20,10]`。此 fixture 不實際扣款。
-- 驗收：1／多筆、cnt、bonus、失敗、billing 暫停後續接、再次購買、結束旗標。
-  不能只修索引而忽略 A07／A08 的交易狀態鏈。
+- 清點時驗收草案：1／多筆、cnt、bonus、失敗、billing 暫停、再次購買、結束旗標；
+  其中「billing 暫停後在本函式續接」已由上述 xref 核對排除，外部交易狀態鏈仍不能與 A07／A08 混為一談。
 
-### A10 · P1 · 六服務同 process 時，FXGS 仍讀取會被覆蓋的 config singleton
+### A10 · 已修復（原 P1）· FXGS service-owned config
+
+> `CFxServerApp` 現明確把自己的 config 傳給 CenterProcess、ChannelPool、MTUDPServer；延遲 channel／71／location／UDP bind不再讀其他服務覆寫的 singleton。
+> 非零且互異 index／port 已有回歸與 probe。詳見 [五組修復紀錄](five-gap-compatibility-fix.md)。以下是修復前清點。
 
 - TS：`main.ts` 順序啟動六服務，各自覆寫同一個 `CServerConfig.ms_pInstance`。
   `FXGS/CenterProcess.ts::OnLocalServerInfo`、`ChannelPool.ts::SendUserDetailInfo` 及
@@ -244,8 +264,8 @@ A08 prefix probe 已 MATCH（成功 fixture 移除多餘 tail；strict parser �
 
 - `LS/LoginPool.ts::OnRequestDestoryService` 仍 `Math.random()*0x8000 & 3`；
   官方 `CxLogin.exe.c:14793` 為 `rand() & 3`，同 seed 序列不相同。
-- FXSS 的 RNG 缺口是 A05：目前不是 Math.random，而是根本沒生成 charge key。
-  已更正前一輪 RNG 紀錄的措辭，不把不存在的 TS 呼叫寫進清單。
+- 清點時 FXSS 的 RNG 缺口是 A05：不是 Math.random，而是根本沒生成 charge key；
+  後續已直接核對 FxShop CRT 並修復。A14 目前仍指 LS rand 與 FXGS 多-worker 架構界線。
 - FXGS 的算法／序列化消耗已修，但 native IOCP worker TLS／seed 時刻與 Bun
   邏輯 worker 的映射仍是架構限制，詳見 [RNG 核對](rng-compatibility-audit.md)。
 - 驗收：分別讀各 EXE 的 CRT 本體、消費點及 seed／執行緒邊界；不能把 FXGS
@@ -318,13 +338,11 @@ bun tools/compatibility-probe.ts
 - 這是 standalone audit harness，不是把錯誤固定成正確行為的 regression tests；
   不加入 `bun test`。輸出 GAP 表示觀察到差異，MATCH 僅表示該 fixture 已一致。
   **exit 0 只表示 probe 執行成功，不表示相容性通過。**
-- 第一輪歷史結果：**14 probes，14 GAP**；A02 需求確認後已重跑為 **14 probes，13 GAP、1 MATCH**（涵蓋 A01–A11 的 11 個編號，A02 為需求驗證，A05／A11 含多個 probe）。
-- 例如：partial-write pending `0 vs 3`；rollback 後 account 仍存在；
-  charge reply `9000 vs 321`；billing user lookup `1094861636 vs 123`；
-  cart `[10,10] vs [20,10]`；channel type `0 vs 77`；level 1 max-exp
-  `2147483647 vs 3000`。
-- 既有 `shop.test.ts` charge cash、`e2e.test.ts` max-exp
-  兩個 oracle 明確需要一起改正；`db.test.ts` 自動註冊符合已確認需求，保留。不能用目前全綠的結果否定上述證據。
+- 第一輪歷史結果：**14 probes，14 GAP**；A02 需求確認後為 **14 probes，13 GAP、1 MATCH**。
+  後續逐組修復，並為 A10 的71／location增加兩項觀察；目前第一份為 **16／16 MATCH**。
+- 歷史差異包括 partial-write `0 vs 3`、charge reply `9000 vs 321`、cart `[10,10] vs [20,10]`、channel type `0 vs 77` 等；
+  現在這些固定 fixture 均 MATCH。`shop.test.ts` 的錯誤 cash oracle亦已改為核對 user charge key。
+- `db.test.ts` 的未知帳號自動註冊符合已確認需求並持續保留；probe 全 MATCH 不會取消下列未覆蓋工作。
 
 ### 本輪回歸結果
 

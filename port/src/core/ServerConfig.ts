@@ -279,6 +279,12 @@ export class CServerConfig {
     return Number.parseInt(this.attributes.get(name) ?? "", 10) || 0;
   }
 
+  /** CServerConfig::GetServerIdx — present in the server binaries as the
+   * typed owner of the parsed ServerIndex field. */
+  GetServerIdx(): number {
+    return this.GetNumAttribute("ServerIndex");
+  }
+
   /** CServerConfig::IsRegisteredKey — an exact entry name, or a digit-
    *  suffixed element of an entry whose numberKey has been parsed already
    *  with the index inside its count.  A prefix match whose number key is

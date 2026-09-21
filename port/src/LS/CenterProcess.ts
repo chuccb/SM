@@ -103,7 +103,7 @@ export class CCenterProcess {
         this.m_pCenterSocket = null;
       },
     });
-    await this.m_pCenterSocket.ConnectToCenter(host, port, SVRCLASS_LOGIN, cfg.GetNumAttribute("ServerIndex"));
+    await this.m_pCenterSocket.ConnectToCenter(host, port, SVRCLASS_LOGIN, cfg.GetServerIdx());
     console.log(`[LS] attached to center ${host}:${port}`);
   }
 

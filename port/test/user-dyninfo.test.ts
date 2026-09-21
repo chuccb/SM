@@ -101,7 +101,7 @@ beforeEach(() => {
   const cfg = new CServerConfig([["ServerIndex", ""]]); cfg.ParseConfigString("ServerIndex 2");
   CServerConfig.ms_pInstance = cfg;
   main = new CMainSystem(cfg); new CLocalUserTable(); new CGuildTable(db); new CUserItemMan();
-  channel = new CChannelPool(db); connectPool = new CConnectPool(db); center = new CCenterProcess(db);
+  channel = new CChannelPool(db, cfg); connectPool = new CConnectPool(db); center = new CCenterProcess(db, cfg);
   center.SendPacket = () => enSocket.kioOk; // transport is covered separately; capture client bodies here
   // Use the original table methods with an empty fixture world, not 510 unused rooms.
   CGameSessionTable.ms_pInstance = Object.assign(Object.create(CGameSessionTable.prototype), {

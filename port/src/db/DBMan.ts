@@ -825,7 +825,7 @@ export class CDBMan {
     return info.changes === 1 ? 0 : -1;
   }
 
-  /** prLoadInventory — move a pre-inventory row into the live inventory. */
+  /** prLoadInventory — move a pre-inventory row into live inventory; returns 0 on success. */
   prLoadInventory(
     preInventorySn: number,
     userID: string,
@@ -1171,9 +1171,10 @@ export class CDBMan {
       .all() as never;
   }
 
-  /** CRSBonusMap ("FxBonusMap") — UpdateBonusMapTable's select filter. */
+  /** CRSBonusMap ("FxBonusMap") — the native rowset specifies no ORDER BY;
+   * CItemMan's map<uint,...> owns Price ordering and duplicate-key policy. */
   GetFxBonusMapRows(): { Price: number; StockSN: number }[] {
-    return this.item.query("SELECT Price, StockSN FROM FxBonusMap ORDER BY StockSN").all() as never;
+    return this.item.query("SELECT Price, StockSN FROM FxBonusMap").all() as never;
   }
 
   /** CRSBillingSvr ("BillingSvr" on CAConfig) — CBillingProcess::UpdateBillingSvrList. */

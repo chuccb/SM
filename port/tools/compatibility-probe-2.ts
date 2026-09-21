@@ -159,7 +159,7 @@ function main(): void {
     report("A19.shop-item-expiration-level", owned.LevelCreated, 16);
 
     const cfg = new CServerConfig([]); new CMainSystem(cfg);
-    const center = new CCenterProcess(db);
+    const center = new CCenterProcess(db, cfg);
     const authCodes: number[] = [];
     center.SendAuthenCode = (_sn, code) => { authCodes.push(code); };
     const gameItems = new CUserItemMan();
@@ -248,7 +248,11 @@ function main(): void {
     db.GetFxBonusMapRows = () => [{ Price: 100, StockSN: 20 }, { Price: 100, StockSN: 30 }];
     try { items.UpdateBonusMapTable(db); }
     finally { db.GetFxBonusMapRows = bonusRows; }
-    report("A22.duplicate-price-insert-unique", items.m_vtBonusMap.map((r) => [r.Price, r.StockSN]), [[100, 20]]);
+    report(
+      "A22.duplicate-price-insert-unique",
+      [...items.m_mapBonusMap.values()].map((row) => [row.Price, row.StockSN]),
+      [[100, 20]],
+    );
 
     const differingBytes: number[] = [];
     for (let b = 1; b <= 255; b++) {

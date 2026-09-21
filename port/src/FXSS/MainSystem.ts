@@ -1,4 +1,5 @@
 /** Native source unit: FX/FxShop/MainSystem.cpp. */
+import { CRand } from "../core/CRand.ts";
 import { CReceivedPacket, CSendPacket } from "../core/Packet.ts";
 import { SC_SendPacket } from "../protocol/PacketIDs.ts";
 import { CENTER_VERSION, CONN_HELLO_VERSION, SVRCLASS_SHOP } from "../protocol/CenterProtocol.ts";
@@ -12,6 +13,13 @@ const CONN_PATCH_URL = "ftp://patch.nexon.co.kr/ca";
  *  0: [E2 CENTER_VERSION][E2 CONN_HELLO_VERSION[class]][E4 headerType][EStr url]. */
 export class CMainSystem {
   static ms_pInstance: CMainSystem | null = null;
+
+  /** Port execution-context state, not an original CMainSystem field.
+   * CThread::ProcEntry (0042ABE0) seeds each native worker's CRT state with
+   * time(NULL). Bun dispatches Shop requests on one logical worker, so its
+   * users share this persistent stream rather than Math.random or per-user
+   * reseeding. */
+  readonly m_WorkerRandom = new CRand(Math.floor(Date.now() / 1_000));
 
   m_strChargeUrl = ""; // +2, InitChargeUrl
   m_nFXAttr = 0; // +4, OnInitialSvrAttr / GetDomain

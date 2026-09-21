@@ -1,5 +1,7 @@
-/** The CRT rand/srand linked into FxServer.exe, read from the PE itself:
- *  srand 0046EA52, rand 0046EA5F, __getptd 00474611.
+/** The CRT rand/srand linked into the shipped game and shop servers, read
+ *  from the PEs themselves:
+ *  FxServer: srand 0046EA52, rand 0046EA5F, __getptd 00474611.
+ *  FxShop:   srand 00462800, rand 0046280D, __getptd 00467658.
  *  This is a compatibility PRNG, NOT a source of cryptographic randomness.
  *
  *  The native state belongs to CRT thread-local data (+0x14). Keep instances

@@ -8,6 +8,7 @@ import {
   CHANNEL_TYPE_GUILD,
   DYN_FLUSH_BURST,
   MAX_PRE_INVENTORY_ROWS,
+  PRE_INVENTORY_VALIDITY_CLAMP,
   SESSION_IDX_NONE,
   USER_MONEY_MAX,
 } from "./Defs.ts";
@@ -319,8 +320,8 @@ export class CUser {
       packet.Encode1(item.Type);
       packet.Encode4(pre.ItemSn);
       packet.Encode2(Math.min(pre.Amount, 0xffff));
-      packet.Encode2(item.Type === 101 ? this.m_nLevel & 0xffff : 0);
-      packet.Encode2(Math.min(pre.ValidityPeriod, 100000) & 0xffff);
+      packet.Encode2(item.Type === ItemCategory.Experience ? this.m_nLevel & 0xffff : 0);
+      packet.Encode2(Math.min(pre.ValidityPeriod, PRE_INVENTORY_VALIDITY_CLAMP) & 0xffff);
       packet.EncodeStr(pre.Description);
       packet.EncodeStr(pre.strAttr);
     }

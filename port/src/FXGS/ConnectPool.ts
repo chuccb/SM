@@ -284,37 +284,68 @@ export class CConnectPool extends CUserPool {
     return true;
   }
 
-  /** CDBMan::InitPreInventory — the 30 pre-inventory slots. */
+  /** CDBMan::InitPreInventory — the 30 successfully claimed rows. */
   private InitPreInventory(user: CUser): boolean {
-    const rows = this.db.GetPreInventoryRows(user.GetName());
-    let n = 0;
+    let rows: ReturnType<CDBMan["GetPreInventoryRows"]>;
+    try {
+      rows = this.db.GetPreInventoryRows(user.GetName());
+    } catch (error) {
+      console.error("[GS] InitPreInventory: failed to open pre-inventory rowset", error);
+      return false;
+    }
+
+    let claimed = 0;
     for (const row of rows) {
-      if (n >= MAX_PRE_INVENTORY_ROWS) break;
+      if (claimed >= MAX_PRE_INVENTORY_ROWS) break;
       const item = CUserItemMan.ms_pInstance!.GetUserItem(row.ItemSN);
       if (!item) continue;
-      let truncate = 0;
-      if (item.Type === 9) {
-        this.db.prSetPremiumTicket(user.GetName(), row.ValidityPeriod);
-        if (user.m_fPremiumTicket !== 1) {
+
+      let truncateOnly = 0;
+      if (item.Type === ItemCategory.PremiumTicket) {
+        const ticketSet = this.db.prSetPremiumTicket(user.GetName(), row.ValidityPeriod);
+        if (ticketSet !== 0 && user.GetAuthencode() !== 1) {
           CCenterProcess.ms_pInstance?.SendAuthenCode(user.GetGlobalSerialNo(), 1);
         }
-        truncate = 1;
+        truncateOnly = 1;
       }
-      if (item.Type === 101) {
+      if (item.Type === ItemCategory.Experience) {
         user.IncDecExp(row.Amount);
         user.SetLevel();
-        truncate = 1;
+        truncateOnly = 1;
       }
-      if (item.Type === 100) {
+      if (item.Type === ItemCategory.Money) {
         user.IncDecMoney(row.Amount);
-        truncate = 1;
+        truncateOnly = 1;
       }
-      if (item.Type === 100 || item.Type === 101) user.DeferFlushModifiedInfo(this.db, 1);
-      if (
-        this.db.prLoadInventory(row.SN, user.GetName(), row.ItemSN, row.StockSN, row.Slot, row.Amount, row.ValidityPeriod, user.m_nLevel, truncate) !== 0
-      ) {
+      if (item.Type === ItemCategory.Money || item.Type === ItemCategory.Experience) {
+        user.DeferFlushModifiedInfo(this.db, 1);
+      }
+
+      // 0040AEFD adds this row's ValidityLevel to the user's CURRENT level.
+      // Unlike Shop purchases, zero is not replaced with the level-2000
+      // permanent sentinel on this caller.
+      const expiryLevel = (user.m_nLevel + row.ValidityLevel) | 0;
+      let loadResult: number;
+      try {
+        loadResult = this.db.prLoadInventory(
+          row.SN,
+          user.GetName(),
+          row.ItemSN,
+          row.StockSN,
+          row.Slot,
+          row.Amount,
+          row.ValidityPeriod,
+          expiryLevel,
+          truncateOnly,
+        );
+      } catch (error) {
+        console.error("[GS] LoadOnUserInventory failed", error);
         continue;
       }
+      // This SQLite stored-procedure adapter follows the repository's
+      // zero-on-success convention; only that successful move consumes budget.
+      if (loadResult !== 0) continue;
+
       const pre = new PreInventory();
       pre.SN = row.SN;
       pre.Type = row.Type;
@@ -328,7 +359,7 @@ export class CConnectPool extends CUserPool {
       pre.Description = row.Description;
       user.m_apPreInventory[user.m_nPreInventoryCount] = pre;
       user.m_nPreInventoryCount++;
-      n++;
+      claimed++;
     }
     return true;
   }

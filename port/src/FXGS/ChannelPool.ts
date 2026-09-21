@@ -1,5 +1,5 @@
 /** Native source unit: FX/FxServer/ChannelPool.cpp. */
-import { CServerConfig } from "../core/ServerConfig.ts";
+import type { CServerConfig } from "../core/ServerConfig.ts";
 import { CReceivedPacket, CSendPacket, CipherDegree, PACKET_TYPE_PLACEHOLDER } from "../core/Packet.ts";
 import { CDBMan } from "../db/DBMan.ts";
 import { GS_ClientSend, GS_ReceivedPacket } from "../protocol/PacketIDs.ts";
@@ -63,7 +63,10 @@ export class CChannelPool extends CChatPool {
     this.m_vtRankList.splice(at, 0, user);
   }
 
-  constructor(public db: CDBMan) {
+  constructor(
+    public db: CDBMan,
+    private readonly cfg: CServerConfig,
+  ) {
     super();
     CChannelPool.ms_pInstance = this;
     RegisterChannelPool(this, SendGameSlotInfo);
@@ -473,7 +476,7 @@ export class CChannelPool extends CChatPool {
     packet.Encode2(user.m_nLevel);
     packet.Encode4(user.dyn.money);
     packet.Encode1(SVRCLASS_GAME);
-    packet.Encode4(CServerConfig.ms_pInstance!.GetNumAttribute("ServerIndex"));
+    packet.Encode4(this.cfg.GetServerIdx());
     packet.Encode2(user.GetSessionIdx() & 0xffff);
     packet.Encode1(user.account.Reveal);
     if (user.account.Reveal !== 0) {
@@ -504,7 +507,7 @@ export class CChannelPool extends CChatPool {
     packet.Encode1(1);
     packet.EncodeStr(user.GetName());
     packet.Encode1(SVRCLASS_GAME);
-    packet.Encode4(CServerConfig.ms_pInstance!.GetNumAttribute("ServerIndex"));
+    packet.Encode4(this.cfg.GetServerIdx());
     packet.Encode2(user.GetSessionIdx() & 0xffff);
     socket.SendPacket(packet);
   }

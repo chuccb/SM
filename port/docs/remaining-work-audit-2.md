@@ -1,14 +1,20 @@
 # 剩餘工作清點（二）：Billing、購入／領取／載入、戰績持久化
 
-日期：2026-09-20。接續 [第一輪 A01–A15](remaining-work-audit.md)。
+日期：2026-09-21。接續 [第一輪 A01–A15](remaining-work-audit.md)。
 
-**後續修復更新：** [A01 共用 TCP 發送鏈](transport-compatibility-fix.md)、
+**2026-09-21 最新修復：** [A05／A09／A10／A19／A22 修復紀錄](five-gap-compatibility-fix.md)
+完成本文件 A19 的 pre-inventory 領取鏈及 A22 的 Price-keyed BonusMap；連同第一輪三組修復，
+兩份 probes 現為 **40 observations／0 GAP／40 MATCH**，A 類待辦由14組降為 **9組**。
+完整 `bun run check` 為 **681 pass／0 fail／26,609 expect() calls／35 files**，並通過工具鏈／import／boundary／strict typecheck。
+固定 probes 全 MATCH 不代表 A07/A08/A12–A15/A17/A18/A23 或 B 類工作已完成。
+
+**後續修復更新（本次五組前的基準）：** [A01 共用 TCP 發送鏈](transport-compatibility-fix.md)、
 [A11／A21 個人動態資料鏈](user-dyninfo-compatibility-fix.md)、
 [A03 建帳交易與競爭](account-registration-compatibility-fix.md) 已完成各輪列明修復與回歸。
 另有 [A04 Center 逾時與狀態清理](center-timeout-compatibility-fix.md)、
 [A16 Taiwan billing transport](billing-transport-compatibility-fix.md)、
 [A06 NexonClub ID](nexonclub-id-compatibility-fix.md) 已完成報告列明差異。
-目前已列 A 待辦 **14 組**、兩輪 probes 最新合計 **11 GAP／27 MATCH**；全套 **653 pass／0 fail／26,475 assertions／32 files**。
+本次五組修復前已列 A 待辦 **14 組**、兩輪 probes 基準 **11 GAP／27 MATCH**；全套基準 **653 pass／0 fail／26,475 assertions／32 files**。
 另完成 [Practice 立即開局／練習選圖／UDP-loss 誤踢修復](practice-start-compatibility-fix.md)：
 恢復普通房間空 stub 與 Practice override 的 vtable 分流；真實 TCP 不送 UDP 即收到150，普通房間 gate 保留。
 另完成 [GS ↔ Shop 轉服修復](shop-transfer-compatibility-fix.md)：回覆 opcode、Shop request 寬度與整組使用者檢查；新增雙向 TCP 回歸。
@@ -16,7 +22,7 @@
 本機政策不等於 native backend；A08/A17 其餘 gift/coupon/cart、receipt/reset、外部 settlement 等仍待修，這些工作仍保留待辦。
 另完成 [A20 GS 庫存／道具狀態／裝飾封包](user-inventory-compatibility-fix.md)，含原版道具登入／重入／201／71／105 TCP 回歸，三個 A20 probe 已為 MATCH。
 另修復 [爆炸頭／category 購買限制與遊戲金錢發貨期限](shop-purchase-compatibility-fix.md)：原價6034實際TCP購入、回GS與重新登入；A18三項、A19商城三項及A07已建模coupon reset probe轉MATCH。
-A07完整狀態、A18其餘交易／proc核對、A19預庫存與A13日期仍不宣稱完成，分組仍維持14。
+該基準當時 A07完整狀態、A18其餘交易／proc、A19預庫存與A13日期仍未完成；A19預庫存後續已由本次五組修復完成其列明範圍。
 原版 CAItem 定義資料也已[安全匯入](caitem-catalog.md)；A15 其餘資料／遷移範圍不因此宣稱完成。
 原生 source-unit／class boundary 與 lifecycle ownership 亦已整理並由 audit 驗證：103 native units、23 port-only boundaries、112 classes，158 modules 無 static value-import cycle；Relay server／dispatcher ownership、monotonic DWORD clocks、CRC 單一來源與 fixed-width codecs 均已補回歸。
 工具鏈統一與尚未取得的 GitHub Bun canary 限制見 [port README](../README.md)。
@@ -100,7 +106,12 @@ probe `A17.billing-302-serial` 已為 MATCH，另有正反 wire／cash guard 與
   官方此迴圈最後才依結果處理扣款，且不是可直接推論出的全域原子交易；
   子項中途失敗、回傳碼覆蓋、跨 DB 的完整語意還需依原生流程／有效 proc 逐一核實。
 
-## A19 · P0 · 商城購入／預庫存領取的期限鏈斷裂，會刪掉新取得物品
+## A19 · 已修復（原 P0）· 商城購入／預庫存領取期限鏈
+
+**2026-09-21 完成更新：** 原先已修的商城直購鏈之外，pre-inventory 現也依 `0040ACF4` 傳
+`current level + ValidityLevel`，保留 zero caller 語意；premium upgrade 依 DB BOOL 成功與既有 auth gate；
+rowset open failure 回 false，單筆 failure 繼續，30筆只計成功 claim。native type100／101亦已有具名 owner與packet回歸。
+詳見 [五組修復紀錄](five-gap-compatibility-fix.md)。A13 日期時間域仍是獨立工作。
 
 ### 商城直購 → SQLite → GS 載入
 
@@ -122,7 +133,7 @@ probe `A17.billing-302-serial` 已為 MATCH，另有正反 wire／cash guard 與
 
 **本機 billing 後續範圍：** 新給物路徑使用 native 常駐門檻（100000 天／2000），拒絕向已過期／限時 stack 疊加；
 E2E 啟用 `FXAttrShop=1`，實測回 GS 的 201 及 DB 存留，不靠關閉 loader 掩蓋問題。
-後續遊戲金錢商城 caller 三項 probe 已修為 MATCH；預庫存三項仍為 GAP，沒有宣稱修復全部 A19。
+後續遊戲金錢商城 caller 與本次預庫存各項 probe 均已為 MATCH；A19 列明的兩條期限鏈已完成，A13 日期時間域仍另行追蹤。
 
 ### 預庫存 → 領取 → GS 載入
 
@@ -186,7 +197,11 @@ A19 上游與 A13 日期仍開放；以下保留修復前證據。
   nonforced定時檢查、force、modified flag、數值上下界。別再保留互不更新的雙份戰績。
   DB失敗後重試及guild路徑需另外按原生查證，不把個人欄位結論直接套到公會。
 
-## A22 · P1 · BonusMap 應以 Price 排序、同 key 唯一，不是 StockSN／row order
+## A22 · 已修復（原 P1）· Price-keyed、insert-unique BonusMap
+
+> `CItemMan` 現保留 rowset 第一個 duplicate winner，再按 unsigned Price key 排序同一份 published Map；
+> eligibility 保持 signed compare，wire與選贈品共用 snapshot，DB query不再按StockSN。rowset失敗保留舊snapshot並回0。
+> 詳見 [五組修復紀錄](five-gap-compatibility-fix.md)。以下是修復前清點。
 
 - 已核實樹的 key，**不是因為看見 RB-tree 就猜排序**：
   FXSS `UpdateBonusMapTable` `00410B20` 選取 Price,StockSN；CRSBonusMap `004194D0`
@@ -219,9 +234,10 @@ A19 上游與 A13 日期仍開放；以下保留修復前證據。
 ## 保留的未完成核對與排除項
 
 1. **302錯誤／成功wire與cache**清點當時只有靜態確認，後續已補回歸並修復（見 A17 更新）；
-   A19 的商城 zero/default、Addable／return10 後續已修並回歸；預庫存與完整 proc 語意仍待完成。A20 混合 400 邊界後續已補測，見修復紀錄。沒有灌水成 probe 數。
-2. 購物車的未完成handler仍歸A08/A09；普通遊戲金錢套裝的實際給物問題歸A18，
-   framing歸A16。這是分層定位，不是把同一個錯誤重新編號。
+   A19 的商城 zero/default、Addable／return10 及 pre-inventory caller／failure budget 後續均已修並回歸；
+   SQL Server 全 catalog／A13日期仍另列。A20 混合400邊界已補測。沒有灌水成 probe 數。
+2. 購物車 cursor/count 的 A09 已完成；外部 billing／補償未完成 handlers 仍歸 A08/A17。普通遊戲金錢套裝的其餘問題歸 A18，
+   framing 歸 A16。這是分層定位，不是把同一個錯誤重新編號。
 3. 原生 Shop `MakePreInventoryPacket` `0041EBD0` 是 `retn 4`，不能因GS版本有內容，
    就自動替Shop補一份。其原生庫存初始化路徑還有stub／可達性問題，暫不把死分支當正常登入缺陷。
 4. `CDynInfoCalculator` 的x87／float取整、guild delta flush、其他字串與hash_map順序、
@@ -242,7 +258,7 @@ bun test
 - 全新臨時SQLite、capture sockets與明確的fixture/failure injection；沒有listener／外網連線。
   DB在finally關閉及刪除；不讀寫正式使用者資料。單例只在該standalone process中使用。
 - probe的GAP是差異報告，不是刻意把錯誤當正解的測試；exit0只表示harness完成。
-- 第二輪：**24 probes / 23 GAP / 1 MATCH**；第一輪重跑：**14 / 13 / 1**。
+- 清點時第二輪為 **24 probes / 23 GAP / 1 MATCH**、第一輪為 **14 / 13 / 1**；逐組修復後目前為第二輪 **24/24 MATCH**、第一輪（增補A10兩項後）**16/16 MATCH**。
 - Bun **1.4.3-canary.1 (26e7a4b36)**：**178 pass / 0 fail，1583 expect() calls，11 files，17.50s**。
 - TypeScript **7.0.2**與preview **7.1.0-dev.20260920.1**的`tsc --noEmit`通過；
   兩個probe另以`--ignoreConfig --strict --target ESNext --module ESNext --moduleResolution Bundler

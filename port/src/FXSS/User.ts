@@ -1,10 +1,11 @@
 /** Native source unit: FX/FxShop/User.cpp. */
+import { CRand } from "../core/CRand.ts";
 import { CSendPacket } from "../core/Packet.ts";
 import { EncodeVariantTime } from "../core/VariantTime.ts";
 import { CDynInfoCalculator_GetLevel } from "../shared/LevelTable.ts";
-import { NEXONCLUB_EMAIL_DOMAIN } from "./Defs.ts";
+import { CHARGE_KEY_MIN, CHARGE_KEY_MODULUS, NEXONCLUB_EMAIL_DOMAIN } from "./Defs.ts";
 import type { CClientSocket } from "./ClientSocket.ts";
-import type { CWebSocket } from "./WebSocket.ts";
+import { CMainSystem } from "./MainSystem.ts";
 import type { _USERACCOUNT, _USERDYNINFO, UserInventory } from "./Recordsets.ts";
 
 // ============================ CUser ============================
@@ -12,6 +13,11 @@ import type { _USERACCOUNT, _USERDYNINFO, UserInventory } from "./Recordsets.ts"
 /** CUser — the shop-side user (0xC30 bytes in the original; only fields the
  *  handlers touch are modeled). */
 export class CUser {
+  /** CRT default state before CApp/CThread calls srand. This fallback keeps
+   * isolated CUser construction faithful; the running service uses the
+   * logical worker stream owned by CMainSystem. */
+  static readonly #defaultRandom = new CRand();
+
   m_strName = ""; // CNamedObject (lowercased index key)
   m_nGlobalSerialNo = 0;
   m_pSocket: CClientSocket | null = null; // +3092
@@ -34,6 +40,7 @@ export class CUser {
 
   constructor(socket: CClientSocket | null) {
     this.m_pSocket = socket;
+    this.SetChargeKey();
   }
 
   GetName(): string {
@@ -50,6 +57,13 @@ export class CUser {
 
   SetGlobalSerialNo(n: number): void {
     this.m_nGlobalSerialNo = n;
+  }
+
+  /** CUser::SetChargeKey (0041EE90); the constructor at 004200E8 consumes
+   * the same CRT worker stream with the same modulo expression. */
+  SetChargeKey(): void {
+    const random = CMainSystem.ms_pInstance?.m_WorkerRandom ?? CUser.#defaultRandom;
+    this.m_nChargeKey = random.rand() % CHARGE_KEY_MODULUS + CHARGE_KEY_MIN;
   }
 
   /** CUser::SetCash (00401460) — signed DWORD at +3104. */
@@ -108,11 +122,10 @@ export class CUser {
     }
   }
 
-  m_fTranxInProgress = 0; // user+20 — the billing-tranx guard (210/214/221/223)
-  m_fRemainCashRequested = 0; // user+3048 — set by the 214 handler
-  m_fCartProcessing = 0; // user+3056 — set while a cart purchase walks
-  m_nChargeKey = 0; // user+2280 — the OnVerifyKey charge key
-  m_pChargeSocket: CWebSocket | null = null; // user+12 — bound by OnVerifyKey
+  m_fTranxInProgress = 0; // user+20 — the billing-tranx guard (210/214/221/223/verify)
+  m_nChargeKey = 0; // user+3044 (0xBE4) — the OnVerifyKey charge key
+  m_fRemainCashRequested = 0; // user+3048 (0xBE8) — set by the 214 handler
+  m_fCartProcessing = 0; // user+3056 (0xBF0) — set while a cart purchase walks
   m_pPurchaseTranx: object | null = null; // port-side pending-purchase marker, not a native pointer offset
   m_anCart: { stockSN: number; cnt: number }[] = []; // user+2920 (2 dwords per entry)
   m_nCartCount = 0; // user+3052

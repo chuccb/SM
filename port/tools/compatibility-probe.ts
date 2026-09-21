@@ -25,6 +25,7 @@ import { CChannelPool } from "../src/FXGS/ChannelPool.ts";
 import { CUser as GameUser } from "../src/FXGS/User.ts";
 import { CClientSocket as GameSocket } from "../src/FXGS/ClientSocket.ts";
 import { CGuildTable } from "../src/FXGS/Guild.ts";
+import { CLocalUserTable as GameLocalUserTable } from "../src/FXGS/LocalUserTable.ts";
 import { CDynInfoCalculator_GetMaxExpInLevel, kLevelTableSize } from "../src/shared/LevelTable.ts";
 
 function body(write: (p: CSendPacket) => void): CReceivedPacket {
@@ -164,7 +165,7 @@ function main(): void {
     cfg.ParseConfigString("ServerIndex 1");
     CServerConfig.ms_pInstance = cfg;
     const game = new CMainSystem(cfg);
-    const center = new CCenterProcess(db); // no Init, no socket connection
+    const center = new CCenterProcess(db, cfg); // no Init, no socket connection
     const other = new CServerConfig([["ServerIndex", ""]]);
     other.ParseConfigString("ServerIndex 0");
     CServerConfig.ms_pInstance = other; // equivalent to another suite service's boot
@@ -177,17 +178,33 @@ function main(): void {
     }));
     report("A10.service-config-isolation", game.m_nChannelType, 77);
 
-    CServerConfig.ms_pInstance = cfg;
+    // Keep the other service's config installed while exercising both delayed
+    // ChannelPool response paths. Each FXGS owner must retain `cfg` itself.
     new CGuildTable(db);
-    const channel = new CChannelPool(db);
-    const gameSocket = { SendPacket: (p: CSendPacket) => { replies.push(decode(p)); return enSocket.kioOk; } } as unknown as GameSocket;
-    const player = new GameUser(gameSocket);
+    const gameUsers = new GameLocalUserTable();
+    let player!: GameUser;
+    const gameSocket = {
+      GetUser: () => player,
+      SendPacket: (p: CSendPacket) => { replies.push(decode(p)); return enSocket.kioOk; },
+      m_nSessionIdx: 12,
+    } as unknown as GameSocket;
+    const channel = new CChannelPool(db, cfg);
+    player = new GameUser(gameSocket);
+    player.SetName("isolated");
     player.m_nLevel = 1;
     channel.SendUserDetailInfo(gameSocket, player);
     const detail = replies.pop()!;
     detail.Decode1(); detail.DecodeStr(); detail.DecodeStr(); detail.DecodeStr(); detail.Decode1();
     detail.Decode4(); detail.Decode4(); detail.Decode4(); detail.Decode4();
     report("A11.level-one-detail-max-exp", detail.Decode4(), 3000);
+    detail.Decode2(); detail.Decode4(); detail.Decode1();
+    report("A10.detail-service-index", detail.Decode4(), 1);
+
+    gameUsers.Insert(player);
+    channel.OnRequestUserLocation(body((p) => p.EncodeStr("isolated")), gameSocket);
+    const location = replies.pop()!;
+    location.Decode1(); location.DecodeStr(); location.Decode1();
+    report("A10.location-service-index", location.Decode4(), 1);
     report("A11.out-of-range-max-exp", CDynInfoCalculator_GetMaxExpInLevel(kLevelTableSize), 0x7fffffff);
 
     console.log(JSON.stringify({ probes, gaps, note: "Diagnostic observations, not a native-server differential run or passing compatibility tests." }));

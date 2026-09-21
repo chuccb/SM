@@ -114,6 +114,7 @@ ESNext 是 compiler/runtime 提供的語言與標準庫目標，不是另一個�
 
 - [差異清點一](docs/remaining-work-audit.md)
 - [差異清點二](docs/remaining-work-audit-2.md)
+- [A05／A09／A10／A19／A22：charge、cart、service config、pre-inventory、BonusMap 修復](docs/five-gap-compatibility-fix.md)
 - [A06：NexonClub ID 與本輪工具鏈驗證](docs/nexonclub-id-compatibility-fix.md)
 - [爆炸頭：商城 category 限制、遊戲金錢發貨與購入後期限修復](docs/shop-purchase-compatibility-fix.md)
 - [Practice：立即開局、練習地圖選擇與 UDP-loss 誤踢修復](docs/practice-start-compatibility-fix.md)

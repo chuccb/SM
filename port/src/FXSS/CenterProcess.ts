@@ -42,7 +42,7 @@ export class CCenterProcess {
       cfg.GetAttribute("CenterIP"),
       cfg.GetNumAttribute("CenterPort"),
       SVRCLASS_SHOP,
-      cfg.GetNumAttribute("ServerIndex"),
+      cfg.GetServerIdx(),
       // gameVersion/clientVersion default from S2S GAME_VERSION/CLIENT_VERSION
       // (FxShop.exe.c:4276 — [E2 7][E2 3])
     );
