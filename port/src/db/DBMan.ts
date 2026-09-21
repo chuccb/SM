@@ -1202,8 +1202,10 @@ export class CDBMan {
   /** CRSUserItem ("FxItem") — UpdateUserItemTable's select filter. */
   GetFxItemRows(): { SN: number; Category: number; strAttr: string; nAttr1: number; nAttr2: number; nAttr3: number; strName: string }[] {
     return this.item
-      .query("SELECT SN, Category, strAttr, nAttr1, nAttr2, nAttr3, strName FROM FxItem ORDER BY SN")
-      .all() as never;
+      .query<{ SN: number; Category: number; strAttr: string; nAttr1: number; nAttr2: number; nAttr3: number; strName: string }, []>(
+        "SELECT SN, Category, strAttr, nAttr1, nAttr2, nAttr3, strName FROM FxItem ORDER BY SN",
+      )
+      .all();
   }
 
   /** CRSShopItem ("FxStock") — UpdateShopItemTable's 17-column select, WHERE IsValid > 0. */
@@ -1213,42 +1215,53 @@ export class CDBMan {
     ValidityLevel: number; StringDesc: number; StringUsage: number; CardNo: number; MoneyType: number; zorder: number;
   }[] {
     return this.item
-      .query(
+      .query<
+        {
+          SN: number; Category: number; Name: string; ItemSN: number; Unit: number; DataFile: string;
+          Price: number; FixedPrice: number; LimitLevel: number; LimitEx: number; ValidityPeriod: number;
+          ValidityLevel: number; StringDesc: number; StringUsage: number; CardNo: number; MoneyType: number; zorder: number;
+        },
+        []
+      >(
         `SELECT SN, Category, Name, ItemSN, Unit, DataFile, Price, FixedPrice, LimitLevel, LimitEx,
                 ValidityPeriod, ValidityLevel, StringDesc, StringUsage, CardNo, MoneyType, zorder
          FROM FxStock WHERE IsValid > 0 ORDER BY SN`,
       )
-      .all() as never;
+      .all();
   }
 
   /** CRSString ("FxString") — UpdateStringTable's select filter. */
   GetFxStringRows(): { SN: number; String: string }[] {
-    return this.item.query("SELECT SN, String FROM FxString ORDER BY SN").all() as never;
+    return this.item.query<{ SN: number; String: string }, []>("SELECT SN, String FROM FxString ORDER BY SN").all();
   }
 
   /** CRSPackageMap ("FxPackageMap") — UpdatePackageMapTable's select filter. */
   GetFxPackageMapRows(): { PackageSN: number; StockSN: number; Units: number; Validitylevel: number }[] {
     return this.item
-      .query("SELECT PackageSN, StockSN, Units, Validitylevel FROM FxPackageMap ORDER BY PackageSN")
-      .all() as never;
+      .query<{ PackageSN: number; StockSN: number; Units: number; Validitylevel: number }, []>(
+        "SELECT PackageSN, StockSN, Units, Validitylevel FROM FxPackageMap ORDER BY PackageSN",
+      )
+      .all();
   }
 
   /** CRSCouponMap ("FxCouponMap") — UpdateCouponMapTable's select filter. */
   GetFxCouponMapRows(): { CouponSN: number; ItemSN: number; Units: number; ValidityPeriod: number; Validitylevel: number }[] {
     return this.item
-      .query("SELECT CouponSN, ItemSN, Units, ValidityPeriod, Validitylevel FROM FxCouponMap ORDER BY CouponSN")
-      .all() as never;
+      .query<{ CouponSN: number; ItemSN: number; Units: number; ValidityPeriod: number; Validitylevel: number }, []>(
+        "SELECT CouponSN, ItemSN, Units, ValidityPeriod, Validitylevel FROM FxCouponMap ORDER BY CouponSN",
+      )
+      .all();
   }
 
   /** CRSBonusMap ("FxBonusMap") — the native rowset specifies no ORDER BY;
    * CItemMan's map<uint,...> owns Price ordering and duplicate-key policy. */
   GetFxBonusMapRows(): { Price: number; StockSN: number }[] {
-    return this.item.query("SELECT Price, StockSN FROM FxBonusMap").all() as never;
+    return this.item.query<{ Price: number; StockSN: number }, []>("SELECT Price, StockSN FROM FxBonusMap").all();
   }
 
   /** CRSBillingSvr ("BillingSvr" on CAConfig) — CBillingProcess::UpdateBillingSvrList. */
   GetBillingSvrs(): { SN: number; ip: string; port: number }[] {
-    return this.config.query("SELECT SN, ip, port FROM BillingSvr ORDER BY SN").all() as never;
+    return this.config.query<{ SN: number; ip: string; port: number }, []>("SELECT SN, ip, port FROM BillingSvr ORDER BY SN").all();
   }
 
   /** CDBMan::GetUserInfo (prGetUserInfoShop) — the shop's _USERACCOUNT fill; the
@@ -1260,25 +1273,36 @@ export class CDBMan {
         LastConn: string | null; Permission: number; ShopCardNo: number; CommunitySvr: number;
         money: number; win: number; draw: number; lose: number } {
     const row = this.userInfo[GetUserHashNo(id)]!
-      .query(
+      .query<
+        {
+          SN: number; Name: string; Password: string; Email: string; EmailRcv: number; Gender: number;
+          Address: string; Tel: string; Reveal: number; Profile: string; TotalConn: number;
+          LastConn: string | null; Permission: number; ShopCardNo: number; CommunitySvr: number;
+          money: number; win: number; draw: number; lose: number;
+        },
+        [string]
+      >(
         `SELECT a.SN, a.Name, a.Password, a.Email, a.EmailRcv, a.Gender, a.Address, a.Tel, a.Reveal,
                 a.Profile, a.TotalConn, a.LastConn, a.Permission, a.ShopCardNo, a.CommunitySvr,
                 COALESCE(d.Money, 0) AS money, COALESCE(d.Win, 0) AS win,
                 COALESCE(d.Draw, 0) AS draw, COALESCE(d.Lose, 0) AS lose
          FROM FxUserAccount a LEFT JOIN FxUserDynamic d ON d.ID = a.ID WHERE a.ID = ?`,
       )
-      .get(id) as never;
-    return (row ?? null) as never;
+      .get(id);
+    return row ?? null;
   }
 
   /** CDBMan::GetFxInventoryRows — the CUser inventory load (CRSInventory select). */
   GetFxInventoryRows(id: string): { SN: number; ItemSN: number; StockSN: number; Slot: number; Amount: number; Verbose: string; DateCreated: string | null }[] {
     return this.inventory[GetUserHashNo(id)]!
-      .query(
+      .query<
+        { SN: number; ItemSN: number; StockSN: number; Slot: number; Amount: number; Verbose: string; DateCreated: string | null },
+        [string]
+      >(
         `SELECT SN, ItemSN, StockSN, Slot, Amount, Verbose, DateCreated
          FROM FxUserInventory WHERE UserID = ? ORDER BY SN`,
       )
-      .all() as never;
+      .all(id);
   }
 
   /** Shop AddNewInventory adapter. Caller resolves stock validity/defaults
