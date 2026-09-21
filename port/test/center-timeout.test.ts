@@ -349,6 +349,18 @@ describe("OnReqConnectToSvr ordered native group results", () => {
     expect([u.m_fConnecting, u.nConnectStamp, u.nChannel]).toEqual([1, 200, SVRCLASS_LOGIN]);
     now += 30_000; f.round(); expect(u.fFree).toBe(0);
   });
+
+  test("GetSmallLoadedSvrIdx round-robin and active-socket fallback (0040B020)", () => {
+    const f = fixture();
+    // In fixture(), f.shop (idx 0) has a live socket.
+    expect(f.center.GetSmallLoadedSvrIdx(SVRCLASS_SHOP)).toBe(0);
+    // Non-shop class returns -1
+    expect(f.center.GetSmallLoadedSvrIdx(SVRCLASS_GAME)).toBe(-1);
+
+    // If shop socket is null (disconnected/shutdown), minimum nConnNo server with active socket is chosen
+    f.shop.socket = null;
+    expect(f.center.GetSmallLoadedSvrIdx(SVRCLASS_SHOP)).toBe(0);
+  });
 });
 
 test("timer is nominally 400ms; every fourth tick sweeps BEFORE the even-tick broadcast", () => {

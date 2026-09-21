@@ -11,7 +11,7 @@ Date.now = () => springBase;
 let db: CDBMan | undefined;
 try {
   db = new CDBMan(directory);
-  db.prCAAuthUser("dstuser", EncodePassword("testpw"));
+  db.prCAAuthUser("dstuser", EncodePassword("testpw123"));
   db.prAddInventoryShop("dstuser", 900, 901, 1, 1, 1, false);
   db.prSetPremiumTicket("dstuser", 1);
   const userShard = db.userInfo[GetUserHashNo("dstuser")]!;
@@ -30,7 +30,7 @@ try {
   `);
   const winterBase = Date.parse("2026-01-01T17:00:00.000Z"); // noon EST
   const store = new BillingStore(db, () => winterBase);
-  store.authorize("dstuser", "testpw", "dstuser", 0);
+  store.authorize("dstuser", "testpw123", "dstuser", 0);
   store.credit("dstuser", 100, "date-fixture");
   const held = store.reserve({ world: 0, name: "dstuser", serial: 77, stock: 5000, price: 100 });
   store.confirm(held.Reference, 0, 77, 5000, 0);

@@ -152,10 +152,10 @@ describe("CDBMan::GetUserHashNo", () => {
     const db = new CDBMan(directory);
     try {
       const store = new BillingStore(db);
-      expect(db.prCAAuthUser(id, EncodePassword("pw")).retval).toBe(0); // required auto-registration
+      expect(db.prCAAuthUser(id, EncodePassword("password123")).retval).toBe(0); // required auto-registration
       expect(db.prGetUserAccount(id)).toBeDefined();
       expect(db.prAddInventoryShop(id, 101, 201, 2, 30, 2000, true)).toBe(1);
-      expect(store.credit(id, 50, "a23-credit")).toBe(50);
+      expect(store.credit(id, 50, "a23-credit")).toBe(900_050);
       expect(db.userInfo[target]!.query("SELECT ID FROM FxUserAccount WHERE ID=?").get(id)).toBeDefined();
       expect(db.inventory[target]!.query("SELECT UserID FROM FxUserInventory WHERE UserID=?").get(id)).toBeDefined();
       expect(db.inventory[target]!.query("SELECT Account FROM LocalBillingWallet WHERE Account=?").get(id)).toBeDefined();
@@ -172,10 +172,10 @@ describe("CDBMan::GetUserHashNo", () => {
     const error = spyOn(console, "error").mockImplementation(() => {});
     try {
       db.userInfo[legacy]!.query("INSERT INTO FxUserAccount(ID,SN,SID,Name,Password) VALUES(?,?,?,?,?)")
-        .run(id, 10, 10, id, EncodePassword("pw"));
+        .run(id, 10, 10, id, EncodePassword("password123"));
       expect(db.prConfirmUnregisteredId(id)).toBe(1);
-      expect(db.prCreateUser(id, id, EncodePassword("pw"), "", 0, 0, "", "", 0, "", "", "", "", "")).toBe(-1);
-      expect(db.prCAAuthUser(id, EncodePassword("pw")).retval).toBe(-1);
+      expect(db.prCreateUser(id, id, EncodePassword("password123"), "", 0, 0, "", "", 0, "", "", "", "", "")).toBe(-1);
+      expect(db.prCAAuthUser(id, EncodePassword("password123")).retval).toBe(-1);
       expect(error).toHaveBeenCalledWith(expect.stringContaining("pre-A23 shard formula"));
       expect(db.userInfo[legacy]!.query("SELECT ID FROM FxUserAccount WHERE ID=?").get(id)).toBeDefined();
       expect(db.userInfo[native]!.query("SELECT ID FROM FxUserAccount WHERE ID=?").get(id)).toBeNull();

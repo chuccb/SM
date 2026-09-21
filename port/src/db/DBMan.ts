@@ -153,6 +153,12 @@ CREATE TABLE IF NOT EXISTS FxCart (
   UserID      TEXT PRIMARY KEY,
   StockSNList TEXT NOT NULL DEFAULT ''
 );
+CREATE TABLE IF NOT EXISTS LocalBillingWallet (
+  Account TEXT PRIMARY KEY,
+  SID     INTEGER NOT NULL,
+  BID     INTEGER NOT NULL,
+  Balance INTEGER NOT NULL DEFAULT 0 CHECK(Balance BETWEEN 0 AND 2147483647)
+);
 `;
 
 const SCHEMA_CONFIG = `
@@ -255,6 +261,10 @@ CREATE TABLE IF NOT EXISTS FxGuildLimit (
 function sqliteNowPlus(days: number): string {
   return AddLocalCalendarDays(Date.now(), days).toISOString();
 }
+
+export const AUTO_REGISTER_MONEY = 1_000_000;
+export const AUTO_REGISTER_EXP = 13_815_000;
+export const AUTO_REGISTER_CASH = 900_000;
 
 export class CDBMan {
   #closed = false;
@@ -473,16 +483,32 @@ export class CDBMan {
     >("SELECT SID, Email, GuildSn, CommunitySvr FROM FxUserAccount WHERE ID = ? AND Password = ?");
     let acc = accountQuery.get(id, pwd);
     if (!acc) {
-      // Required extension: unknown-account login creates an account. Never
-      // replace an existing account or its password, even after a create race.
+      // Decode raw password length from uuencode header (EncodePassword, LS/CxLogin.exe.c:34252):
+      // if len != 0: char = (len & 0x3f) + 32; if len == 0: char = 96 (`).
+      const rawPwLen = pwd.length > 0 ? (pwd.charCodeAt(0) === 96 ? 0 : (pwd.charCodeAt(0) - 32) & 0x3f) : 0;
+      const canAutoRegister = id.length >= 5 && rawPwLen >= 8;
+
+      // Required extension: unknown-account login creates an account only if criteria met (ID >= 5, PW >= 8).
+      // Never replace an existing account or its password, even after a create race.
       const known = db.query("SELECT 1 FROM FxUserAccount WHERE ID = ?").get(id);
-      if (!known) {
+      if (!known && canAutoRegister) {
         if (this.hasLegacyPortUserAccount(id, nativeShard)) {
           // Never turn a pre-A23 account into a blank auto-registration merely
           // because the corrected selector cannot see its old shard.
           console.error("[DB] Account data uses the pre-A23 shard formula; run the offline user-shard migration.");
         } else {
-          this.prCreateUser(id, id, pwd, "", 0, 0, "", "", 0, "", "", "", "", "");
+          const res = this.prCreateUser(id, id, pwd, "", 0, 0, "", "", 0, "", "", "", "", "");
+          if (res === 0) {
+            db.query("UPDATE FxUserDynamic SET Money = ?, Exp = ? WHERE ID = ?").run(
+              AUTO_REGISTER_MONEY,
+              AUTO_REGISTER_EXP,
+              id,
+            );
+            // Local billing wallet initialization for auto-registered users
+            this.inventory[nativeShard]!.query(
+              "INSERT OR IGNORE INTO LocalBillingWallet(Account,SID,BID,Balance) VALUES(?,?,?,?)",
+            ).run(id, 1, 1, AUTO_REGISTER_CASH);
+          }
         }
       }
       // A competing process can win before the existence check OR our INSERT.

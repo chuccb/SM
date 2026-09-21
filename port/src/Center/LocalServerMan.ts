@@ -95,14 +95,37 @@ export class CLocalServerMan {
     return this.servers.find((s) => s.nServerClass === nServerClass && s.nSvrIdx === nSvrIdx) ?? null;
   }
 
-  /** CLocalServerMan::GetSmallLoadedSvrIdx */
+  /**
+   * CLocalServerMan::GetSmallLoadedSvrIdx (0040B020, CxCenter.exe.c:11735).
+   * Static round-robin counter dword_481088. If the candidate shop server
+   * has a connected socket, return candidate. Otherwise fallback to the
+   * connected shop server with minimum nConnNo (< 2000). Returns 0 if none active.
+   */
+  private m_dwSmallLoadedSvrIdx = 0;
+
   GetSmallLoadedSvrIdx(nServerClass: number): number {
-    let best: CLocalServer | null = null;
-    for (const s of this.servers) {
-      if (s.nServerClass !== nServerClass) continue;
-      if (!best || s.nConnNo < best.nConnNo) best = s;
+    if (nServerClass !== SVRCLASS_SHOP) return -1;
+    const shopServers = this.servers.filter((s) => s.nServerClass === SVRCLASS_SHOP);
+    const count = shopServers.length;
+    if (count <= 0) return 0;
+
+    this.m_dwSmallLoadedSvrIdx = (this.m_dwSmallLoadedSvrIdx + 1) | 0;
+    // 32-bit signed modulo matching native cdq; idiv edi
+    const candidateIdx = ((this.m_dwSmallLoadedSvrIdx % count) + count) % count;
+    const candidate = shopServers[candidateIdx];
+    if (candidate && candidate.socket !== null) {
+      return candidate.nSvrIdx;
     }
-    return best ? best.nSvrIdx : 0;
+
+    let minConnNo = 2000;
+    let selectedIdx = 0;
+    for (const svr of shopServers) {
+      if (svr.socket !== null && svr.nConnNo < minConnNo) {
+        minConnNo = svr.nConnNo;
+        selectedIdx = svr.nSvrIdx;
+      }
+    }
+    return selectedIdx;
   }
 
   /**

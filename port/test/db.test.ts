@@ -16,7 +16,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CA_CONFIG_SEED_IP, LocateCAConfigBak, ParseCAConfigBak } from "../src/db/CAConfigBak.ts";
-import { CDBMan, EncodePassword } from "../src/db/DBMan.ts";
+import { CDBMan, EncodePassword, GetUserHashNo } from "../src/db/DBMan.ts";
 
 describe("CAConfigBak", () => {
   test("the original backup yields the operator's rows", async () => {
@@ -72,18 +72,31 @@ describe("CDBMan seeding + auto-registration", () => {
     expect(again.GetMultiServers()[0]!.Name).toBe("my server");
   });
 
-  test("a login with an unknown ID registers and succeeds (retval 0)", () => {
+  test("a login with an unknown ID registers and succeeds (retval 0) if meeting requirements", () => {
     const db = openManager();
-    const res = db.prCAAuthUser("autoreguser", EncodePassword("pw1234"));
+    // ID < 5 fails auto-registration
+    expect(db.prCAAuthUser("user", EncodePassword("password123")).retval).toBe(-1);
+    // PW < 8 fails auto-registration
+    expect(db.prCAAuthUser("autoreguser", EncodePassword("short")).retval).toBe(-1);
+
+    const res = db.prCAAuthUser("autoreguser", EncodePassword("password123"));
     expect(res.retval).toBe(0);
+    expect(res.FxMoney).toBe(1_000_000);
+    expect(res.Fxexp).toBe(13_815_000);
+    // Billing wallet should be auto-created with 900,000 Cash
+    const wallet = db.inventory[GetUserHashNo("autoreguser")].query(
+      "SELECT Balance FROM LocalBillingWallet WHERE Account = ?",
+    ).get("autoreguser") as { Balance: number } | null;
+    expect(wallet?.Balance).toBe(900_000);
+
     // the account is now real: reconnecting with the same password works
-    expect(db.prCAAuthUser("autoreguser", EncodePassword("pw1234")).retval).toBe(0);
+    expect(db.prCAAuthUser("autoreguser", EncodePassword("password123")).retval).toBe(0);
   });
 
   test("a wrong password for an existing account fails without touching it", () => {
     const db = openManager();
-    expect(db.prCAAuthUser("autoreguser", EncodePassword("WRONG")).retval).toBe(-1);
+    expect(db.prCAAuthUser("autoreguser", EncodePassword("WRONGPASSWORD")).retval).toBe(-1);
     // the stored secret is unchanged — the original password still logs in
-    expect(db.prCAAuthUser("autoreguser", EncodePassword("pw1234")).retval).toBe(0);
+    expect(db.prCAAuthUser("autoreguser", EncodePassword("password123")).retval).toBe(0);
   });
 });

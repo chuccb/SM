@@ -218,14 +218,14 @@ describe("required automatic registration", () => {
   for (const table of accountTables) {
     test(`${table} failure cannot leave a login-capable half-account`, () => {
       fault(table, "AFTER");
-      expect(db.prCAAuthUser("atomic", EncodePassword("fixture")).retval).toBe(-1);
+      expect(db.prCAAuthUser("atomic", EncodePassword("fixture123")).retval).toBe(-1);
       expect(counts(shard())).toEqual([0, 0, 0]);
       dropFault();
-      expect(db.prCAAuthUser("atomic", EncodePassword("fixture")).retval).toBe(0);
+      expect(db.prCAAuthUser("atomic", EncodePassword("fixture123")).retval).toBe(0);
       expect(counts(shard())).toEqual([1, 1, 1]);
-      expect(db.prGetUserAccount("atomic")).toMatchObject({ Password: EncodePassword("fixture"), TotalConn: 1 });
+      expect(db.prGetUserAccount("atomic")).toMatchObject({ Password: EncodePassword("fixture123"), TotalConn: 1 });
       const before = state(shard());
-      expect(db.prCAAuthUser("atomic", EncodePassword("wrong")).retval).toBe(-1);
+      expect(db.prCAAuthUser("atomic", EncodePassword("wrong12345")).retval).toBe(-1);
       expect(state(shard())).toEqual(before);
     });
   }
@@ -235,15 +235,15 @@ describe("required automatic registration", () => {
       const other = openManager();
       const original = db.prCreateUser.bind(db);
       const createSpy = spyOn(db, "prCreateUser").mockImplementation((...args) => {
-        expect(create("atomic", EncodePassword("winner"), other)).toBe(0);
+        expect(create("atomic", EncodePassword("winner123"), other)).toBe(0);
         return original(...args); // the actual duplicate INSERT fails and rolls back
       });
       try {
-        const result = db.prCAAuthUser("atomic", EncodePassword(passwordMatches ? "winner" : "loser"));
+        const result = db.prCAAuthUser("atomic", EncodePassword(passwordMatches ? "winner123" : "loser123"));
         expect(result.retval).toBe(passwordMatches ? 0 : -1);
         expect(createSpy).toHaveBeenCalledTimes(1);
         expect(db.prGetUserAccount("atomic")).toMatchObject({
-          Password: EncodePassword("winner"), TotalConn: passwordMatches ? 1 : 0,
+          Password: EncodePassword("winner123"), TotalConn: passwordMatches ? 1 : 0,
         });
         expect(counts(shard())).toEqual([1, 1, 1]);
       } finally { createSpy.mockRestore(); }
@@ -256,13 +256,13 @@ describe("required automatic registration", () => {
     const querySpy = spyOn(shard(), "query").mockImplementation(
       <Row, Params extends SQLQueryBindings | SQLQueryBindings[]>(sql: string) => {
         if (sql === "SELECT 1 FROM FxUserAccount WHERE ID = ?") {
-          expect(create("atomic", EncodePassword("winner"), other)).toBe(0);
+          expect(create("atomic", EncodePassword("winner123"), other)).toBe(0);
         }
         return query<Row, Params>(sql);
       },
     );
     try {
-      expect(db.prCAAuthUser("atomic", EncodePassword("winner")).retval).toBe(0);
+      expect(db.prCAAuthUser("atomic", EncodePassword("winner123")).retval).toBe(0);
       expect(counts(shard())).toEqual([1, 1, 1]);
     } finally { querySpy.mockRestore(); }
   });
@@ -320,7 +320,7 @@ describe("independent-process SQLite contention", () => {
       for (let i = 0; i < 4; i++) clients.push(await worker());
       const replies = await Promise.all(clients.map((client, i) => client.run({
         kind: mode === "duplicate" ? "create" : "authenticate",
-        accounts: [{ id: "atomic", password: mode === "different-password" ? `secret${i}` : "fixture" }],
+        accounts: [{ id: "atomic", password: mode === "different-password" ? `secret123_${i}` : "fixture123" }],
       })));
       const results = replies.map((reply) => {
         if (reply.kind !== "result") throw new Error(`Unexpected reply ${reply.kind}`);
@@ -333,7 +333,7 @@ describe("independent-process SQLite contention", () => {
       expect(db.prGetUserAccount("atomic")).toMatchObject({ TotalConn: mode === "duplicate" ? 0 : successCount });
       if (mode === "different-password") {
         const winner = results.indexOf(0);
-        expect(db.prGetUserAccount("atomic")).toMatchObject({ Password: EncodePassword(`secret${winner}`) });
+        expect(db.prGetUserAccount("atomic")).toMatchObject({ Password: EncodePassword(`secret123_${winner}`) });
       }
     });
   }
