@@ -2,7 +2,7 @@
 import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
 import { INVENTORY_SLOT_NONE, ItemCategory, USER_INVENTORY_LOAD_LIMIT } from "../shared/Item.ts";
 import { CDBMan } from "../db/DBMan.ts";
-import { GS_ClientSend, GS_ReceivedPacket } from "../protocol/PacketIDs.ts";
+import { S2C_GamePacket, C2S_GameLobbyPacket } from "../protocol/PacketIDs.ts";
 import { MC_GameServerSendPacket } from "../protocol/CenterProtocol.ts";
 import { CUserPool } from "./UserPool.ts";
 import { CChannelPool } from "./ChannelPool.ts";
@@ -35,7 +35,7 @@ export class CConnectPool extends CUserPool {
 
   /** CConnectPool::OnPacket — 7 ConnEstablished, else the RTT fallback. */
   override OnPacket(n: CReceivedPacket, socket: CClientSocket): void {
-    if (n.Decode1() === GS_ReceivedPacket.OnConnEstablished) this.OnConnEstablished(n, socket);
+    if (n.Decode1() === C2S_GameLobbyPacket.OnConnEstablished) this.OnConnEstablished(n, socket);
     else {
       n.m_uOffset = 0;
       this.OnPacketFallback(n, socket);
@@ -171,7 +171,7 @@ export class CConnectPool extends CUserPool {
           const inserted = CGuildTable.ms_pInstance!.Insert(u.GetGuildSerialNo());
           if (inserted === 0 && CMainSystem.ms_pInstance!.m_nChannelType === CHANNEL_TYPE_GUILD) {
             console.error("[GS] Fatal error: Insert to GuildTable Failed"); // :10610
-            const p = new CSendPacket(GS_ClientSend.OnGuildBanRes, CipherDegree.kPacketEncryptedCRC8);
+            const p = new CSendPacket(S2C_GamePacket.OnGuildBanRes, CipherDegree.kPacketEncryptedCRC8);
             users[0]!.m_pSocket?.SendPacket(p);
             return;
           }
@@ -193,27 +193,27 @@ export class CConnectPool extends CUserPool {
     }
 
     // → client 210 [E1 attr]; move the socket into the channel pool.
-    const p210 = new CSendPacket(GS_ClientSend.OnEnableShop, CipherDegree.kPacketEncryptedCRC8);
+    const p210 = new CSendPacket(S2C_GamePacket.OnEnableShop, CipherDegree.kPacketEncryptedCRC8);
     p210.Encode1(CMainSystem.ms_pInstance!.m_fInventoryDB);
     const socket = users[0]!.m_pSocket!;
     socket.SendPacket(p210);
     if (this.DeleteSocket(socket) !== 0 && CChannelPool.ms_pInstance!.AddNewSocket(socket) !== 0) {
       let sent = false;
       if (users[0]!.IsClientInitialized() === 0) {
-        const p202 = new CSendPacket(GS_ClientSend.OnUserItemList, CipherDegree.kPacketEncryptedCRC8);
+        const p202 = new CSendPacket(S2C_GamePacket.OnUserItemList, CipherDegree.kPacketEncryptedCRC8);
         CUserItemMan.ms_pInstance!.PutUserItemList(p202);
         socket.SendPacket(p202);
         sent = true;
       }
       if (users.some((u) => u && u.m_nPreInventoryCount > 0)) {
-        const p207 = new CSendPacket(GS_ClientSend.OnPreInventory, CipherDegree.kPacketEncryptedCRC8);
+        const p207 = new CSendPacket(S2C_GamePacket.OnPreInventory, CipherDegree.kPacketEncryptedCRC8);
         p207.Encode1(count);
         for (const u of users) u!.MakePreInventoryPacket(p207);
         socket.SendPacket(p207);
         sent = true;
       }
       if (sent) {
-        const p201 = new CSendPacket(GS_ClientSend.OnUserInventory, CipherDegree.kPacketEncryptedCRC8);
+        const p201 = new CSendPacket(S2C_GamePacket.OnUserInventory, CipherDegree.kPacketEncryptedCRC8);
         p201.Encode1(count);
         for (const u of users) u!.MakeUserInventoryPacket(p201);
         socket.SendPacket(p201);

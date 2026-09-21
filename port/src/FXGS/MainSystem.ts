@@ -3,7 +3,7 @@ import { CRand } from "../core/CRand.ts";
 import { GetUnixTimeSeconds } from "../core/LocalTime.ts";
 import { CServerConfig } from "../core/ServerConfig.ts";
 import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
-import { GS_ClientSend } from "../protocol/PacketIDs.ts";
+import { S2C_GamePacket } from "../protocol/PacketIDs.ts";
 import { CENTER_VERSION, CONN_HELLO_VERSION, SVRCLASS_GAME } from "../protocol/CenterProtocol.ts";
 import { CONN_PATCH_URL } from "./Defs.ts";
 import type { CClientSocket } from "./ClientSocket.ts";
@@ -46,7 +46,7 @@ export class CMainSystem {
   /** CMainSystem::OnConnEstablished — the connect-time packet 0
    *  a default-constructed (plain) CSendPacket on every server). */
   OnConnEstablished(socket: CClientSocket): void {
-    const packet = new CSendPacket(GS_ClientSend.OnConnect, CipherDegree.kPacketRaw);
+    const packet = new CSendPacket(S2C_GamePacket.OnConnect, CipherDegree.kPacketRaw);
     packet.Encode2(CENTER_VERSION);
     packet.Encode2(CONN_HELLO_VERSION[SVRCLASS_GAME]);
     packet.Encode4(socket.m_nHeaderType);

@@ -1,6 +1,6 @@
 /** Native source unit: FX/FxServer/SyncGameObjMan.cpp. */
 import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
-import { GS_ClientSend } from "../protocol/PacketIDs.ts";
+import { S2C_GamePacket } from "../protocol/PacketIDs.ts";
 import { MAX_SESSION_SLOTS } from "./Defs.ts";
 import type { CGameSession } from "./GameSession.ts";
 import type { CClientSocket } from "./ClientSocket.ts";
@@ -72,7 +72,7 @@ export class CSyncGameObjMan {
         continue;
       }
       this.Delegate(id, slot);
-      const packet = new CSendPacket(GS_ClientSend.OnObjInitial, CipherDegree.kPacketEncryptedCRC8);
+      const packet = new CSendPacket(S2C_GamePacket.OnObjInitial, CipherDegree.kPacketEncryptedCRC8);
       packet.Encode2(id);
       packet.Encode1(slot);
       this.m_pGameSession.SendPacket(packet);
@@ -102,7 +102,7 @@ export class CSyncGameObjMan {
       return;
     }
     this.Delegate(objId, slot);
-    const packet = new CSendPacket(GS_ClientSend.OnObjCreate, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnObjCreate, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode2(objId);
     packet.Encode1(slot);
     packet.Encode2(objType);
@@ -122,7 +122,7 @@ export class CSyncGameObjMan {
     const crc = n.Decode4();
     for (const set of this.m_rgSetObj) set.delete(objId);
     this.m_mapObj.delete(objId);
-    const packet = new CSendPacket(GS_ClientSend.OnObjDestroy, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnObjDestroy, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode2(objId);
     packet.Encode4(crc);
     session.SendPacket(packet);
@@ -147,7 +147,7 @@ export class CSyncGameObjMan {
         } else {
           this.m_mapObj.delete(objId);
         }
-        const packet = new CSendPacket(GS_ClientSend.OnObjDestroy, CipherDegree.kPacketEncryptedCRC8);
+        const packet = new CSendPacket(S2C_GamePacket.OnObjDestroy, CipherDegree.kPacketEncryptedCRC8);
         packet.Encode2(objId);
         packet.Encode4(0);
         session.SendPacket(packet);

@@ -3,7 +3,7 @@ import type { CServerConfig } from "../core/ServerConfig.ts";
 import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
 import { CDBMan } from "../db/DBMan.ts";
 import { CLocalSocket } from "../shared/LocalSocket.ts";
-import { GS_ClientSend } from "../protocol/PacketIDs.ts";
+import { S2C_GamePacket } from "../protocol/PacketIDs.ts";
 import { CM_GameServerPacket, MC_GameServerSendPacket, SVRCLASS_GAME } from "../protocol/CenterProtocol.ts";
 import { CDynInfoCalculator_GetLevel, CDynInfoCalculator_GetMaxExpInLevel } from "../shared/LevelTable.ts";
 import { SESSION_LOC_OTHER_SERVER } from "./Defs.ts";
@@ -204,7 +204,7 @@ export class CCenterProcess {
 
   /** CCenterProcess::MakeChannelsStatePacket — the 13 body (InitPacket). */
   MakeChannelsStatePacket(packet: CSendPacket): void {
-    packet.InitPacket(GS_ClientSend.OnChannelsState);
+    packet.InitPacket(S2C_GamePacket.OnChannelsState);
     packet.Encode2(this.m_nChannels);
     for (let i = 0; i < this.m_nChannels; i++) packet.Encode2(this.m_anConnCount[i] ?? 0);
   }
@@ -212,7 +212,7 @@ export class CCenterProcess {
   /** CCenterProcess::MakeChannelsGameStatePacket — the 14 body (InitPacket). */
   MakeChannelsGameStatePacket(packet: CSendPacket): void {
     if (this.m_vtGameStateOrder.length === 0) return;
-    packet.InitPacket(GS_ClientSend.OnChannelsGameState);
+    packet.InitPacket(S2C_GamePacket.OnChannelsGameState);
     packet.Encode1(this.m_vtGameStateOrder.length);
     for (const ch of this.m_vtGameStateOrder) {
       packet.Encode1(ch);
@@ -237,7 +237,7 @@ export class CCenterProcess {
     const user = CLocalUserTable.ms_pInstance!.FindUserFromId(name);
     if (!user) return;
     const code = n.Decode1();
-    const p = new CSendPacket(GS_ClientSend.OnSvrReservedMsg, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_GamePacket.OnSvrReservedMsg, CipherDegree.kPacketEncryptedCRC8);
     p.Encode1(code);
     if (code === 1) p.EncodeStr(n.DecodeStr());
     user.m_pSocket?.SendPacket(p);
@@ -246,7 +246,7 @@ export class CCenterProcess {
   /** CCenterProcess::OnAdminNotifyMsg — CM 8 → client 26 to everyone. */
   OnAdminNotifyMsg(n: CReceivedPacket): void {
     const msg = n.DecodeStr();
-    const p = new CSendPacket(GS_ClientSend.OnAdminNotifyMsg, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_GamePacket.OnAdminNotifyMsg, CipherDegree.kPacketEncryptedCRC8);
     p.EncodeStr(msg);
     SendChannelPacket(p, 0);
   }
@@ -254,7 +254,7 @@ export class CCenterProcess {
   /** CCenterProcess::OnSystemMsg — CM 13 → client 30 to everyone. */
   OnSystemMsg(n: CReceivedPacket): void {
     const msg = n.DecodeStr();
-    const p = new CSendPacket(GS_ClientSend.OnSystemMsg, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_GamePacket.OnSystemMsg, CipherDegree.kPacketEncryptedCRC8);
     p.EncodeStr(msg);
     SendChannelPacket(p, 0);
   }
@@ -282,7 +282,7 @@ export class CCenterProcess {
     if (!asker || !asker.m_pSocket) return;
     if (r === 1) {
       // SendUserLocation → 72
-      const p = new CSendPacket(GS_ClientSend.OnRequestUserLocationRes, CipherDegree.kPacketEncryptedCRC8);
+      const p = new CSendPacket(S2C_GamePacket.OnRequestUserLocationRes, CipherDegree.kPacketEncryptedCRC8);
       p.Encode1(1);
       p.EncodeStr(name);
       p.Encode1(type);
@@ -292,7 +292,7 @@ export class CCenterProcess {
     } else {
       // SendUserDetailInfo → 71 (DB-backed)
       const info = this.db.prGetUserInfo(name);
-      const p = new CSendPacket(GS_ClientSend.OnRequestUserInfoDetailRes, CipherDegree.kPacketEncryptedCRC8);
+      const p = new CSendPacket(S2C_GamePacket.OnRequestUserInfoDetailRes, CipherDegree.kPacketEncryptedCRC8);
       if (info.retval === 0) {
         p.Encode1(1);
         p.EncodeStr(name);

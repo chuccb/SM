@@ -2,7 +2,7 @@
 import { CPacketSocket } from "../core/PacketSocket.ts";
 import { CReceivedPacket, CSendPacket, enSocket, type enSocket as EnSocket } from "../core/Packet.ts";
 import { MONITOR_HEADER_CODE_RCV, MONITOR_HEADER_CODE_SND, MONITOR_HEADER_CODE_MODIFIER, MONITOR_SEQ, MONITOR_SEQ_DELTA } from "../protocol/CenterProtocol.ts";
-import { MONITOR_ClientSend, MONITOR_ReceivedPacket } from "../protocol/PacketIDs.ts";
+import { Center2Monitor_Packet, Monitor2Center_Packet } from "../protocol/PacketIDs.ts";
 import type { CLocalServer } from "./LocalServer.ts";
 import type { CGlobalUserTable } from "./GlobalUserTable.ts";
 
@@ -62,10 +62,10 @@ export class CMonitorSocket extends CPacketSocket {
 
   OnPacket(n: CReceivedPacket): void {
     switch (n.Decode1()) {
-      case MONITOR_ReceivedPacket.OnRequestCurrentUserStat:
+      case Monitor2Center_Packet.OnRequestCurrentUserStat:
         this.OnRequestCurrentUserStat();
         return;
-      case MONITOR_ReceivedPacket.OnRequestSvrState:
+      case Monitor2Center_Packet.OnRequestSvrState:
         this.OnRequestSvrState();
         return;
       default:
@@ -74,14 +74,14 @@ export class CMonitorSocket extends CPacketSocket {
   }
 
   OnRequestCurrentUserStat(): void {
-    const packet = new CSendPacket(MONITOR_ClientSend.OnRequestCurrentUserStat);
+    const packet = new CSendPacket(Center2Monitor_Packet.OnRequestCurrentUserStat);
     packet.Encode4(this.center.globalUserTable.userTable.size);
     packet.Encode4(this.center.globalUserTable.m_nDailyPeakUsers);
     this.SendPacket(packet);
   }
 
   OnRequestSvrState(): void {
-    const packet = new CSendPacket(MONITOR_ClientSend.OnRequestSvrState);
+    const packet = new CSendPacket(Center2Monitor_Packet.OnRequestSvrState);
     const all = this.center.servers;
     packet.Encode4(all.length);
     for (const s of all) {

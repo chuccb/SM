@@ -1,6 +1,6 @@
 /** Native source unit: FX/FxServer/UdpLossRegulator.cpp. */
 import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
-import { GS_ClientSend } from "../protocol/PacketIDs.ts";
+import { S2C_GamePacket } from "../protocol/PacketIDs.ts";
 import { MAX_SESSION_SLOTS, UDP_REGULATE_DELAY } from "./Defs.ts";
 import type { CGameSession } from "./GameSession.ts";
 import { DestroySessionPlayer } from "./SessionTableRuntime.ts";
@@ -96,7 +96,7 @@ export class CUdpLossRegulator {
         // flag that FXGS logic never sets, so the port uses the connected flag
         const socket = user.m_pSocket;
         if (socket && socket.m_bConnected) {
-          socket.SendPacket(new CSendPacket(GS_ClientSend.OnUdpLossBan, CipherDegree.kPacketEncryptedCRC8)); // 195, no payload
+          socket.SendPacket(new CSendPacket(S2C_GamePacket.OnUdpLossBan, CipherDegree.kPacketEncryptedCRC8)); // 195, no payload
           socket.m_nPoolType = 4; // [socket+1D4]
         }
       }

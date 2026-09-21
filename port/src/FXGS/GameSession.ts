@@ -5,7 +5,7 @@
 
 import { readFileSync } from "node:fs";
 import { CReceivedPacket, CSendPacket, CipherDegree, PACKET_TYPE_PLACEHOLDER } from "../core/Packet.ts";
-import { GS_ClientSend, SESSION_ReceivedPacket } from "../protocol/PacketIDs.ts";
+import { S2C_GamePacket, C2S_GameSessionPacket } from "../protocol/PacketIDs.ts";
 import { FunctionalItem } from "../shared/Item.ts";
 import { timeGetTime } from "../core/timeGetTime.ts";
 import {
@@ -224,7 +224,7 @@ export class CGameSession extends CListSession {
    *  state is not modeled yet. */
   override SendSessionInfoPacket(socket: CClientSocket): void {
     this.MakeSessionInfoPacket(socket);
-    const packet = new CSendPacket(GS_ClientSend.OnSessionMapIdx, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnSessionMapIdx, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode2(this.m_nMapIdx & 0xffff);
     socket.PutPacketQueued(packet); // the joiner's 112
     // strategy vtbl+32 (:41AF87): the base stub leaves the buffer — the
@@ -348,7 +348,7 @@ export class CGameSession extends CListSession {
         }
       }
     }
-    const packet = new CSendPacket(GS_ClientSend.OnUDPPeerInfo, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnUDPPeerInfo, CipherDegree.kPacketEncryptedCRC8);
     for (let slot = 0; slot < MAX_SESSION_SLOTS; slot++) {
       if (this.m_rgPlayer[slot]) {
         packet.Encode1(1);
@@ -397,7 +397,7 @@ export class CGameSession extends CListSession {
         // so the port uses the connected flag
         const socket = user.m_pSocket;
         if (socket && socket.m_bConnected) {
-          socket.SendPacket(new CSendPacket(GS_ClientSend.OnUdpLossBan, CipherDegree.kPacketEncryptedCRC8)); // 195, no payload
+          socket.SendPacket(new CSendPacket(S2C_GamePacket.OnUdpLossBan, CipherDegree.kPacketEncryptedCRC8)); // 195, no payload
           socket.m_nPoolType = 4; // [socket+1D4]
         }
       }
@@ -522,13 +522,13 @@ export class CGameSession extends CListSession {
       let freeSlot = 0;
       while (freeSlot < MAX_SESSION_SLOTS && !(this.m_rgPlayer[freeSlot] !== null && this.m_rgSlotGhost[freeSlot] === -1)) freeSlot++;
       if (freeSlot >= MAX_SESSION_SLOTS) {
-        const p = new CSendPacket(GS_ClientSend.OnGhostDestroy, CipherDegree.kPacketEncryptedCRC8);
+        const p = new CSendPacket(S2C_GamePacket.OnGhostDestroy, CipherDegree.kPacketEncryptedCRC8);
         p.Encode1(ghost);
         this.SendPacket(p);
         this.m_rgSlotGhost[slot] = -1;
         this.m_rgGhostSlot[ghost] = -1;
       } else {
-        const p = new CSendPacket(GS_ClientSend.OnGhostGenerate, CipherDegree.kPacketEncryptedCRC8);
+        const p = new CSendPacket(S2C_GamePacket.OnGhostGenerate, CipherDegree.kPacketEncryptedCRC8);
         p.Encode1(ghost);
         p.Encode1(freeSlot);
         this.SendPacket(p);
@@ -591,7 +591,7 @@ export class CGameSession extends CListSession {
     let exploded = 0;
     if (ctx.m_nBombCount > 0) {
       // 152 — the bomb clock: every armed bomb counts down by the elapsed ms
-      const packet = new CSendPacket(GS_ClientSend.OnSetBombTimerRes, CipherDegree.kPacketEncryptedCRC8);
+      const packet = new CSendPacket(S2C_GamePacket.OnSetBombTimerRes, CipherDegree.kPacketEncryptedCRC8);
       const countOffset = packet.m_uOffset;
       packet.Encode1(0);
       let i = 0;
@@ -634,7 +634,7 @@ export class CGameSession extends CListSession {
       }
       if (allDown) grace = ALL_PLAYERS_DOWN_GRACE_MS; // everybody down/goal/trapped: the short fuse
     }
-    const packet2 = new CSendPacket(GS_ClientSend.OnBomberEvent, CipherDegree.kPacketEncryptedCRC8);
+    const packet2 = new CSendPacket(S2C_GamePacket.OnBomberEvent, CipherDegree.kPacketEncryptedCRC8);
     packet2.Encode1(80);
     packet2.Encode2(0);
     packet2.Encode2(0);
@@ -717,12 +717,12 @@ export class CGameSession extends CListSession {
       } else if (((now - bc.m_dwOddSlotTime) >>> 0) > bc.GetOddSlotInManner(timerMultiplier)) {
         if (bc.m_nWarnedBanOddSlot === 0) {
           bc.SetWarnedBanOddSlot(1);
-          const p = new CSendPacket(GS_ClientSend.OnNeedStartGame, CipherDegree.kPacketEncryptedCRC8);
+          const p = new CSendPacket(S2C_GamePacket.OnNeedStartGame, CipherDegree.kPacketEncryptedCRC8);
           p.Encode1(1);
           p.Encode2(warningSeconds);
           this.SendPacket(p);
         } else if (((now - bc.m_dwWarnedBanOddSlotTime) >>> 0) > warningDelay) {
-          const p = new CSendPacket(GS_ClientSend.OnNeedStartGame, CipherDegree.kPacketEncryptedCRC8);
+          const p = new CSendPacket(S2C_GamePacket.OnNeedStartGame, CipherDegree.kPacketEncryptedCRC8);
           p.Encode1(3);
           p.Encode2(warningSeconds);
           const chiefSocket = user.m_pSocket;
@@ -751,7 +751,7 @@ export class CGameSession extends CListSession {
     if (!bc.IsBanChief(roomFull, this.m_nGameType, timerMultiplier)) return;
     if (bc.m_nWarnedBan === 0) {
       bc.SetWarnedBan(1);
-      const p = new CSendPacket(GS_ClientSend.OnNeedStartGame, CipherDegree.kPacketEncryptedCRC8);
+      const p = new CSendPacket(S2C_GamePacket.OnNeedStartGame, CipherDegree.kPacketEncryptedCRC8);
       p.Encode1(0);
       p.Encode2(warningSeconds);
       this.SendPacket(p);
@@ -759,7 +759,7 @@ export class CGameSession extends CListSession {
     }
     if (((now - bc.m_dwWarnedBanTime) >>> 0) <= warningDelay) return;
 
-    const p = new CSendPacket(GS_ClientSend.OnNeedStartGame, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_GamePacket.OnNeedStartGame, CipherDegree.kPacketEncryptedCRC8);
     p.Encode1(2);
     p.Encode2(warningSeconds);
     const chiefSocket = user.m_pSocket;
@@ -780,7 +780,7 @@ export class CGameSession extends CListSession {
 
   /** CGameSession::DoReturnPrepareStage (41B0DA). */
   DoReturnPrepareStage(): void {
-    const packet = new CSendPacket(GS_ClientSend.OnReturnPrepareStage, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnReturnPrepareStage, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(0);
     this.SendPacket(packet);
     this.m_nGamePhase = 0;
@@ -897,7 +897,7 @@ export class CGameSession extends CListSession {
    * persistent dyn block, and level-ups re-sort the lobby rank list.
    */
   SendGameResult(winTeam: number): void {
-    const packet = new CSendPacket(GS_ClientSend.OnGameResult, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnGameResult, CipherDegree.kPacketEncryptedCRC8);
     const guildCalc = new CGuildDynInfoCalculator(); // the stack local at :36694
     const timeFactor = this.GetGameExpTimeFactor(); // v50 — the 41FE83 ladder
     let flag = 0;
@@ -1074,7 +1074,7 @@ export class CGameSession extends CListSession {
       this.m_fModified |= 2;
       this.m_nMapIdx = mapIdx;
     }
-    const packet = new CSendPacket(GS_ClientSend.OnSessionMapIdx, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnSessionMapIdx, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode2(this.m_nMapIdx & 0xffff);
     this.PutPacket(packet);
     if (this.m_fPlaying === 0) this.FoldColorsForMap(mapIdx);
@@ -1165,18 +1165,18 @@ export class CGameSession extends CListSession {
   /** CGameSession::SendGameTypeNormal — +948 = 0, packet 93. */
   SendGameTypeNormal(): void {
     this.m_nGameTypeMod = 0;
-    this.SendPacket(new CSendPacket(GS_ClientSend.OnGameTypeNormal, CipherDegree.kPacketEncryptedCRC8));
+    this.SendPacket(new CSendPacket(S2C_GamePacket.OnGameTypeNormal, CipherDegree.kPacketEncryptedCRC8));
   }
 
   /** CGameSession::SendGameTypeMod — +948 = 1, packet 92. */
   SendGameTypeMod(): void {
     this.m_nGameTypeMod = 1;
-    this.SendPacket(new CSendPacket(GS_ClientSend.OnGameTypeMod, CipherDegree.kPacketEncryptedCRC8));
+    this.SendPacket(new CSendPacket(S2C_GamePacket.OnGameTypeMod, CipherDegree.kPacketEncryptedCRC8));
   }
 
   /** CGameSession::SendGameType — the join tail (92 or 93). */
   SendGameType(socket: CClientSocket): void {
-    socket.SendPacket(new CSendPacket(this.m_nGameTypeMod !== 0 ? GS_ClientSend.OnGameTypeMod : GS_ClientSend.OnGameTypeNormal, CipherDegree.kPacketEncryptedCRC8));
+    socket.SendPacket(new CSendPacket(this.m_nGameTypeMod !== 0 ? S2C_GamePacket.OnGameTypeMod : S2C_GamePacket.OnGameTypeNormal, CipherDegree.kPacketEncryptedCRC8));
   }
 
   // ---- ban votes (104/105 → 113/114) ----
@@ -1288,7 +1288,7 @@ export class CGameSession extends CListSession {
       }
     }
     if (n > 0) {
-      const packet = new CSendPacket(GS_ClientSend.OnBomberEvent, CipherDegree.kPacketEncryptedCRC8);
+      const packet = new CSendPacket(S2C_GamePacket.OnBomberEvent, CipherDegree.kPacketEncryptedCRC8);
       packet.Encode1(80);
       packet.Encode2(0);
       packet.Encode2(0);
@@ -1322,7 +1322,7 @@ export class CGameSession extends CListSession {
    * SendPacket sits inside the fopen-null check.
    */
   SendAirplaneItemProb(): void {
-    const packet = new CSendPacket(GS_ClientSend.OnAirplaneItemProb, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnAirplaneItemProb, CipherDegree.kPacketEncryptedCRC8);
     if (this.IsLadderGame() !== 0 && this.m_dwAirplaneItemProb > LADDER_AIRPLANE_PROBABILITY_CAP) {
       packet.Encode4(LADDER_AIRPLANE_PROBABILITY_CAP);
     } else {
@@ -1367,7 +1367,7 @@ export class CGameSession extends CListSession {
 
   /** CGameSession::LaunchGameStage — packet 116 (FxServer.exe.c:37254). */
   LaunchGameStage(): void {
-    const packet = new CSendPacket(GS_ClientSend.OnStartGame, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnStartGame, CipherDegree.kPacketEncryptedCRC8);
     // DoLaunchGameStageEx is an empty `retn` in the original
     packet.Encode4(timeGetTime()); // the 116 tick — a raw timeGetTime dword
     // the map idx rides through vtbl+24 = Encode2 (FxServer.exe.c:37289:
@@ -1502,7 +1502,7 @@ export class CGameSession extends CListSession {
     // is a BOOL produced by comparing the byte at +2004 with exactly 1.
     this.SetMapIdxPlayingByLevel(chiefUser.m_nLevel, chiefUser.HasAuthority(23), chiefUser.m_fPremiumTicket === 1 ? 1 : 0);
     const can = this.CanStartGame(0);
-    const res = new CSendPacket(GS_ClientSend.OnStartGameRes, CipherDegree.kPacketEncryptedCRC8);
+    const res = new CSendPacket(S2C_GamePacket.OnStartGameRes, CipherDegree.kPacketEncryptedCRC8);
     res.Encode1(can);
     socket.SendPacket(res);
     if (can !== 0) return;
@@ -1563,7 +1563,7 @@ export class CGameSession extends CListSession {
     if (code === 3 || code === 8) return;
     if (code >= names.length) {
       console.error(`[GS] Hacking suspected [${user0.GetName()}]: illegal hacking code (OnHackingSuspected)`);
-      const p = new CSendPacket(GS_ClientSend.OnHackingKick, CipherDegree.kPacketEncryptedCRC8);
+      const p = new CSendPacket(S2C_GamePacket.OnHackingKick, CipherDegree.kPacketEncryptedCRC8);
       p.Encode1(slot);
       this.SendPacketExclude(p, socket);
       socket.ForceSendAndClose(p);
@@ -1572,7 +1572,7 @@ export class CGameSession extends CListSession {
     console.error(`[GS] [${user0.GetName()}] reported [${target.GetName()}] committed hacking (${names[code]}).`);
     if (target.m_pSocket === socket) {
       console.error(`[GS] Hacking suspected [${target.GetName()}] (${socket.GetInfoStr()}) by itself. Disconnect.`);
-      const p = new CSendPacket(GS_ClientSend.OnHackingKick, CipherDegree.kPacketEncryptedCRC8);
+      const p = new CSendPacket(S2C_GamePacket.OnHackingKick, CipherDegree.kPacketEncryptedCRC8);
       p.Encode1(slot);
       this.SendPacketExclude(p, socket);
       socket.ForceSendAndClose(p);
@@ -1593,7 +1593,7 @@ export class CGameSession extends CListSession {
     }
     if (reports < Math.floor(players / 2)) return;
     console.error(`[GS] Hacking suspected [${target.GetName()}] by major of the session. Disconnect.`);
-    const p = new CSendPacket(GS_ClientSend.OnHackingKick, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_GamePacket.OnHackingKick, CipherDegree.kPacketEncryptedCRC8);
     p.Encode1(slot);
     this.SendPacketExclude(p, target.m_pSocket!);
     target.m_pSocket!.ForceSendAndClose(p);
@@ -1652,7 +1652,7 @@ export class CGameSession extends CListSession {
       fFlag16: attr & 0x40 ? 1 : 0,
     };
     ctx.m_rgBomb[ctx.m_nBombCount] = bomb;
-    const packet = new CSendPacket(GS_ClientSend.OnBombIgniteRes, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnBombIgniteRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(slot);
     packet.Encode1(((pos >> 4) << 4) | (pos & 0xf));
     packet.Encode1(attr);
@@ -1683,7 +1683,7 @@ export class CGameSession extends CListSession {
     bomb.y = newPos & 0xf;
     bomb.fMoving = 1;
     bomb.timer = n.Decode2();
-    const packet = new CSendPacket(GS_ClientSend.OnBombKickThrowRes, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnBombKickThrowRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(slotCode);
     packet.Encode2(bombId);
     packet.Encode1(((newPos >> 4) << 4) | (newPos & 0xf));
@@ -1711,7 +1711,7 @@ export class CGameSession extends CListSession {
     const b = n.Decode1();
     const c = n.Decode1();
     const d = n.Decode1();
-    const packet = new CSendPacket(GS_ClientSend.OnMovableBoxMoveRes, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnMovableBoxMoveRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(a);
     packet.Encode1(b);
     packet.Encode1(c);
@@ -1753,7 +1753,7 @@ export class CGameSession extends CListSession {
     }
     if (this.m_pCtx.m_rgnBoxItem[box] !== 0) return;
     this.m_pCtx.m_rgnBoxItem[box] = 1;
-    const packet = new CSendPacket(GS_ClientSend.OnRequestEatItemRes, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnRequestEatItemRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(slot);
     packet.Encode1(box);
     packet.Encode1(item);
@@ -1794,7 +1794,7 @@ export class CGameSession extends CListSession {
     }
     if (this.m_pCtx.m_rgnObstacle[obstacleId] !== 0) return;
     this.m_pCtx.m_rgnObstacle[obstacleId] = 1;
-    const packet = new CSendPacket(GS_ClientSend.OnRequestEatObstacleRes, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnRequestEatObstacleRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(slot);
     packet.Encode1(pos);
     this.SendPacket(packet);
@@ -1806,7 +1806,7 @@ export class CGameSession extends CListSession {
     const slotCode = n.Decode1();
     const a = n.Decode2();
     const b = n.Decode2();
-    const packet = new CSendPacket(GS_ClientSend.OnBomberEvent, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnBomberEvent, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(slotCode);
     packet.Encode2(a);
     packet.Encode2(b);
@@ -1936,7 +1936,7 @@ export class CGameSession extends CListSession {
 
   /** CGameSession::OnSetEffect (147, FxServer.exe.c:41CA78) — the raw buffer relay. */
   OnSetEffect(n: CReceivedPacket, socket: CClientSocket): void {
-    const packet = new CSendPacket(GS_ClientSend.OnEffectRes, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnEffectRes, CipherDegree.kPacketEncryptedCRC8);
     packet.EncodeBuffer(n.m_pBlock.subarray(n.m_uOffset), n.m_uLength - n.m_uOffset);
     this.SendPacketExclude(packet, socket);
   }
@@ -1946,7 +1946,7 @@ export class CGameSession extends CListSession {
     const a = n.Decode1();
     const pos = n.Decode1();
     this.m_pCtx.m_rgnObstacle[(pos & 0xf) + GAME_CONTEXT_TILE_COLUMNS * (pos >> 4)] = 0;
-    const packet = new CSendPacket(GS_ClientSend.OnDropObstacleRes, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnDropObstacleRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(a);
     packet.Encode1(pos);
     this.SendPacketExclude(packet, socket);
@@ -1962,7 +1962,7 @@ export class CGameSession extends CListSession {
     const itemName = n.DecodeStr();
     const eater = socket.GetUser(idx)!;
     console.log(`[GS] Event Item(${itemName}) eaten by User(${eater.GetName()}) in the session(${this.m_nIdx})`);
-    const packet = new CSendPacket(GS_ClientSend.OnSystemMsg, CipherDegree.kPacketEncryptedCRC8); // id 30 (OnEventItemMsg shares the OnSystemMsg id)
+    const packet = new CSendPacket(S2C_GamePacket.OnSystemMsg, CipherDegree.kPacketEncryptedCRC8); // id 30 (OnEventItemMsg shares the OnSystemMsg id)
     packet.EncodeStr(eater.GetName());
     this.SendPacket(packet);
   }
@@ -1972,7 +1972,7 @@ export class CGameSession extends CListSession {
     const a = n.Decode1();
     const b = n.Decode1();
     const c = n.Decode1();
-    const packet = new CSendPacket(GS_ClientSend.OnDestroyBoxRes, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnDestroyBoxRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(a);
     packet.Encode1(b);
     packet.Encode1(c);
@@ -2025,7 +2025,7 @@ export class CGameSession extends CListSession {
         this.m_rgGhostSlot[ghost] = slot;
         this.m_rgSlotGhost[slot] = ghost;
         this.m_nGhostCount++;
-        const packet = new CSendPacket(GS_ClientSend.OnGhostGenerate, CipherDegree.kPacketEncryptedCRC8);
+        const packet = new CSendPacket(S2C_GamePacket.OnGhostGenerate, CipherDegree.kPacketEncryptedCRC8);
         packet.Encode1(ghost);
         packet.Encode1(slot | 0x80);
         packet.Encode1(tag);
@@ -2086,7 +2086,7 @@ export class CGameSession extends CListSession {
       this.m_rgGhostSlot[idx] = -1;
       this.m_rgSlotGhost[slot] = -1;
       this.m_nGhostCount--;
-      const packet = new CSendPacket(GS_ClientSend.OnGhostDestroy, CipherDegree.kPacketEncryptedCRC8);
+      const packet = new CSendPacket(S2C_GamePacket.OnGhostDestroy, CipherDegree.kPacketEncryptedCRC8);
       packet.Encode1(idx);
       this.SendPacket(packet);
     } else {
@@ -2147,7 +2147,7 @@ export class CGameSession extends CListSession {
         else place[i]!++;
       }
     }
-    const packet = new CSendPacket(GS_ClientSend.OnLapInfoRes, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnLapInfoRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(count);
     for (let i = 0; i < MAX_SESSION_SLOTS; i++) {
       if (this.m_rgPlayer[i]) {
@@ -2169,7 +2169,7 @@ export class CGameSession extends CListSession {
     if (((now - this.m_dwLastAirplaneTime) >>> 0) < AIRPLANE_COOLDOWN_MS) return; // the 7 s airplane gate, wrap-safe
     const count = n.Decode1();
     if (count === 0 || count > 3) console.error(`[GS] Strange Request Airplane, nCount=${count}`);
-    const packet = new CSendPacket(GS_ClientSend.OnRequestAirplaneRes, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnRequestAirplaneRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode4((now + AIRPLANE_RESPONSE_LEAD_MS) >>> 0);
     packet.Encode1(count);
     const boxes: number[] = [];
@@ -2199,7 +2199,7 @@ export class CGameSession extends CListSession {
   OnReqEatBula(n: CReceivedPacket, _socket: CClientSocket): void {
     const slot = n.Decode1();
     const count = n.Decode1();
-    const packet = new CSendPacket(GS_ClientSend.OnReqEatBulaRes, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnReqEatBulaRes, CipherDegree.kPacketEncryptedCRC8);
     const countOffset = packet.m_uOffset;
     packet.Encode1(0);
     if (count > 0) {
@@ -2222,7 +2222,7 @@ export class CGameSession extends CListSession {
     const slot = n.Decode1();
     const total = n.Decode1();
     const color = this.GetColor(slot); // already masked — the SetHouseState team index
-    const packet = new CSendPacket(GS_ClientSend.OnReqTakeHouseRes, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnReqTakeHouseRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(slot);
     const houseCountOffset = packet.m_uOffset;
     packet.Encode1(0);
@@ -2329,7 +2329,7 @@ export class CGameSession extends CListSession {
     const user0 = socket.GetUser(0);
     const senderSlot = user0 ? user0.m_nSlotIdx : MAX_SESSION_SLOTS;
     if (senderSlot >= MAX_SESSION_SLOTS) return;
-    const packet = new CSendPacket(GS_ClientSend.OnRequestUDPRelayRes, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnRequestUDPRelayRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(senderSlot);
     target.m_pSocket?.SendPacket(packet);
   }
@@ -2392,7 +2392,7 @@ export class CGameSession extends CListSession {
     ClearSessionModifiedFlag(this.m_nIdx); // the table vtbl+12
     this.m_nBombTickTime = 0; // +12552 (dword 3138)
     this.m_nGamePhase = 1;
-    const packet = new CSendPacket(GS_ClientSend.OnStartGame2, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnStartGame2, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode4(this.m_GameClock.m_dwStartTime); // dword 3184 — read after StartGame (FxServer.exe.c:32901)
     packet.Encode4((this.m_nGameSerial ^ this.m_nGameVersion) >>> 0);
     this.m_nGameSerial = (this.m_nGameSerial + 1) >>> 0;
@@ -2419,7 +2419,7 @@ export class CGameSession extends CListSession {
    * user+104 byte has no writer in FXGS, so the original always sends 0.
    */
   OnRequestSessionInfoDetail(socket: CClientSocket): void {
-    const packet = new CSendPacket(GS_ClientSend.OnSessionInfoDetailRes, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnSessionInfoDetailRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(1); // the room exists (this branch only runs for a live one)
     for (let slot = 0; slot < MAX_SESSION_SLOTS; slot++) {
       const user = this.m_rgPlayer[slot];
@@ -2456,118 +2456,118 @@ export class CGameSession extends CListSession {
       return;
     }
     switch (n.Decode1()) {
-      case SESSION_ReceivedPacket.OnSetPlayerReady:
+      case C2S_GameSessionPacket.OnSetPlayerReady:
         this.OnSetPlayerReady(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnSelectMap:
+      case C2S_GameSessionPacket.OnSelectMap:
         this.OnSelectMap(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnSelectColor:
+      case C2S_GameSessionPacket.OnSelectColor:
         this.OnSelectColor(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnSelectBomber:
+      case C2S_GameSessionPacket.OnSelectBomber:
         this.OnSelectBomber(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnOpenCloseSlot:
+      case C2S_GameSessionPacket.OnOpenCloseSlot:
         this.OnOpenCloseSlot(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnSetGameTypeNormal:
+      case C2S_GameSessionPacket.OnSetGameTypeNormal:
         this.OnSetGameTypeNormal(socket);
         break;
-      case SESSION_ReceivedPacket.OnSetGameTypeMod:
+      case C2S_GameSessionPacket.OnSetGameTypeMod:
         this.OnSetGameTypeMod(socket);
         break;
-      case SESSION_ReceivedPacket.OnHostAskBanPlayer:
+      case C2S_GameSessionPacket.OnHostAskBanPlayer:
         this.OnHostAskBanPlayer(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnRespondToBanPlayer:
+      case C2S_GameSessionPacket.OnRespondToBanPlayer:
         this.OnRespondToBanPlayer(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnRequestStartGame:
+      case C2S_GameSessionPacket.OnRequestStartGame:
         this.OnRequestStartGame(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnRequestChangeTitle:
+      case C2S_GameSessionPacket.OnRequestChangeTitle:
         this.OnRequestChangeTitle(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnPlayEmotion:
+      case C2S_GameSessionPacket.OnPlayEmotion:
         this.OnPlayEmotion(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnReadyForImmediateStart:
+      case C2S_GameSessionPacket.OnReadyForImmediateStart:
         this.OnReadyForImmediateStart(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnTeamChat:
+      case C2S_GameSessionPacket.OnTeamChat:
         this.OnTeamChat(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnBombIgnite:
+      case C2S_GameSessionPacket.OnBombIgnite:
         this.OnBombIgnite(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnBombKickThrow:
+      case C2S_GameSessionPacket.OnBombKickThrow:
         this.OnBombKickThrow(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnSetBombTimer:
+      case C2S_GameSessionPacket.OnSetBombTimer:
         this.OnSetBombTimer(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnMovableBoxMove:
+      case C2S_GameSessionPacket.OnMovableBoxMove:
         this.OnMovableBoxMove(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnRequestEatItem:
+      case C2S_GameSessionPacket.OnRequestEatItem:
         this.OnRequestEatItem(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnRequestEatObstacle:
+      case C2S_GameSessionPacket.OnRequestEatObstacle:
         this.OnRequestEatObstacle(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnSetBomberEvent:
+      case C2S_GameSessionPacket.OnSetBomberEvent:
         this.OnSetBomberEvent(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnSetEffect:
+      case C2S_GameSessionPacket.OnSetEffect:
         this.OnSetEffect(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnDropObstacle:
+      case C2S_GameSessionPacket.OnDropObstacle:
         this.OnDropObstacle(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnEventItem:
+      case C2S_GameSessionPacket.OnEventItem:
         this.OnEventItem(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnDestroyBox:
+      case C2S_GameSessionPacket.OnDestroyBox:
         this.OnDestroyBox(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnRequestGenerateGhost:
+      case C2S_GameSessionPacket.OnRequestGenerateGhost:
         this.OnRequestGenerateGhost(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnRequestDestroyGhost:
+      case C2S_GameSessionPacket.OnRequestDestroyGhost:
         this.OnRequestDestroyGhost(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnLapFinished:
+      case C2S_GameSessionPacket.OnLapFinished:
         this.OnLapFinished(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnLapInfo:
+      case C2S_GameSessionPacket.OnLapInfo:
         this.OnLapInfo(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnRequestAirplane:
+      case C2S_GameSessionPacket.OnRequestAirplane:
         this.OnRequestAirplane(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnReqCreateObj:
+      case C2S_GameSessionPacket.OnReqCreateObj:
         this.m_SyncGameObjMan.OnReqCreateObj(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnReqDestroyObj:
+      case C2S_GameSessionPacket.OnReqDestroyObj:
         this.m_SyncGameObjMan.OnReqDestroyObj(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnReqEatBula:
+      case C2S_GameSessionPacket.OnReqEatBula:
         this.OnReqEatBula(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnReqTakeHouse:
+      case C2S_GameSessionPacket.OnReqTakeHouse:
         this.OnReqTakeHouse(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnShobuari:
+      case C2S_GameSessionPacket.OnShobuari:
         this.OnShobuari();
         break;
-      case SESSION_ReceivedPacket.OnNotifyUDPLoss:
+      case C2S_GameSessionPacket.OnNotifyUDPLoss:
         this.OnNotifyUDPLoss(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnHackingSuspected:
+      case C2S_GameSessionPacket.OnHackingSuspected:
         this.OnHackingSuspected(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnNotifyUdpLossRegulator:
+      case C2S_GameSessionPacket.OnNotifyUdpLossRegulator:
         // (+213 != 0 && +246 == 1) — only mid-game
         if (this.m_fPlaying !== 0 && this.m_nGamePhase === 1) this.m_UdpLossRegulator.OnNotifyUdpLoss(n, socket);
         break;

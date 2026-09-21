@@ -1,6 +1,6 @@
 /** Native source unit: CX/CxUtil/UserPool.cpp. */
 import { CReceivedPacket, CSendPacket } from "../core/Packet.ts";
-import { UTIL_ClientReceivedPacket, UTIL_ClientSend } from "../protocol/PacketIDs.ts";
+import { C2S_UtilPacket, S2C_UtilPacket } from "../protocol/PacketIDs.ts";
 import type { CClientSocket } from "./ClientSocket.ts";
 import type { CUser } from "./User.ts";
 
@@ -49,12 +49,12 @@ export class CUserPool {
 
   /** CUserPool::OnPacket — the packet-20 RTT fallback dispatch. */
   OnPacket(n: CReceivedPacket, socket: CClientSocket): void {
-    if (n.Decode1() === UTIL_ClientReceivedPacket.OnEstimateRTT) this.OnEstimateRTT(n, socket);
+    if (n.Decode1() === C2S_UtilPacket.OnEstimateRTT) this.OnEstimateRTT(n, socket);
   }
 
   /** CUserPool::OnEstimateRTT (20) — echo the client stamp. */
   OnEstimateRTT(n: CReceivedPacket, socket: CClientSocket): void {
-    const packet = new CSendPacket(UTIL_ClientSend.OnEstimateRTTRes);
+    const packet = new CSendPacket(S2C_UtilPacket.OnEstimateRTTRes);
     packet.Encode4(n.Decode4());
     socket.SendPacket(packet);
   }

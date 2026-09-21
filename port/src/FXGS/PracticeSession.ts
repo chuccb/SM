@@ -2,7 +2,7 @@
  * CPracticeSession — the solo practice rooms with their AI seats. */
 
 import { CReceivedPacket, CSendPacket, CipherDegree, PACKET_TYPE_PLACEHOLDER } from "../core/Packet.ts";
-import { GS_ClientSend, SESSION_ReceivedPacket } from "../protocol/PacketIDs.ts";
+import { S2C_GamePacket, C2S_GameSessionPacket } from "../protocol/PacketIDs.ts";
 import { timeGetTime } from "../core/timeGetTime.ts";
 import {
   AI_LEVEL_BAND,
@@ -233,7 +233,7 @@ export class CPracticeSession extends CGameSession {
     const state = this.m_rgSlotState[p]!;
     if (((state & 1) === 0 || open === 0) && ((state & 1) !== 0 || open !== 0)) {
       this.m_rgSlotState[p] = state ^ ((open ^ state) & 1);
-      const packet = new CSendPacket(GS_ClientSend.OnOpenCloseSlotRes, CipherDegree.kPacketEncryptedCRC8);
+      const packet = new CSendPacket(S2C_GamePacket.OnOpenCloseSlotRes, CipherDegree.kPacketEncryptedCRC8);
       packet.Encode1(((slot << 4) | (open & 0xf)) & 0xff);
       if (open === 0) packet.Encode2(this.m_anAILevel[slot] & 0xffff);
       this.m_argpAISocket[slot] = open === 0 ? socket : null;
@@ -311,7 +311,7 @@ export class CPracticeSession extends CGameSession {
     }
     if (this.m_fPlaying !== 0) color = this.m_rgSlotState[slot * 3 + 2]! & SLOTSTATE_COLOR_MASK;
     this.DoSelectColor(slot, color); // vtbl+116 (no-ops while playing)
-    const packet = new CSendPacket(GS_ClientSend.OnSelectColorRes, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnSelectColorRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(((slot << 4) | (color & 0xf)) & 0xff);
     this.SendPacket(packet);
   }
@@ -343,7 +343,7 @@ export class CPracticeSession extends CGameSession {
     if (this.m_fPlaying !== 0) bomber = this.m_rgSlotState[slot * 3 + 1]! & SLOTSTATE_BOMBER_MASK;
     const p = slot * 3 + 1;
     this.m_rgSlotState[p] = this.m_rgSlotState[p]! ^ ((bomber ^ this.m_rgSlotState[p]!) & SLOTSTATE_BOMBER_MASK);
-    const packet = new CSendPacket(GS_ClientSend.OnSelectBomberRes, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnSelectBomberRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(((slot << 4) | (bomber & 0xf)) & 0xff);
     this.SendPacket(packet);
   }
@@ -377,7 +377,7 @@ export class CPracticeSession extends CGameSession {
       for (let i = 0; i < this.m_nMaxSlot; i++) {
         this.m_anAILevel[i] = level;
         if (this.m_argpAISocket[i] !== null) {
-          const packet = new CSendPacket(GS_ClientSend.OnChangeAILevel, CipherDegree.kPacketEncryptedCRC8);
+          const packet = new CSendPacket(S2C_GamePacket.OnChangeAILevel, CipherDegree.kPacketEncryptedCRC8);
           packet.Encode1(i);
           packet.Encode2(level & 0xffff);
           socket.PutPacketQueued(packet);
@@ -385,7 +385,7 @@ export class CPracticeSession extends CGameSession {
       }
     } else {
       this.m_anAILevel[slot] = level;
-      const packet = new CSendPacket(GS_ClientSend.OnChangeAILevel, CipherDegree.kPacketEncryptedCRC8);
+      const packet = new CSendPacket(S2C_GamePacket.OnChangeAILevel, CipherDegree.kPacketEncryptedCRC8);
       packet.Encode1(slot);
       packet.Encode2(level & 0xffff);
       socket.PutPacketQueued(packet);
@@ -396,7 +396,7 @@ export class CPracticeSession extends CGameSession {
   /** CPracticeSession::MakeSetSlotStatePacket (FxServer.exe.c:42591C) — the
    *  107 grows the AI tail: [E1 owned][E2 level] for AI seats. */
   override MakeSetSlotStatePacket(slot: number, packet: CSendPacket): void {
-    packet.InitPacket(GS_ClientSend.OnSetSlotState);
+    packet.InitPacket(S2C_GamePacket.OnSetSlotState);
     packet.Encode1(slot);
     packet.EncodeBuffer(this.m_rgSlotState.subarray(slot * 3, slot * 3 + 3));
     packet.Encode1(this.m_argpAISocket[slot] !== null ? 1 : 0);
@@ -553,7 +553,7 @@ export class CPracticeSession extends CGameSession {
    *  [E1 0]; one trailing [E1 0] per human.  No rewards: dyn rows and
    *  counters stay untouched. */
   override SendGameResult(winTeam: number): void {
-    const packet = new CSendPacket(GS_ClientSend.OnGameResult, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnGameResult, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(0); // result flag
     packet.Encode1(winTeam);
     // The matching client predates the later strategy result-view byte.
@@ -593,7 +593,7 @@ export class CPracticeSession extends CGameSession {
   /** CPracticeSession::DoReturnPrepareStage (FxServer.exe.c:425DC4) — the
    *  practice room re-enters with code 3 (the game room sends 0). */
   override DoReturnPrepareStage(): void {
-    const packet = new CSendPacket(GS_ClientSend.OnReturnPrepareStage, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnReturnPrepareStage, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(3);
     this.SendPacket(packet);
     this.m_nGamePhase = 0;
@@ -624,78 +624,78 @@ export class CPracticeSession extends CGameSession {
     }
     const id = n.Decode1();
     switch (id) {
-      case SESSION_ReceivedPacket.OnSetPlayerReady: // 96
-      case SESSION_ReceivedPacket.OnSetGameTypeNormal: // 102
-      case SESSION_ReceivedPacket.OnSetGameTypeMod: // 103
-      case SESSION_ReceivedPacket.OnHostAskBanPlayer: // 104
-      case SESSION_ReceivedPacket.OnRespondToBanPlayer: // 105
-      case SESSION_ReceivedPacket.OnRequestChangeTitle: // 107
+      case C2S_GameSessionPacket.OnSetPlayerReady: // 96
+      case C2S_GameSessionPacket.OnSetGameTypeNormal: // 102
+      case C2S_GameSessionPacket.OnSetGameTypeMod: // 103
+      case C2S_GameSessionPacket.OnHostAskBanPlayer: // 104
+      case C2S_GameSessionPacket.OnRespondToBanPlayer: // 105
+      case C2S_GameSessionPacket.OnRequestChangeTitle: // 107
         console.error(`[GS] Wrong Type Packet Incomming(${id})`); // (sic — the original's typo)
         break;
-      case SESSION_ReceivedPacket.OnSelectMap:
+      case C2S_GameSessionPacket.OnSelectMap:
         this.OnSelectMap(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnSelectColor:
+      case C2S_GameSessionPacket.OnSelectColor:
         this.OnSelectColor(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnSelectBomber:
+      case C2S_GameSessionPacket.OnSelectBomber:
         this.OnSelectBomber(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnOpenCloseSlot:
+      case C2S_GameSessionPacket.OnOpenCloseSlot:
         this.OnOpenCloseSlot(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnRequestStartGame:
+      case C2S_GameSessionPacket.OnRequestStartGame:
         this.OnRequestStartGame(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnPlayEmotion:
+      case C2S_GameSessionPacket.OnPlayEmotion:
         this.OnPlayEmotion(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnRequestAILevelChange: // 110
+      case C2S_GameSessionPacket.OnRequestAILevelChange: // 110
         this.OnRequestAILevelChange(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnBombIgnite:
+      case C2S_GameSessionPacket.OnBombIgnite:
         this.OnBombIgnite(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnBombKickThrow:
+      case C2S_GameSessionPacket.OnBombKickThrow:
         this.OnBombKickThrow(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnSetBombTimer:
+      case C2S_GameSessionPacket.OnSetBombTimer:
         this.OnSetBombTimer(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnMovableBoxMove:
+      case C2S_GameSessionPacket.OnMovableBoxMove:
         this.OnMovableBoxMove(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnRequestEatItem:
+      case C2S_GameSessionPacket.OnRequestEatItem:
         this.OnRequestEatItem(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnRequestEatObstacle:
+      case C2S_GameSessionPacket.OnRequestEatObstacle:
         this.OnRequestEatObstacle(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnSetBomberEvent:
+      case C2S_GameSessionPacket.OnSetBomberEvent:
         this.OnSetBomberEvent(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnSetEffect:
+      case C2S_GameSessionPacket.OnSetEffect:
         this.OnSetEffect(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnDropObstacle:
+      case C2S_GameSessionPacket.OnDropObstacle:
         this.OnDropObstacle(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnEventItem:
+      case C2S_GameSessionPacket.OnEventItem:
         this.OnEventItem(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnDestroyBox:
+      case C2S_GameSessionPacket.OnDestroyBox:
         this.OnDestroyBox(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnRequestGenerateGhost:
+      case C2S_GameSessionPacket.OnRequestGenerateGhost:
         this.OnRequestGenerateGhost(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnRequestDestroyGhost:
+      case C2S_GameSessionPacket.OnRequestDestroyGhost:
         this.OnRequestDestroyGhost(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnNotifyUDPLoss:
+      case C2S_GameSessionPacket.OnNotifyUDPLoss:
         if (this.m_fPlaying !== 0 && this.m_nGamePhase === 1) this.OnNotifyUDPPacketLoss(n, socket);
         break;
-      case SESSION_ReceivedPacket.OnHackingSuspected:
+      case C2S_GameSessionPacket.OnHackingSuspected:
         this.OnHackingSuspected(n, socket);
         break;
       default:

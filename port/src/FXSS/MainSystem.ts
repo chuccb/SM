@@ -2,7 +2,7 @@
 import { CRand } from "../core/CRand.ts";
 import { GetUnixTimeSeconds } from "../core/LocalTime.ts";
 import { CReceivedPacket, CSendPacket } from "../core/Packet.ts";
-import { SC_SendPacket } from "../protocol/PacketIDs.ts";
+import { S2C_ShopPacket } from "../protocol/PacketIDs.ts";
 import { CENTER_VERSION, CONN_HELLO_VERSION, SVRCLASS_SHOP } from "../protocol/CenterProtocol.ts";
 import type { CClientSocket } from "./ClientSocket.ts";
 
@@ -37,7 +37,7 @@ export class CMainSystem {
   }
 
   OnConnEstablished(socket: CClientSocket): void {
-    const packet = new CSendPacket(SC_SendPacket.OnConnect);
+    const packet = new CSendPacket(S2C_ShopPacket.OnConnect);
     packet.Encode2(CENTER_VERSION);
     packet.Encode2(CONN_HELLO_VERSION[SVRCLASS_SHOP]);
     packet.Encode4(socket.m_nHeaderType);

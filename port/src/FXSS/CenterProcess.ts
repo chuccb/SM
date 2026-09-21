@@ -3,7 +3,7 @@ import { CServerConfig } from "../core/ServerConfig.ts";
 import { CDBMan } from "../db/DBMan.ts";
 import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
 import { CLocalSocket } from "../shared/LocalSocket.ts";
-import { SC_SendPacket } from "../protocol/PacketIDs.ts";
+import { S2C_ShopPacket } from "../protocol/PacketIDs.ts";
 import { CM_ShopServerPacket, MC_ShopServerSendPacket, SVRCLASS_SHOP } from "../protocol/CenterProtocol.ts";
 import { CItemMan } from "./ItemMan.ts";
 import { CUserPool } from "./UserPool.ts";
@@ -114,7 +114,7 @@ export class CCenterProcess {
   /** CCenterProcess::OnAdminNotifyMsg — CM 8 [EStr] → broadcast client 26. */
   OnAdminNotifyMsg(n: CReceivedPacket): void {
     const str = n.DecodeStr();
-    const p = new CSendPacket(SC_SendPacket.OnAdminNotifyMsg, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_ShopPacket.OnAdminNotifyMsg, CipherDegree.kPacketEncryptedCRC8);
     p.EncodeStr(str);
     const pool = GetShopMainPool();
     if (pool) CUserPool.SendAll(CUserPool.CreateSocketList(pool), p);

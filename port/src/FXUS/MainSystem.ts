@@ -1,7 +1,7 @@
 /** Native source unit: CX/CxUtil/MainSystem.cpp. */
 import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
 import { CENTER_VERSION, CONN_HELLO_VERSION, SVRCLASS_UTIL } from "../protocol/CenterProtocol.ts";
-import { UTIL_ClientSend } from "../protocol/PacketIDs.ts";
+import { S2C_UtilPacket } from "../protocol/PacketIDs.ts";
 import type { CClientSocket } from "./ClientSocket.ts";
 import { CLocalUserTable } from "./LocalUserTable.ts";
 
@@ -34,7 +34,7 @@ export class CMainSystem {
     const User = rConnectedSocket.GetUser(0)!;
     User.SetGlobalSerialNo(++this.m_nConnNo);
     if (CLocalUserTable.ms_pInstance?.Insert(User) === 0) console.error("Error! Failed to Add User");
-    const packet = new CSendPacket(UTIL_ClientSend.OnConnect, CipherDegree.kPacketRaw);
+    const packet = new CSendPacket(S2C_UtilPacket.OnConnect, CipherDegree.kPacketRaw);
     packet.Encode2(CENTER_VERSION);
     packet.Encode2(CONN_HELLO_VERSION[SVRCLASS_UTIL]);
     packet.Encode4(rConnectedSocket.m_nHeaderType);

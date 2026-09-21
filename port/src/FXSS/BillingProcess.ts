@@ -7,7 +7,7 @@ import {
   COUPON_SendPacket,
   TW_BILLING_ReceivedPacket,
   TW_BILLING_SendPacket,
-  SC_SendPacket,
+  S2C_ShopPacket,
 } from "../protocol/PacketIDs.ts";
 import type { ShopItem } from "./Recordsets.ts";
 import { CSendPacket as CBillingSendPacket, DecodeBillingString } from "./Packet.ts";
@@ -295,7 +295,7 @@ export class CBillingProcess {
 
   private LocalPurchaseError(user: CUser, message: string): void {
     if (user.m_fTranxInProgress !== 0) return;
-    const p = new CSendPacket(SC_SendPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
     p.Encode1(1); p.EncodeStr(message);
     user.m_pSocket?.SendPacket(p);
   }
@@ -350,7 +350,7 @@ export class CBillingProcess {
     const result = n.Decode4();
     const user = CLocalUserTable.ms_pInstance!.FindUserFromGlobalSerialNo(serial);
     if (!user || user.m_fTranxInProgress !== 0) return;
-    const p = new CSendPacket(SC_SendPacket.OnRemainCashTw, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_ShopPacket.OnRemainCashTw, CipherDegree.kPacketEncryptedCRC8);
     if (result === 1) {
       const message = DecodeBillingString(n);
       if (message === null) return;
@@ -445,7 +445,7 @@ export class CBillingProcess {
       if (!this.m_fLocalBilling || !purchase || purchase.reference !== reference) return;
       if (result !== 0) this.LocalPurchaseError(purchase.user, message);
       else {
-        const p = new CSendPacket(SC_SendPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
+        const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
         p.Encode1(0); p.EncodeBuffer(EncodeVariantTime(new Date()));
         if (purchase.user.m_fTranxInProgress === 0) {
           purchase.user.m_pSocket?.SendPacket(p);
@@ -473,7 +473,7 @@ export class CBillingProcess {
     const result = n.Decode4();
     const user = CLocalUserTable.ms_pInstance!.FindUser(name);
     if (!user || user.m_fTranxInProgress !== 0) return;
-    const p = new CSendPacket(SC_SendPacket.OnDigiQAuthenRes, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_ShopPacket.OnDigiQAuthenRes, CipherDegree.kPacketEncryptedCRC8);
     if (result !== 0) {
       const message = DecodeBillingString(n);
       if (message === null) return;

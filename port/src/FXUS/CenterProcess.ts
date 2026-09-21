@@ -3,7 +3,7 @@ import { CServerConfig } from "../core/ServerConfig.ts";
 import { CReceivedPacket, CSendPacket } from "../core/Packet.ts";
 import { CLocalSocket } from "../shared/LocalSocket.ts";
 import { CM_UtilServerPacket, SVRCLASS_UTIL } from "../protocol/CenterProtocol.ts";
-import { UTIL_ClientSend } from "../protocol/PacketIDs.ts";
+import { S2C_UtilPacket } from "../protocol/PacketIDs.ts";
 import { CLocalUserTable } from "./LocalUserTable.ts";
 import { BroadcastUtilPacket, SendUtilUserDetail } from "./MainPoolRuntime.ts";
 import { CMainSystem } from "./MainSystem.ts";
@@ -74,7 +74,7 @@ export class CCenterProcess {
    */
   OnAdminNotifyMsg(n: CReceivedPacket): void {
     const str = n.DecodeStr();
-    const packet = new CSendPacket(UTIL_ClientSend.OnAdminNotifyMsg);
+    const packet = new CSendPacket(S2C_UtilPacket.OnAdminNotifyMsg);
     packet.EncodeStr(str);
     BroadcastUtilPacket(packet);
   }

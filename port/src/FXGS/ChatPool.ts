@@ -1,6 +1,6 @@
 /** Native source unit: FX/FxServer/ChatPool.cpp. */
 import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
-import { GS_ChatReceivedPacket, GS_ClientSend } from "../protocol/PacketIDs.ts";
+import { C2S_GameChatPacket, S2C_GamePacket } from "../protocol/PacketIDs.ts";
 import { MC_GameServerSendPacket } from "../protocol/CenterProtocol.ts";
 import { SESSION_IDX_NONE } from "./Defs.ts";
 import { CUserPool } from "./UserPool.ts";
@@ -39,28 +39,28 @@ export class CChatPool extends CUserPool {
   override OnPacket(n: CReceivedPacket, socket: CClientSocket): void {
     const id = n.Decode1();
     switch (id) {
-      case GS_ChatReceivedPacket.OnChatMsg:
+      case C2S_GameChatPacket.OnChatMsg:
         this.OnChatMsg(n, socket);
         break;
-      case GS_ChatReceivedPacket.OnAdminNotifyMsg:
+      case C2S_GameChatPacket.OnAdminNotifyMsg:
         this.OnAdminNotifyMsg(n, socket);
         break;
-      case GS_ChatReceivedPacket.OnWhisper:
+      case C2S_GameChatPacket.OnWhisper:
         this.OnWhisper(n, socket);
         break;
-      case GS_ChatReceivedPacket.OnItemMsg:
+      case C2S_GameChatPacket.OnItemMsg:
         this.OnItemMsg(n, socket);
         break;
-      case GS_ChatReceivedPacket.OnKickoffUser:
+      case C2S_GameChatPacket.OnKickoffUser:
         this.OnKickoffUser(n, socket);
         break;
-      case GS_ChatReceivedPacket.OnSystemMsg:
+      case C2S_GameChatPacket.OnSystemMsg:
         this.OnSystemMsg(n, socket);
         break;
-      case GS_ChatReceivedPacket.OnShoutMsg:
+      case C2S_GameChatPacket.OnShoutMsg:
         this.OnShoutMsg(n, socket);
         break;
-      case GS_ChatReceivedPacket.OnSystemCmd:
+      case C2S_GameChatPacket.OnSystemCmd:
         this.OnSystemCmd(n, socket);
         break;
     }
@@ -76,7 +76,7 @@ export class CChatPool extends CUserPool {
       return;
     }
     if (msg.length === 0) {
-      const p = new CSendPacket(GS_ClientSend.OnSystemMsg, CipherDegree.kPacketEncryptedCRC8);
+      const p = new CSendPacket(S2C_GamePacket.OnSystemMsg, CipherDegree.kPacketEncryptedCRC8);
       p.EncodeStr(" ");
       socket.SendPacket(p);
       return;
@@ -88,7 +88,7 @@ export class CChatPool extends CUserPool {
       return;
     }
     const text = `${senders.join(", ")} : ${msg}`;
-    const p = new CSendPacket(GS_ClientSend.OnChatMsg, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_GamePacket.OnChatMsg, CipherDegree.kPacketEncryptedCRC8);
     if (socket.GetUser(0)!.GetSessionIdx() === SESSION_IDX_NONE) p.EncodeStr("//");
     p.EncodeStr(text);
     const idx = socket.GetUser(0)!.GetSessionIdx();
@@ -105,7 +105,7 @@ export class CChatPool extends CUserPool {
     const msg = n.DecodeStr();
     const target = CLocalUserTable.ms_pInstance!.FindUserFromId(to);
     if (!target) {
-      const p = new CSendPacket(GS_ClientSend.OnWhisperFail, CipherDegree.kPacketEncryptedCRC8);
+      const p = new CSendPacket(S2C_GamePacket.OnWhisperFail, CipherDegree.kPacketEncryptedCRC8);
       p.Encode1(0);
       p.EncodeStr(to);
       socket.SendPacket(p);
@@ -117,7 +117,7 @@ export class CChatPool extends CUserPool {
       socket.PostClosePacket();
       return;
     }
-    const p = new CSendPacket(GS_ClientSend.OnWhisperRes, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_GamePacket.OnWhisperRes, CipherDegree.kPacketEncryptedCRC8);
     p.EncodeStr(`${senders.join(", ")} : ${msg}`);
     target.m_pSocket?.SendPacket(p);
   }
@@ -136,7 +136,7 @@ export class CChatPool extends CUserPool {
       socket.PostClosePacket();
       return;
     }
-    const p = new CSendPacket(GS_ClientSend.OnItemMsg, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_GamePacket.OnItemMsg, CipherDegree.kPacketEncryptedCRC8);
     p.EncodeStr(`${user.GetName()} : ${msg}`);
     const idx = socket.GetUser(0)!.GetSessionIdx();
     if (idx === SESSION_IDX_NONE) {
@@ -149,7 +149,7 @@ export class CChatPool extends CUserPool {
   /** CChatPool::OnSystemMsg — packet 31 to the session or the lobby. */
   OnSystemMsg(n: CReceivedPacket, socket: CClientSocket): void {
     const msg = n.DecodeStr();
-    const p = new CSendPacket(GS_ClientSend.OnSystemMsg, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_GamePacket.OnSystemMsg, CipherDegree.kPacketEncryptedCRC8);
     p.EncodeStr(msg);
     const idx = socket.GetUser(0)?.GetSessionIdx() ?? SESSION_IDX_NONE;
     if (idx === SESSION_IDX_NONE) this.SendAll(p, 1);
@@ -215,7 +215,7 @@ export class CChatPool extends CUserPool {
       socket.PostClosePacket();
       return;
     }
-    const p = new CSendPacket(GS_ClientSend.OnShoutMsg, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_GamePacket.OnShoutMsg, CipherDegree.kPacketEncryptedCRC8);
     p.EncodeStr(`${user.GetName()} : ${msg}`);
     this.SendAll(p, 0);
   }

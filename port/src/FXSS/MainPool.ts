@@ -2,7 +2,7 @@
 import { CDBMan } from "../db/DBMan.ts";
 import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
 import { EncodeVariantTime } from "../core/VariantTime.ts";
-import { SC_SendPacket, SS_ReceivedPacket } from "../protocol/PacketIDs.ts";
+import { C2S_ShopPacket, S2C_ShopPacket } from "../protocol/PacketIDs.ts";
 import { MC_ShopServerSendPacket } from "../protocol/CenterProtocol.ts";
 import { CItemMan } from "./ItemMan.ts";
 import type { _USERACCOUNT, _USERDYNINFO } from "./Recordsets.ts";
@@ -54,64 +54,64 @@ export class CMainPool extends CUserPool {
   override OnPacket(n: CReceivedPacket, socket: CClientSocket): void {
     const type = n.Decode1();
     switch (type) {
-      case SS_ReceivedPacket.OnReqConnectToSvr:
+      case C2S_ShopPacket.OnReqConnectToSvr:
         this.OnReqConnectToSvr(n, socket);
         return;
-      case SS_ReceivedPacket.OnConnEstablished:
+      case C2S_ShopPacket.OnConnEstablished:
         this.OnConnEstablished(n, socket);
         return;
-      case SS_ReceivedPacket.RequestRemainCashTw:
+      case C2S_ShopPacket.RequestRemainCashTw:
         this.OnRequestRemainCashTw(n, socket);
         return;
-      case SS_ReceivedPacket.OnReqPurchase:
+      case C2S_ShopPacket.OnReqPurchase:
         this.OnReqPurchase(n, socket);
         return;
-      case SS_ReceivedPacket.OnRequestDeleteItem:
+      case C2S_ShopPacket.OnRequestDeleteItem:
         this.OnRequestDeleteItem(n, socket);
         return;
-      case SS_ReceivedPacket.OnUserSlotInfo:
+      case C2S_ShopPacket.OnUserSlotInfo:
         this.OnUserSlotInfo(n, socket);
         return;
-      case SS_ReceivedPacket.OnRequestModifyItemVerbose:
+      case C2S_ShopPacket.OnRequestModifyItemVerbose:
         this.OnRequestModifyItemVerbose(n, socket);
         return;
-      case SS_ReceivedPacket.OnRequestShopItemList:
+      case C2S_ShopPacket.OnRequestShopItemList:
         CItemMan.ms_pInstance!.SendShopItemList(socket);
         return;
-      case SS_ReceivedPacket.OnRequestCharge:
+      case C2S_ShopPacket.OnRequestCharge:
         this.OnRequestCharge(n, socket);
         return;
-      case SS_ReceivedPacket.OnRequestStringTable:
+      case C2S_ShopPacket.OnRequestStringTable:
         CItemMan.ms_pInstance!.SendStringTable(socket);
         return;
-      case SS_ReceivedPacket.OnRequestUserItemList:
+      case C2S_ShopPacket.OnRequestUserItemList:
         this.OnRequestUserItemList(n, socket);
         return;
-      case SS_ReceivedPacket.OnRequestPresent:
+      case C2S_ShopPacket.OnRequestPresent:
         this.OnRequestPresent(n, socket);
         return;
-      case SS_ReceivedPacket.OnRequestUseCoupon:
+      case C2S_ShopPacket.OnRequestUseCoupon:
         this.OnRequestUseCoupon(n, socket);
         return;
-      case SS_ReceivedPacket.OnRequestPackageMap:
+      case C2S_ShopPacket.OnRequestPackageMap:
         CItemMan.ms_pInstance!.SendPackageMap(socket);
         return;
-      case SS_ReceivedPacket.OnRequestCartList:
+      case C2S_ShopPacket.OnRequestCartList:
         this.OnRequestCartList(n, socket);
         return;
-      case SS_ReceivedPacket.OnRequestAddCartList:
+      case C2S_ShopPacket.OnRequestAddCartList:
         this.OnRequestAddCartList(n, socket);
         return;
-      case SS_ReceivedPacket.OnReqPurchaseCartList:
+      case C2S_ShopPacket.OnReqPurchaseCartList:
         this.OnReqPurchaseCartList(n, socket);
         return;
-      case SS_ReceivedPacket.OnReqDigiQAuthorization:
+      case C2S_ShopPacket.OnReqDigiQAuthorization:
         this.OnReqDigiQAuthorization(n, socket);
         return;
-      case SS_ReceivedPacket.OnRequestTranxData:
+      case C2S_ShopPacket.OnRequestTranxData:
         this.OnRequestTranxData(n, socket);
         return;
-      case SS_ReceivedPacket.OnRequestShopSvrInfo:
+      case C2S_ShopPacket.OnRequestShopSvrInfo:
         this.OnRequestShopSvrInfo(n, socket);
         return;
       default: {
@@ -195,7 +195,7 @@ export class CMainPool extends CUserPool {
     // Zero-count native code uses an invalid target; keep the port safe.
     if (!target || !target.m_pSocket) return;
     const result = n.Decode1();
-    const p = new CSendPacket(SC_SendPacket.OnReqConnectToSvrRes, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_ShopPacket.OnReqConnectToSvrRes, CipherDegree.kPacketEncryptedCRC8);
     p.Encode1(result);
     if (result === 1) {
       const svrType = n.Decode1();
@@ -295,7 +295,7 @@ export class CMainPool extends CUserPool {
     // client 18 OnInitialInfo
     const itemMan = CItemMan.ms_pInstance!;
     const system = CMainSystem.ms_pInstance!;
-    const p = new CSendPacket(SC_SendPacket.OnInitialInfo, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_ShopPacket.OnInitialInfo, CipherDegree.kPacketEncryptedCRC8);
     if (target.m_nAuthenCode === 1) {
       p.Encode1(1);
       p.Encode1(101);
@@ -319,11 +319,11 @@ export class CMainPool extends CUserPool {
     // never fills the in-memory vectors — purchases go straight to the DB —
     // so in practice this branch stays silent, exactly like the original).
     if (users.some((u) => u && u.m_vecUserInventory.length > 0)) {
-      const p207 = new CSendPacket(SC_SendPacket.OnPreInventory, CipherDegree.kPacketEncryptedCRC8);
+      const p207 = new CSendPacket(S2C_ShopPacket.OnPreInventory, CipherDegree.kPacketEncryptedCRC8);
       p207.Encode1(users.length);
       for (const u of users) u!.MakePreInventoryPacket(p207);
       target.m_pSocket?.SendPacket(p207);
-      const p201 = new CSendPacket(SC_SendPacket.OnUserInventory, CipherDegree.kPacketEncryptedCRC8);
+      const p201 = new CSendPacket(S2C_ShopPacket.OnUserInventory, CipherDegree.kPacketEncryptedCRC8);
       p201.Encode1(users.length);
       for (const u of users) u!.MakeUserInventoryPacket(p201);
       target.m_pSocket?.SendPacket(p201);
@@ -455,7 +455,7 @@ export class CMainPool extends CUserPool {
       user.m_nCash -= shopItem.Price;
       if (user.m_fCartProcessing === 0) {
         // success: client 204 [E1 0][8B SystemTimeToVariantTime double]
-        const p = new CSendPacket(SC_SendPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
+        const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
         p.Encode1(0);
         p.EncodeBuffer(EncodeVariantTime(new Date()));
         user.m_pSocket?.SendPacket(p);
@@ -467,7 +467,7 @@ export class CMainPool extends CUserPool {
   }
 
   PurchaseError(user: CUser, code: number, msg: string): void {
-    const p = new CSendPacket(SC_SendPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
     p.Encode1(code);
     p.EncodeStr(msg);
     user.m_pSocket?.SendPacket(p);
@@ -515,7 +515,7 @@ export class CMainPool extends CUserPool {
   OnRequestCharge(_n: CReceivedPacket, socket: CClientSocket): void {
     const user = socket.GetUser(socket.m_nSelectedUserIdx);
     if (!user || user.m_fTranxInProgress !== 0) return;
-    const p = new CSendPacket(SC_SendPacket.OnReqPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_ShopPacket.OnReqPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
     p.Encode1(CMainSystem.ms_pInstance!.m_nFXAttr & 0xff);
     p.Encode4(user.GetGlobalSerialNo());
     p.Encode4(user.m_nChargeKey);
@@ -525,7 +525,7 @@ export class CMainPool extends CUserPool {
 
   /** CMainPool::OnRequestUserItemList — client 217 → 202 PutUserItemList. */
   OnRequestUserItemList(_n: CReceivedPacket, socket: CClientSocket): void {
-    const p = new CSendPacket(SC_SendPacket.OnUserItemList, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_ShopPacket.OnUserItemList, CipherDegree.kPacketEncryptedCRC8);
     CItemMan.ms_pInstance!.PutUserItemList(p);
     socket.SendPacket(p);
   }
@@ -539,14 +539,14 @@ export class CMainPool extends CUserPool {
     if (!user) return;
     if (this.billingProcess.m_fLocalBilling) { this.PurchaseError(user, 1, BILLING_ERROR.unsupported); return; }
     if (this.db.prConfirmUnregisteredId(targetId) === 0) {
-      const p = new CSendPacket(SC_SendPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
+      const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
       p.Encode1(3);
       p.EncodeStr(ERR_PURCHASE);
       socket.SendPacket(p);
       return;
     }
     if (!CBillingProcess.ms_pInstance || !CBillingProcess.ms_pInstance.IsConnected()) {
-      const p = new CSendPacket(SC_SendPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
+      const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
       p.Encode1(5);
       p.EncodeStr(ERR_PURCHASE);
       socket.SendPacket(p);
@@ -563,7 +563,7 @@ export class CMainPool extends CUserPool {
     const user = socket.GetUser(socket.m_nSelectedUserIdx);
     if (!user) return;
     if (this.billingProcess.m_fLocalBilling) {
-      const p = new CSendPacket(SC_SendPacket.OnUseCouponRes, CipherDegree.kPacketEncryptedCRC8);
+      const p = new CSendPacket(S2C_ShopPacket.OnUseCouponRes, CipherDegree.kPacketEncryptedCRC8);
       p.Encode1(7); // existing client-visible coupon refusal, no claim that it was redeemed
       socket.SendPacket(p);
       return;
@@ -575,7 +575,7 @@ export class CMainPool extends CUserPool {
       CBillingProcess.ms_pInstance?.RequestCheckCoupon(user);
       return;
     }
-    const p = new CSendPacket(SC_SendPacket.OnUseCouponRes, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_ShopPacket.OnUseCouponRes, CipherDegree.kPacketEncryptedCRC8);
     p.Encode1(7);
     socket.SendPacket(p);
   }
@@ -589,7 +589,7 @@ export class CMainPool extends CUserPool {
     const cart = this.db.prGetUserCartList(user.GetName());
     const list = cart.stockSN;
     const count = list ? list.split(",").filter((x) => x.length > 0).length : 0;
-    const p = new CSendPacket(SC_SendPacket.OnCartList, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_ShopPacket.OnCartList, CipherDegree.kPacketEncryptedCRC8);
     p.Encode1(count);
     if (count !== 0) p.EncodeStr(list);
     socket.SendPacket(p);
@@ -670,7 +670,7 @@ export class CMainPool extends CUserPool {
         // Native clears user+0xBF0 before client 215 [E1 9][E1 0][8B date].
         user.m_fCartProcessing = 0;
         if (user.m_pSocket) {
-          const p = new CSendPacket(SC_SendPacket.OnPurchaseCartListRes, CipherDegree.kPacketEncryptedCRC8);
+          const p = new CSendPacket(S2C_ShopPacket.OnPurchaseCartListRes, CipherDegree.kPacketEncryptedCRC8);
           p.Encode1(CART_RECEIPT_CODE);
           p.Encode1(CART_RECEIPT_RESULT);
           p.EncodeBuffer(EncodeVariantTime(new Date()));
@@ -708,7 +708,7 @@ export class CMainPool extends CUserPool {
     if (!user) return;
     const buf = new Uint8Array(TRANSACTION_PAGE_BYTES);
     const page = CTranxCtrl.ms_pInstance!.GetData(year, month, day, buf, offset);
-    const p = new CSendPacket(SC_SendPacket.OnTranxData, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_ShopPacket.OnTranxData, CipherDegree.kPacketEncryptedCRC8);
     p.Encode2(page.length);
     p.EncodeBuffer(buf.subarray(0, page.length), page.length);
     p.Encode4(page.nextOffset);
@@ -721,7 +721,7 @@ export class CMainPool extends CUserPool {
    *  but ENCODED as an E4.  The list is what the center pushed as CM 6. */
   OnRequestShopSvrInfo(_n: CReceivedPacket, socket: CClientSocket): void {
     const center = CCenterProcess.ms_pInstance!;
-    const p = new CSendPacket(SC_SendPacket.OnShopSvrInfo, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_ShopPacket.OnShopSvrInfo, CipherDegree.kPacketEncryptedCRC8);
     p.Encode4(center.m_nSvrCount);
     for (let i = 0; i < center.m_nSvrCount; i++) {
       p.Encode4(center.m_anSvrIP[i]!);

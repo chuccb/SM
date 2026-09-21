@@ -1,6 +1,6 @@
 /** Native source unit: FX/FxServer/GuildSessionStrategy.cpp. */
 import { CSendPacket } from "../core/Packet.ts";
-import { GS_ClientSend } from "../protocol/PacketIDs.ts";
+import { S2C_GamePacket } from "../protocol/PacketIDs.ts";
 import { MAX_SESSION_SLOTS, SLOTSTATE_COLOR_MASK } from "./Defs.ts";
 import type { CGameSession } from "./GameSession.ts";
 import type { CClientSocket } from "./ClientSocket.ts";
@@ -64,7 +64,7 @@ export class CGuildSessionStrategy extends CGameSessionStrategy {
   /** CGuildSessionStrategy::EncodeGuildSessionInfo (:39737) — the 88 body:
    *  [E4 count][count × [E4 serial][E4 playerCount][E4 winCount]]. */
   EncodeGuildSessionInfo(packet: CSendPacket): void {
-    packet.InitPacket(GS_ClientSend.OnGuildSessionInfo);
+    packet.InitPacket(S2C_GamePacket.OnGuildSessionInfo);
     packet.Encode4(this.m_nGuildCount);
     for (let i = 0; i < this.m_nGuildCount; i++) {
       packet.Encode4(this.m_argSerialNo[i]! >>> 0);

@@ -2,7 +2,7 @@
 import type { CServerConfig } from "../core/ServerConfig.ts";
 import { CReceivedPacket, CSendPacket, CipherDegree, PACKET_TYPE_PLACEHOLDER } from "../core/Packet.ts";
 import { CDBMan } from "../db/DBMan.ts";
-import { GS_ClientSend, GS_ReceivedPacket } from "../protocol/PacketIDs.ts";
+import { S2C_GamePacket, C2S_GameLobbyPacket } from "../protocol/PacketIDs.ts";
 import { CDynInfoCalculator_GetMaxExpInLevel } from "../shared/LevelTable.ts";
 import { MC_GameServerSendPacket, SVRCLASS_GAME, SVRCLASS_SHOP } from "../protocol/CenterProtocol.ts";
 import { CChatPool } from "./ChatPool.ts";
@@ -78,70 +78,70 @@ export class CChannelPool extends CChatPool {
   override OnPacket(n: CReceivedPacket, socket: CClientSocket): void {
     const id = n.Decode1();
     switch (id) {
-      case GS_ReceivedPacket.OnReqConnectToSvr:
+      case C2S_GameLobbyPacket.OnReqConnectToSvr:
         this.OnReqConnectToSvr(n, socket);
         return;
-      case GS_ReceivedPacket.OnReqChannelsState:
+      case C2S_GameLobbyPacket.OnReqChannelsState:
         this.OnReqChannelsState(socket);
         return;
-      case GS_ReceivedPacket.OnEnterChannelStage:
+      case C2S_GameLobbyPacket.OnEnterChannelStage:
         this.OnEnterChannelStage(socket);
         return;
-      case GS_ReceivedPacket.OnInviteUser:
+      case C2S_GameLobbyPacket.OnInviteUser:
         this.OnInviteUser(n, socket);
         return;
-      case GS_ReceivedPacket.OnGuildMarkRevision:
+      case C2S_GameLobbyPacket.OnGuildMarkRevision:
         this.OnGuildMarkRevision(n);
         return;
-      case GS_ReceivedPacket.OnEstimateRTT:
+      case C2S_GameLobbyPacket.OnEstimateRTT:
         n.m_uOffset = 0;
         super.OnPacket(n, socket);
         return;
-      case GS_ReceivedPacket.OnRequestUserSimpleInfo:
+      case C2S_GameLobbyPacket.OnRequestUserSimpleInfo:
         this.OnRequestUserSimpleInfo(n, socket);
         return;
-      case GS_ReceivedPacket.OnRequestMyInfo:
+      case C2S_GameLobbyPacket.OnRequestMyInfo:
         this.OnRequestMyInfo(n, socket);
         return;
-      case GS_ReceivedPacket.OnRequestModifyUserInfo:
+      case C2S_GameLobbyPacket.OnRequestModifyUserInfo:
         this.OnRequestModifyUserInfo(n, socket);
         return;
-      case GS_ReceivedPacket.OnRequestUserInfoDetail:
+      case C2S_GameLobbyPacket.OnRequestUserInfoDetail:
         this.OnRequestUserInfoDetail(n, socket);
         return;
-      case GS_ReceivedPacket.OnRequestSessionInfoDetail:
+      case C2S_GameLobbyPacket.OnRequestSessionInfoDetail:
         this.OnRequestSessionInfoDetail(n, socket);
         return;
-      case GS_ReceivedPacket.OnRequestUserLocation:
+      case C2S_GameLobbyPacket.OnRequestUserLocation:
         this.OnRequestUserLocation(n, socket);
         return;
-      case GS_ReceivedPacket.OnRequestGuildInfo:
+      case C2S_GameLobbyPacket.OnRequestGuildInfo:
         this.OnRequestGuildInfo(n, socket);
         return;
-      case GS_ReceivedPacket.OnCreateSession:
+      case C2S_GameLobbyPacket.OnCreateSession:
         CGameSessionTable.ms_pInstance!.CreateSession(n, socket);
         return;
-      case GS_ReceivedPacket.OnEnterSession:
+      case C2S_GameLobbyPacket.OnEnterSession:
         CGameSessionTable.ms_pInstance!.JoinSession(n, socket);
         return;
-      case GS_ReceivedPacket.OnJoinFreeSession:
+      case C2S_GameLobbyPacket.OnJoinFreeSession:
         CGameSessionTable.ms_pInstance!.JoinFreeSession(n, socket);
         return;
-      case GS_ReceivedPacket.OnEnterLobbyStage:
+      case C2S_GameLobbyPacket.OnEnterLobbyStage:
         this.OnEnterLobbyStage(socket);
         return;
-      case GS_ReceivedPacket.OnRequestCreateGuildSession:
+      case C2S_GameLobbyPacket.OnRequestCreateGuildSession:
         CGameSessionTable.ms_pInstance!.CreateSessionGuild(n, socket);
         return;
-      case GS_ReceivedPacket.OnRequestGuildMemberInfo:
+      case C2S_GameLobbyPacket.OnRequestGuildMemberInfo:
         this.OnRequestGuildMemberInfo(n, socket);
         return;
-      case GS_ReceivedPacket.OnRequestCreatePracticeSession:
+      case C2S_GameLobbyPacket.OnRequestCreatePracticeSession:
         // vtbl+60 = CreateSessionPractice — the practice rooms live in the
         // table's second half (+1320), invisible to the lobby lists
         CGameSessionTable.ms_pInstance!.CreateSessionPractice(n, socket);
         return;
-      case GS_ReceivedPacket.OnRequestUserInventory:
+      case C2S_GameLobbyPacket.OnRequestUserInventory:
         this.OnRequestUserItemList(socket);
         return;
       default:
@@ -158,7 +158,7 @@ export class CChannelPool extends CChatPool {
 
   /** CChannelPool::OnAddNewSocket — packet 15 + the rank/guild lists. */
   override OnAddNewSocket(socket: CClientSocket): void {
-    const p = new CSendPacket(GS_ClientSend.OnChannelAnnounce, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_GamePacket.OnChannelAnnounce, CipherDegree.kPacketEncryptedCRC8);
     socket.SendPacket(p);
     this.InsertRankList(socket);
     this.PutUserSimpleInfoPacket(socket, 0);
@@ -221,7 +221,7 @@ export class CChannelPool extends CChatPool {
 
   /** CChannelPool::PutUserSimpleInfoPacket — packet 70 (9 per page). */
   PutUserSimpleInfoPacket(socket: CClientSocket, n: number): void {
-    const packet = new CSendPacket(GS_ClientSend.OnRequestUserSimpleInfoRes, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnRequestUserSimpleInfoRes, CipherDegree.kPacketEncryptedCRC8);
     const total = this.m_vtRankList.length;
     const pages = total <= 0 ? 0 : Math.floor((total - 1) / 9) + 1;
     let page = n < 0 ? 0 : n;
@@ -240,7 +240,7 @@ export class CChannelPool extends CChatPool {
     const user = socket.GetUser(0);
     if (!user || user.m_nGuildSN === 0) return;
     const list = this.m_vtGuildMember.get(user.m_nGuildSN) ?? [];
-    const packet = new CSendPacket(GS_ClientSend.OnGuildMemberListRes, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnGuildMemberListRes, CipherDegree.kPacketEncryptedCRC8);
     const pages = list.length <= 0 ? 0 : Math.floor((list.length - 1) / 9) + 1;
     let page = n < 0 ? 0 : n;
     if (page > pages - 1) page = pages - 1;
@@ -277,7 +277,7 @@ export class CChannelPool extends CChatPool {
   OnEnterLobbyStage(socket: CClientSocket): void {
     CGameSessionTable.ms_pInstance!.DestroyPlayer(socket, 0);
     socket.m_nPoolType = 1;
-    const p = new CSendPacket(GS_ClientSend.OnChannelAnnounce, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_GamePacket.OnChannelAnnounce, CipherDegree.kPacketEncryptedCRC8);
     socket.SendPacket(p);
     CGameSessionTable.ms_pInstance!.PutAllSessionInfo(socket);
   }
@@ -335,7 +335,7 @@ export class CChannelPool extends CChatPool {
       const version = n.Decode2();
       const r = CCenterProcess.ms_pInstance!.CheckEnterGame(type, target, version);
       if (r !== 1) {
-        const p = new CSendPacket(GS_ClientSend.OnReqConnectToSvrRes, CipherDegree.kPacketEncryptedCRC8);
+        const p = new CSendPacket(S2C_GamePacket.OnReqConnectToSvrRes, CipherDegree.kPacketEncryptedCRC8);
         p.Encode1(r);
         socket.SendPacket(p);
         return;
@@ -366,7 +366,7 @@ export class CChannelPool extends CChatPool {
     const socket = user?.m_pSocket;
     if (!socket) return;
     const result = n.Decode1();
-    const p = new CSendPacket(GS_ClientSend.OnReqConnectToSvrRes, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_GamePacket.OnReqConnectToSvrRes, CipherDegree.kPacketEncryptedCRC8);
     p.Encode1(result);
     if (result === 1) {
       p.Encode1(n.Decode1()); // the target server class
@@ -388,7 +388,7 @@ export class CChannelPool extends CChatPool {
     const idx = n.Decode1();
     if (idx >= socket.GetUserCount()) return;
     const user = socket.GetUser(idx)!;
-    const packet = new CSendPacket(GS_ClientSend.OnRequestMyInfoRes, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnRequestMyInfoRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(idx);
     packet.EncodeStr(user.account.strName);
     packet.Encode1(user.account.Gender);
@@ -438,7 +438,7 @@ export class CChannelPool extends CChatPool {
       user.account.Birthday = birthday;
       user.account.Reveal = reveal;
     }
-    const packet = new CSendPacket(GS_ClientSend.OnRequestModifyUserInfoRes, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnRequestModifyUserInfoRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(result);
     socket.SendPacket(packet);
   }
@@ -461,7 +461,7 @@ export class CChannelPool extends CChatPool {
 
   /** CChannelPool::SendUserDetailInfo — the local-user 71 body. */
   SendUserDetailInfo(socket: CClientSocket, user: CUser): void {
-    const packet = new CSendPacket(GS_ClientSend.OnRequestUserInfoDetailRes, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnRequestUserInfoDetailRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(1);
     packet.EncodeStr(user.GetName());
     packet.EncodeStr(user.account.strName);
@@ -503,7 +503,7 @@ export class CChannelPool extends CChatPool {
       CCenterProcess.ms_pInstance?.SendPacket(p);
       return;
     }
-    const packet = new CSendPacket(GS_ClientSend.OnRequestUserLocationRes, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnRequestUserLocationRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(1);
     packet.EncodeStr(user.GetName());
     packet.Encode1(SVRCLASS_GAME);
@@ -517,7 +517,7 @@ export class CChannelPool extends CChatPool {
     const sn = n.Decode4();
     const guild = CGuildTable.ms_pInstance!.FindGuildFromSerialNo(sn);
     if (!guild) return;
-    const packet = new CSendPacket(GS_ClientSend.OnRequestGuildInfoRes, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnRequestGuildInfoRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode4(guild.m_nGuildSN);
     packet.EncodeStr(guild.strName);
     packet.Encode2(guild.m_nMarkRevision);
@@ -539,7 +539,7 @@ export class CChannelPool extends CChatPool {
     const name = n.DecodeStr();
     const target = CLocalUserTable.ms_pInstance!.FindUserFromId(name);
     if (!target) return;
-    const packet = new CSendPacket(GS_ClientSend.OnInviteUser, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnInviteUser, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode2(idx);
     packet.Encode4(serial);
     packet.EncodeStr(socket.GetUser(0)!.GetName());
@@ -555,7 +555,7 @@ export class CChannelPool extends CChatPool {
 
   /** CChannelPool::OnRequestUserItemList — packet 209. */
   OnRequestUserItemList(socket: CClientSocket): void {
-    const packet = new CSendPacket(GS_ClientSend.OnUserItemList, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnUserItemList, CipherDegree.kPacketEncryptedCRC8);
     CUserItemMan.ms_pInstance!.PutUserItemList(packet);
     socket.SendPacket(packet);
   }

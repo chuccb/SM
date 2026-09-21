@@ -1,7 +1,7 @@
 /** Native source unit: CX/CxUtil/MainPool.cpp. */
 import { CReceivedPacket, CSendPacket } from "../core/Packet.ts";
 import { MC_UtilServerSendPacket } from "../protocol/CenterProtocol.ts";
-import { UTIL_ClientReceivedPacket, UTIL_ClientSend } from "../protocol/PacketIDs.ts";
+import { C2S_UtilPacket, S2C_UtilPacket } from "../protocol/PacketIDs.ts";
 import { CUserPool } from "./UserPool.ts";
 import { CUser } from "./User.ts";
 import type { CClientSocket } from "./ClientSocket.ts";
@@ -25,25 +25,25 @@ export class CMainPool extends CUserPool {
   /** CMainPool::OnPacket (CxUtil.exe.c:21528) — the relay dispatch. */
   override OnPacket(n: CReceivedPacket, socket: CClientSocket): void {
     switch (n.Decode1()) {
-      case UTIL_ClientReceivedPacket.OnConnEstablished:
+      case C2S_UtilPacket.OnConnEstablished:
         this.OnConnEstablished(n, socket);
         break;
-      case UTIL_ClientReceivedPacket.OnAdminNotifyMsg:
+      case C2S_UtilPacket.OnAdminNotifyMsg:
         this.OnAdminNotifyMsg(n, socket);
         break;
-      case UTIL_ClientReceivedPacket.OnAdminNotifyGameServerMsg:
+      case C2S_UtilPacket.OnAdminNotifyGameServerMsg:
         this.OnAdminNotifyGameServerMsg(n, socket);
         break;
-      case UTIL_ClientReceivedPacket.OnSystemMsg:
+      case C2S_UtilPacket.OnSystemMsg:
         this.OnSystemMsg(n, socket);
         break;
-      case UTIL_ClientReceivedPacket.OnKickoffUser:
+      case C2S_UtilPacket.OnKickoffUser:
         this.OnKickoffUser(n, socket);
         break;
-      case UTIL_ClientReceivedPacket.OnReqUserInfo:
+      case C2S_UtilPacket.OnReqUserInfo:
         this.OnReqUserInfo(n, socket);
         break;
-      case UTIL_ClientReceivedPacket.OnUpdateItem:
+      case C2S_UtilPacket.OnUpdateItem:
         this.OnUpdateItem(n, socket);
         break;
       default:
@@ -140,7 +140,7 @@ export class CMainPool extends CUserPool {
   static SendUserDetailInfo(User: CUser, _p_str: string, userType: number, sessionIdx: number): void {
     const socket = User.GetSocket();
     if (!socket.m_bConnected) return;
-    const packet = new CSendPacket(UTIL_ClientSend.OnUserDetailInfo);
+    const packet = new CSendPacket(S2C_UtilPacket.OnUserDetailInfo);
     packet.Encode1(userType);
     packet.Encode4(sessionIdx);
     socket.SendPacket(packet);
