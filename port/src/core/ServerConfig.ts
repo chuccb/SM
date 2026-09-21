@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { DecodeCP950 } from "./Encoding.ts";
 
 /**
  * CServerConfig — the registered-attribute configuration store used by
@@ -226,7 +227,7 @@ export class CServerConfig {
     if (!cfgFileName.includes(".")) cfgFileName += ".cfg";
     let text: string;
     try {
-      text = readFileSync(cfgFileName, "latin1");
+      text = DecodeCP950(readFileSync(cfgFileName));
     } catch {
       // the original's CAppException (FxServer.exe.c:13604)
       throw new Error("Can't find server configuration file");

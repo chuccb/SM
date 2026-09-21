@@ -459,6 +459,10 @@ export class CReceivedPacket extends CMemBlock {
     return count + 4;
   }
 
+  DecodeISStream(isstream: CISmartStream): void {
+    this.m_uOffset += this.DecodeISStreamAt(this.m_uOffset, isstream);
+  }
+
   Decode1(): number {
     const m_uOffset = this.m_uOffset;
     if (m_uOffset + 1 > this.m_uLength) return 0;
