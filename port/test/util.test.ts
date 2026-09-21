@@ -28,7 +28,7 @@ import {
   CClientSocket as LsClientSocket,
   CLoginPool,
 } from "../src/LS/CxLogin.ts";
-import { LS_ClientSend } from "../src/protocol/PacketIDs.ts";
+import { S2C_LoginNoticePacket } from "../src/protocol/PacketIDs.ts";
 import { CMultiServer } from "../src/LS/MultiServer.ts";
 import {
   CClientSocket,
@@ -353,7 +353,7 @@ describe("login server (CxLogin)", () => {
     db.config.run("UPDATE FxUserOptions SET VALUE = 0x1234 WHERE NAME = 'PRECHMAPREWARD'");
     center.UpdateFxMessage();
     center.UpdatePremiumChannelMapSelReward();
-    const p = new CSendPacket(LS_ClientSend.OnChannelsExtraInfo, 0);
+    const p = new CSendPacket(S2C_LoginNoticePacket.OnChannelsExtraInfo, 0);
     center.MakeChannelsExtraInfoPacket(p);
     const b = p.m_pBlock;
     let o = 1; // the ctor's type byte

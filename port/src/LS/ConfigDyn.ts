@@ -3,7 +3,7 @@
 import { CipherDegree, CSendPacket } from "../core/Packet.ts";
 import { COSmartStream } from "../core/SmartStream.ts";
 import type { CDBMan } from "../db/DBMan.ts";
-import { LS_ClientSend } from "../protocol/PacketIDs.ts";
+import { S2C_LoginNoticePacket } from "../protocol/PacketIDs.ts";
 
 /** CConfigDyn::OnTimer refresh cadence (400 ms login timer ticks). */
 export const CONFIG_DYN_NOTICE_UPDATE_TICKS = 0x1194; // 4500
@@ -33,7 +33,7 @@ export class CConfigDyn {
     const stream = new COSmartStream();
     stream.EncodeStr(row.value);
     const hash = stream.GetHashValue();
-    const packet = new CSendPacket(LS_ClientSend.OnNotice, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_LoginNoticePacket.OnNotice, CipherDegree.kPacketEncryptedCRC8);
     packet.EncodeOSStream(stream);
 
     this.m_strNotice = row.value;

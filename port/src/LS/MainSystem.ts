@@ -2,7 +2,7 @@
 import { CServerConfig } from "../core/ServerConfig.ts";
 import { CSendPacket, CipherDegree } from "../core/Packet.ts";
 import { CENTER_VERSION, CONN_HELLO_VERSION, SVRCLASS_LOGIN } from "../protocol/CenterProtocol.ts";
-import { LS_ClientSend } from "../protocol/PacketIDs.ts";
+import { S2C_LoginNoticePacket } from "../protocol/PacketIDs.ts";
 import type { CClientSocket } from "./ClientSocket.ts";
 
 /**
@@ -26,7 +26,7 @@ export class CMainSystem {
   }
 
   OnConnEstablished(socket: CClientSocket): void {
-    const packet = new CSendPacket(LS_ClientSend.OnConnect, CipherDegree.kPacketRaw);
+    const packet = new CSendPacket(S2C_LoginNoticePacket.OnConnect, CipherDegree.kPacketRaw);
     packet.Encode2(CENTER_VERSION);
     packet.Encode2(CONN_HELLO_VERSION[SVRCLASS_LOGIN]);
     packet.Encode4(socket.m_nHeaderType);

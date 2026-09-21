@@ -58,7 +58,7 @@ import {
 
 // ═══════════════════════════════ 1. LOGIN SERVER ═══════════════════════════════
 /** Client → Login Server packets (CLoginPool::OnPacket, CxLogin.exe.c:15254). */
-export const LS_ClientReceivedPacket = {
+export const C2S_LoginPacket = {
   OnAskMultiServer: 1,
   OnAskFirstInfo: 2,
   OnLogin: 3,
@@ -72,13 +72,14 @@ export const LS_ClientReceivedPacket = {
   OnRequestDestoryService: 60, // (official spelling)
   OnReplyDestoryService: 61,
 } as const;
-export const LS_ReceivedPacket = LS_ClientReceivedPacket;
+export const LS_ClientReceivedPacket = C2S_LoginPacket;
+export const LS_ReceivedPacket = C2S_LoginPacket;
 
 /**
  * Login Server → Client responses (one per matching request id).
- * The channel-info family (10/11/13/14) and unsolicited notifications are in LS_ServerNoticePacket.
+ * The channel-info family (10/11/13/14) and unsolicited notifications are in S2C_LoginNoticePacket.
  */
-export const LS_ServerResponsePacket = {
+export const S2C_LoginResponsePacket = {
   OnAskMultiServerRes: 1,
   OnAskFirstInfoRes: 2,
   OnLoginRes: 3,
@@ -88,12 +89,13 @@ export const LS_ServerResponsePacket = {
   OnEstimateRTTRes: 20,
   OnRequestDestoryServiceRes: 60,
 } as const;
-export const LS_SendPacket = LS_ServerResponsePacket;
+export const LS_ServerResponsePacket = S2C_LoginResponsePacket;
+export const LS_SendPacket = S2C_LoginResponsePacket;
 
 /**
  * Login Server → Client unsolicited notifications and broadcasts (no matching request id).
  */
-export const LS_ServerNoticePacket = {
+export const S2C_LoginNoticePacket = {
   OnConnect: 0, // CMainSystem::OnConnEstablished [E2 CENTER_VERSION][E2 CONN_HELLO_VERSION][E4 headerType][EStr url]
   OnNotice: 7, // CConfigDyn::GetNoticePacket [COSmartStream containing one EStr]
   OnChannelInfo: 10, // CChannelCache::MakeInfoPacket (24883) — [E1 full][OSstream]
@@ -105,15 +107,17 @@ export const LS_ServerNoticePacket = {
   OnWhisper: 27, // CCenterProcess::OnWhisper (CxLogin.exe.c:5058) — relay to the target's socket [EStr]×5[E4]×3; no caller in CxCenter.exe.c (arrives via the S2S vtbl)
   OnSystemMsg: 30,
 } as const;
-export const LS_ClientSend = LS_ServerNoticePacket;
+export const LS_ServerNoticePacket = S2C_LoginNoticePacket;
+export const LS_ClientSend = S2C_LoginNoticePacket;
 
 /**
  * All Login Server → Client packets (union of response packets and unsolicited notifications).
  */
-export const LS_ServerSendPacket = {
-  ...LS_ServerResponsePacket,
-  ...LS_ServerNoticePacket,
+export const S2C_LoginPacket = {
+  ...S2C_LoginResponsePacket,
+  ...S2C_LoginNoticePacket,
 } as const;
+export const LS_ServerSendPacket = S2C_LoginPacket;
 
 // ═══════════════════════════ 2. GAME SERVER (lobby) ═══════════════════════════
 // CChannelPool::OnPacket (FxServer.exe.c:6942) — the game-server lobby dispatch.
@@ -244,7 +248,8 @@ export const GS_ClientSend = {
   OnUserInventory: 201, // [E1 users][users×(E4 itemCount + inventory rows)]
   OnUserItemList: 202, // the whole FxItem table
   OnPreInventory: 207, // [E1 n][per-user pre-inventory]
-  OnEnterGame: 210, // [E1 attr] — entry accepted; attr flag enables Client's Shop button (bit 0 / m_fInventoryDB; default closed without packet)
+  OnEnableShop: 210, // [E1 attr] — entry accepted; attr flag enables Client's Shop button (bit 0 / m_fInventoryDB; default closed without packet)
+  OnEnterGame: 210, // legacy alias for OnEnableShop
 } as const;
 
 // ═══════════════════════ 3. GAME SERVER (in-room session) ═══════════════════════
@@ -451,11 +456,11 @@ export const MONITOR_ClientSend = {
 // ═══════════════════════════════ 8. TYPED REGISTRY ═══════════════════════════════
 
 export const LS_CLIENT_RECEIVED_NAMES = DefinePacketNameTable(
-  "enGeneralServerPacket", "CxLogin::CLoginPool", "client-to-server", LS_ReceivedPacket,
+  "enGeneralServerPacket", "CxLogin::CLoginPool", "client-to-server", C2S_LoginPacket,
   { credentials: ["OnLogin", "OnNewUserConfirmId", "OnNewUser"] },
 );
 export const LS_CLIENT_SEND_NAMES = DefinePacketNameTable(
-  "enGeneralServerPacket", "CxLogin", "server-to-client", LS_ServerSendPacket,
+  "enGeneralServerPacket", "CxLogin", "server-to-client", S2C_LoginPacket,
 );
 export const GS_CLIENT_RECEIVED_NAMES = DefinePacketNameTable(
   "enGameServerPacket", "FxServer::CChannelPool", "client-to-server", GS_ReceivedPacket,

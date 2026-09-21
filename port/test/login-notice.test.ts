@@ -11,7 +11,7 @@ import {
   CLoginPool,
 } from "../src/LS/CxLogin.ts";
 import type { CMultiServer } from "../src/LS/MultiServer.ts";
-import { LS_ClientSend, LS_SendPacket } from "../src/protocol/PacketIDs.ts";
+import { S2C_LoginNoticePacket, S2C_LoginResponsePacket } from "../src/protocol/PacketIDs.ts";
 
 let priorPool: CLoginPool | null;
 let priorCenter: CCenterProcess | null;
@@ -40,9 +40,9 @@ afterEach(() => {
 });
 
 function decodeNotice(packet: CSendPacket): string {
-  expect(packet.m_nPacketType).toBe(LS_ClientSend.OnNotice);
+  expect(packet.m_nPacketType).toBe(S2C_LoginNoticePacket.OnNotice);
   expect(packet.m_nCipherDegree).toBe(CipherDegree.kPacketEncryptedCRC8);
-  expect(packet.m_pBlock[0]! ^ 0x5a).toBe(LS_ClientSend.OnNotice);
+  expect(packet.m_pBlock[0]! ^ 0x5a).toBe(S2C_LoginNoticePacket.OnNotice);
   const streamSize = Decrypt4(packet.m_pBlock, 1);
   expect(packet.m_uOffset).toBe(5 + streamSize);
   const stream = new CISmartStream();
@@ -133,13 +133,13 @@ describe("CConfigDyn packet 7", () => {
 
     socket.m_nNoticeHash = 0;
     pool.OnCenterResAddNewUser(centerAddResult(socket.GetLocalSerialNo(), 0x11223344));
-    expect(sent.map((packet) => packet.m_nPacketType)).toEqual([LS_SendPacket.OnLoginRes, LS_ClientSend.OnNotice]);
+    expect(sent.map((packet) => packet.m_nPacketType)).toEqual([S2C_LoginResponsePacket.OnLoginRes, S2C_LoginNoticePacket.OnNotice]);
     expect(sent[1]).toBe(config.GetNoticePacket());
 
     sent.length = 0;
     socket.m_nNoticeHash = config.GetNoticeHash();
     pool.OnCenterResAddNewUser(centerAddResult(socket.GetLocalSerialNo(), 0x11223344));
-    expect(sent.map((packet) => packet.m_nPacketType)).toEqual([LS_SendPacket.OnLoginRes]);
+    expect(sent.map((packet) => packet.m_nPacketType)).toEqual([S2C_LoginResponsePacket.OnLoginRes]);
     expect(unregister).not.toHaveBeenCalled();
   });
 });

@@ -5,7 +5,7 @@ import {
   BNB_TAIWAN_PacketFamily,
   GS_ChatReceivedPacket,
   GS_CLIENT_SEND_NAMES,
-  LS_ReceivedPacket,
+  C2S_LoginPacket,
   PACKET_NAME_TABLES,
   PacketIdDescriptor,
   PacketIdName,
@@ -85,9 +85,9 @@ describe("nPacketType context registry", () => {
   });
 
   test("opcode width and credential metadata follow each wire context", () => {
-    expect(PacketIdDescriptor("LS", "recv", LS_ReceivedPacket.OnLogin))
+    expect(PacketIdDescriptor("LS", "recv", C2S_LoginPacket.OnLogin))
       .toMatchObject({ canonicalName: "OnLogin", containsCredentials: true });
-    expect(PacketIdDescriptor("LS", "recv", LS_ReceivedPacket.OnNewUser))
+    expect(PacketIdDescriptor("LS", "recv", C2S_LoginPacket.OnNewUser))
       .toMatchObject({ canonicalName: "OnNewUser", containsCredentials: true });
     expect(TAIWAN_BILLING_OPCODE_BYTES).toBe(4);
     expect(PacketIdDescriptor(BILLING_PACKET_LOG_CONTEXT.Taiwan, "send", TW_BILLING_SendPacket.RequestDigiQAuthorization))

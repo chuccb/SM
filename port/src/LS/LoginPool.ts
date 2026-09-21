@@ -8,7 +8,7 @@ import { CChannelCache } from "./ChannelCache.ts";
 import { CConfigDyn } from "./ConfigDyn.ts";
 import { CDynInfoCalculator_GetLevel } from "../shared/LevelTable.ts";
 import { MC_LoginServerSendPacket, SVRCLASS_GAME } from "../protocol/CenterProtocol.ts";
-import { LS_ClientSend, LS_ReceivedPacket, LS_SendPacket } from "../protocol/PacketIDs.ts";
+import { C2S_LoginPacket, S2C_LoginNoticePacket, S2C_LoginResponsePacket } from "../protocol/PacketIDs.ts";
 import type { CUser } from "./User.ts";
 import { CClientSocket } from "./ClientSocket.ts";
 import { CLocalUserTable } from "./LocalUserTable.ts";
@@ -59,37 +59,37 @@ export class CLoginPool extends CUserPool {
   /** CLoginPool::OnPacket (CxLogin.exe.c:15254) */
   override OnPacket(n: CReceivedPacket, socket: CClientSocket): void {
     switch (n.Decode1()) {
-      case LS_ReceivedPacket.OnAskMultiServer:
+      case C2S_LoginPacket.OnAskMultiServer:
         this.OnAskMultiServer(n, socket);
         break;
-      case LS_ReceivedPacket.OnAskFirstInfo:
+      case C2S_LoginPacket.OnAskFirstInfo:
         this.OnAskFirstInfo(n, socket);
         break;
-      case LS_ReceivedPacket.OnLogin:
+      case C2S_LoginPacket.OnLogin:
         this.OnLogin(n, socket);
         break;
-      case LS_ReceivedPacket.OnNewUserConfirmId:
+      case C2S_LoginPacket.OnNewUserConfirmId:
         this.OnNewUserConfirmId(n, socket);
         break;
-      case LS_ReceivedPacket.OnNewUser:
+      case C2S_LoginPacket.OnNewUser:
         this.OnNewUser(n, socket);
         break;
-      case LS_ReceivedPacket.OnReqConnectToSvr:
+      case C2S_LoginPacket.OnReqConnectToSvr:
         this.OnReqConnectToSvr(n, socket);
         break;
-      case LS_ReceivedPacket.OnConnEstablished:
+      case C2S_LoginPacket.OnConnEstablished:
         this.OnConnEstablished(socket);
         break;
-      case LS_ReceivedPacket.OnCrashInfo:
+      case C2S_LoginPacket.OnCrashInfo:
         this.OnCrashInfo(n, socket);
         break;
-      case LS_ReceivedPacket.OnRequestEnterChannelStage:
+      case C2S_LoginPacket.OnRequestEnterChannelStage:
         this.OnRequestEnterChannelStage(n, socket);
         break;
-      case LS_ReceivedPacket.OnRequestDestoryService:
+      case C2S_LoginPacket.OnRequestDestoryService:
         this.OnRequestDestoryService(n, socket);
         break;
-      case LS_ReceivedPacket.OnReplyDestoryService:
+      case C2S_LoginPacket.OnReplyDestoryService:
         n.Decode4();
         this.m_center.DestructCenterSvr();
         break;
@@ -112,7 +112,7 @@ export class CLoginPool extends CUserPool {
 
   /** CLoginPool::OnAskFirstInfo (CxLogin.exe.c:15095) */
   OnAskFirstInfo(n: CReceivedPacket, socket: CClientSocket): void {
-    const packet = new CSendPacket(LS_SendPacket.OnAskFirstInfoRes, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_LoginResponsePacket.OnAskFirstInfoRes, CipherDegree.kPacketEncryptedCRC8);
     if (n.Decode4() === 0) {
       packet.EncodeStr("http://mail.nexonclub.com/clubadmin/confirmuser");
       packet.EncodeStr("http://id.nexonclub.com/nxidquery.idsocno");
@@ -144,7 +144,7 @@ export class CLoginPool extends CUserPool {
     }
     socket.m_nNoticeHash = n.Decode4();
     if (inited !== 0) {
-      const packet = new CSendPacket(LS_SendPacket.OnLoginRes, CipherDegree.kPacketEncryptedCRC8);
+      const packet = new CSendPacket(S2C_LoginResponsePacket.OnLoginRes, CipherDegree.kPacketEncryptedCRC8);
       packet.Encode1(inited >= 2 && inited <= 3 ? 1 : 3);
       packet.Encode1(userIdx);
       socket.SendPacket(packet);
@@ -157,7 +157,7 @@ export class CLoginPool extends CUserPool {
   OnNewUserConfirmId(n: CReceivedPacket, socket: CClientSocket): void {
     const id = n.DecodeStr();
     const confirmResult = this.m_db.prConfirmUnregisteredId(id);
-    const packet = new CSendPacket(LS_SendPacket.OnNewUserConfirmIdRes, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_LoginResponsePacket.OnNewUserConfirmIdRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(confirmResult);
     socket.SendPacket(packet);
   }
@@ -203,7 +203,7 @@ export class CLoginPool extends CUserPool {
       identityNo,
       birthday,
     );
-    const packet = new CSendPacket(LS_SendPacket.OnNewUserRes, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_LoginResponsePacket.OnNewUserRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(regResult);
     socket.SendPacket(packet);
   }
@@ -229,7 +229,7 @@ export class CLoginPool extends CUserPool {
       packet.Encode4(nSvrIdx);
       this.m_center.SendFrPacketToCenter(packet);
     } else {
-      const packet = new CSendPacket(LS_SendPacket.OnReqConnectToSvrRes, CipherDegree.kPacketEncryptedCRC8);
+      const packet = new CSendPacket(S2C_LoginResponsePacket.OnReqConnectToSvrRes, CipherDegree.kPacketEncryptedCRC8);
       packet.Encode1(gate);
       socket.SendPacket(packet);
     }
@@ -261,10 +261,10 @@ export class CLoginPool extends CUserPool {
     const infoPacket = this.m_channelCache.GetInfoPacket(fHashMatch ? 0 : 1);
     socket.SendPacket(infoPacket);
     socket.SendPacket(this.m_channelCache.GetStatePacket());
-    const p14 = new CSendPacket(LS_ClientSend.OnChannelsGameState, CipherDegree.kPacketEncryptedCRC8);
+    const p14 = new CSendPacket(S2C_LoginNoticePacket.OnChannelsGameState, CipherDegree.kPacketEncryptedCRC8);
     this.m_center.MakeChannelsGameStatePacket(p14);
     socket.SendPacket(p14);
-    const p11 = new CSendPacket(LS_ClientSend.OnChannelsExtraInfo, CipherDegree.kPacketEncryptedCRC8);
+    const p11 = new CSendPacket(S2C_LoginNoticePacket.OnChannelsExtraInfo, CipherDegree.kPacketEncryptedCRC8);
     this.m_center.MakeChannelsExtraInfoPacket(p11);
     socket.SendPacket(p11);
   }
@@ -272,7 +272,7 @@ export class CLoginPool extends CUserPool {
   /** CLoginPool::OnRequestDestoryService (CxLogin.exe.c:14743) */
   OnRequestDestoryService(n: CReceivedPacket, socket: CClientSocket): void {
     if (socket.m_nHeaderType === n.Decode4()) {
-      const packet = new CSendPacket(LS_SendPacket.OnRequestDestoryServiceRes, CipherDegree.kPacketEncryptedCRC8);
+      const packet = new CSendPacket(S2C_LoginResponsePacket.OnRequestDestoryServiceRes, CipherDegree.kPacketEncryptedCRC8);
       const roomCode = this.workerRandom.rand() & GAME_ROOM_CODE_MASK;
       packet.Encode4(socket.GetLocalSerialNo());
       packet.Encode4(roomCode);
@@ -322,7 +322,7 @@ export class CLoginPool extends CUserPool {
       }
     }
     if (fAllAdded === 0) {
-      const packet = new CSendPacket(LS_SendPacket.OnLoginRes, CipherDegree.kPacketEncryptedCRC8);
+      const packet = new CSendPacket(S2C_LoginResponsePacket.OnLoginRes, CipherDegree.kPacketEncryptedCRC8);
       packet.Encode1(2);
       socket.SendPacket(packet);
       return;
@@ -334,7 +334,7 @@ export class CLoginPool extends CUserPool {
     }
     // strDes: the double-login message (EUC-KR when 1 user, "PC" when several).
     let strDes = count <= 1 ? STR_ALREADY_PLAYING : STR_PC;
-    const packet = new CSendPacket(LS_SendPacket.OnLoginRes, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_LoginResponsePacket.OnLoginRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(0);
     packet.Encode2(fAllSimpleInfo !== 0 ? 1 : 0);
     packet.EncodeStr(strDes);
@@ -382,7 +382,7 @@ export class CLoginPool extends CUserPool {
       }
     }
     const result = n.Decode1();
-    const packet = new CSendPacket(LS_SendPacket.OnReqConnectToSvrRes, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_LoginResponsePacket.OnReqConnectToSvrRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(result);
     if (result === 1) {
       const svrType = n.Decode1();

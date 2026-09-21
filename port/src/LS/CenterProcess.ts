@@ -6,7 +6,7 @@ import { CMultiServer, inet_addr } from "./MultiServer.ts";
 import { CChannelCache } from "./ChannelCache.ts";
 import { CLocalSocket } from "../shared/LocalSocket.ts";
 import { CM_LoginServerPacket, MC_LoginServerSendPacket, SVRCLASS_LOGIN } from "../protocol/CenterProtocol.ts";
-import { LS_ClientSend } from "../protocol/PacketIDs.ts";
+import { S2C_LoginNoticePacket } from "../protocol/PacketIDs.ts";
 import { MACHINE_ID_BYTES, PeerAddressDword, type CClientSocket } from "./ClientSocket.ts";
 import type { CLoginPool } from "./LoginPool.ts";
 import { CUserPool } from "./UserPool.ts";
@@ -272,7 +272,7 @@ export class CCenterProcess {
 
   /** CCenterProcess::MakeChannelsGameStatePacket (CxLogin.exe.c:5925) — client p14. */
   MakeChannelsGameStatePacket(packet: CSendPacket): void {
-    packet.InitPacket(LS_ClientSend.OnChannelsGameState);
+    packet.InitPacket(S2C_LoginNoticePacket.OnChannelsGameState);
     packet.Encode1(this.m_vtGameState.length);
     for (const type of this.m_vtGameState) {
       packet.Encode1(type);
@@ -284,7 +284,7 @@ export class CCenterProcess {
 
   /** CCenterProcess::MakeChannelsExtraInfoPacket (CxLogin.exe.c:6414) — client p11. */
   MakeChannelsExtraInfoPacket(packet: CSendPacket): void {
-    packet.InitPacket(LS_ClientSend.OnChannelsExtraInfo);
+    packet.InitPacket(S2C_LoginNoticePacket.OnChannelsExtraInfo);
     // rotating advertisement: [EStr strImage][E2 Param1][E2 Param2][E2 60]
     const adv = this.GetAdvertisement();
     packet.EncodeStr(adv.strImage);
@@ -410,7 +410,7 @@ export class CCenterProcess {
     const name = n.DecodeStr();
     const user = this.m_pLoginPool.m_localUserTable.FindUserFromId(name);
     if (user !== null) {
-      const packet = new CSendPacket(LS_ClientSend.OnSvrReservedMsg, CipherDegree.kPacketEncryptedCRC8);
+      const packet = new CSendPacket(S2C_LoginNoticePacket.OnSvrReservedMsg, CipherDegree.kPacketEncryptedCRC8);
       const count = n.Decode1();
       packet.Encode1(count);
       if (count === 1) {
@@ -424,7 +424,7 @@ export class CCenterProcess {
   /** CCenterProcess::OnAdminNotifyMsg (CxLogin.exe.c:5153) — client p26 broadcast. */
   OnAdminNotifyMsg(n: CReceivedPacket): void {
     const str = n.DecodeStr();
-    const packet = new CSendPacket(LS_ClientSend.OnAdminNotifyMsg, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_LoginNoticePacket.OnAdminNotifyMsg, CipherDegree.kPacketEncryptedCRC8);
     packet.EncodeStr(str);
     this.SendToAll(packet);
   }
@@ -432,7 +432,7 @@ export class CCenterProcess {
   /** CCenterProcess::OnSystemMsg (CxLogin.exe.c:5189) — client p30 broadcast. */
   OnSystemMsg(n: CReceivedPacket): void {
     const str = n.DecodeStr();
-    const packet = new CSendPacket(LS_ClientSend.OnSystemMsg, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_LoginNoticePacket.OnSystemMsg, CipherDegree.kPacketEncryptedCRC8);
     packet.EncodeStr(str);
     this.SendToAll(packet);
   }

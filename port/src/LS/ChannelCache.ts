@@ -15,7 +15,7 @@
  */
 import { COSmartStream } from "../core/SmartStream.ts";
 import { CipherDegree, CSendPacket } from "../core/Packet.ts";
-import { LS_ClientSend } from "../protocol/PacketIDs.ts";
+import { S2C_LoginNoticePacket } from "../protocol/PacketIDs.ts";
 
 export class CChannelCache {
   m_nChannelNo = 0;
@@ -29,9 +29,9 @@ export class CChannelCache {
   m_nEnterableType: number[] = []; // p3 field c
   m_nHashValue = 0;
   /** cached packets: full / match / state */
-  m_packetFull = new CSendPacket(LS_ClientSend.OnChannelInfo, CipherDegree.kPacketEncryptedCRC8);
-  m_packetMatch = new CSendPacket(LS_ClientSend.OnChannelInfo, CipherDegree.kPacketEncryptedCRC8);
-  m_packetState = new CSendPacket(LS_ClientSend.OnChannelState, CipherDegree.kPacketEncryptedCRC8);
+  m_packetFull = new CSendPacket(S2C_LoginNoticePacket.OnChannelInfo, CipherDegree.kPacketEncryptedCRC8);
+  m_packetMatch = new CSendPacket(S2C_LoginNoticePacket.OnChannelInfo, CipherDegree.kPacketEncryptedCRC8);
+  m_packetState = new CSendPacket(S2C_LoginNoticePacket.OnChannelState, CipherDegree.kPacketEncryptedCRC8);
 
   /** CChannelCache::SetChannelNo */
   SetChannelNo(channelNo: number): void {
@@ -85,7 +85,7 @@ export class CChannelCache {
   /** CChannelCache::MakeInfoPacket */
   MakeInfoPacket(): void {
     if (this.m_nChannelNo === 0) console.error("call MakeInfoPacket. but m_nChannelNo = 0");
-    const full = new CSendPacket(LS_ClientSend.OnChannelInfo, CipherDegree.kPacketEncryptedCRC8);
+    const full = new CSendPacket(S2C_LoginNoticePacket.OnChannelInfo, CipherDegree.kPacketEncryptedCRC8);
     full.Encode1(1);
     const os = new COSmartStream();
     os.Encode2(this.m_nChannelNo & 0xffff);
@@ -103,7 +103,7 @@ export class CChannelCache {
     this.m_packetFull = full;
     console.log(`ChannelCache: n(${this.m_nChannelNo}) hash(0x${this.m_nHashValue.toString(16).toUpperCase()})`);
 
-    const match = new CSendPacket(LS_ClientSend.OnChannelInfo, CipherDegree.kPacketEncryptedCRC8);
+    const match = new CSendPacket(S2C_LoginNoticePacket.OnChannelInfo, CipherDegree.kPacketEncryptedCRC8);
     match.Encode1(0);
     this.m_packetMatch = match;
   }
@@ -111,7 +111,7 @@ export class CChannelCache {
   /** CChannelCache::MakeStatePacket */
   MakeStatePacket(): void {
     if (this.m_nChannelNo === 0) console.error("call MakeStatePacket. but m_nChannelNo = 0");
-    const state = new CSendPacket(LS_ClientSend.OnChannelState, CipherDegree.kPacketEncryptedCRC8);
+    const state = new CSendPacket(S2C_LoginNoticePacket.OnChannelState, CipherDegree.kPacketEncryptedCRC8);
     state.Encode2(this.m_nChannelNo & 0xffff);
     for (let i = 0; i < this.m_nChannelNo; i++) state.Encode2(this.m_nUserCount[i] ?? 0);
     this.m_packetState = state;

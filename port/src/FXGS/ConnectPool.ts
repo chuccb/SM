@@ -193,7 +193,7 @@ export class CConnectPool extends CUserPool {
     }
 
     // → client 210 [E1 attr]; move the socket into the channel pool.
-    const p210 = new CSendPacket(GS_ClientSend.OnEnterGame, CipherDegree.kPacketEncryptedCRC8);
+    const p210 = new CSendPacket(GS_ClientSend.OnEnableShop, CipherDegree.kPacketEncryptedCRC8);
     p210.Encode1(CMainSystem.ms_pInstance!.m_fInventoryDB);
     const socket = users[0]!.m_pSocket!;
     socket.SendPacket(p210);
