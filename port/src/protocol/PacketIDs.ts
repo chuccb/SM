@@ -516,6 +516,7 @@ export const PACKET_NAME_TABLES: Readonly<Record<string, {
   Shop: { recv: [SHOP_CLIENT_RECEIVED_NAMES], send: [SHOP_CLIENT_SEND_NAMES] },
   FXUS: { recv: [UTIL_CLIENT_RECEIVED_NAMES], send: [UTIL_CLIENT_SEND_NAMES] },
   BILL: { recv: [TW_BILLING_RECEIVED_NAMES], send: [TW_BILLING_SEND_NAMES] },
+  LOCALBILL: { recv: [TW_BILLING_SEND_NAMES], send: [TW_BILLING_RECEIVED_NAMES] },
   BILLING: { recv: [], send: [BILLING_SEND_NAMES] },
   COUPON: { recv: [], send: [COUPON_SEND_NAMES] },
   MON: { recv: [MONITOR_RECEIVED_NAMES], send: [MONITOR_SEND_NAMES] },

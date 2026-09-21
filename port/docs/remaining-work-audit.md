@@ -2,13 +2,21 @@
 
 日期：2026-09-21。範圍：目前工作樹及前兩輪相容性清點。
 
-**2026-09-21 最新修復：** [A05／A09／A10／A19／A22 修復紀錄](five-gap-compatibility-fix.md)
+**2026-09-21 最新修復：** [A13 日期時間／A14 Login CRT RNG 修復紀錄](time-and-login-rng-compatibility-fix.md)
+已由 FxShop／CxLogin 原版 PE 固定 local SYSTEMTIME→OLE DATE、SQL local-calendar day addition、
+CxLogin TLS CRT recurrence／seed owner及destroy-service `rand() & 3`。明確TZ、DST、wire、DB callsite、PE bytes與handler draw-count均有回歸；
+第一份probe新增兩項後為 **18 MATCH／0 GAP**。Windows多IOCP worker排程仍明示為架構邊界，不假裝可決定性重播。
+兩份probes合計 **42 observations／0 GAP／42 MATCH**；完整`bun run check`為
+**688 pass／0 fail／26,656 expect() calls／37 files**，並通過toolchain identity、159-module import-cycle、source-boundary及strict typecheck。
+目前 A 類待辦為 **7組**：A07、A08、A12、A15、A17、A18、A23及其列明未完成邊界。
+
+**前一批五組修復：** [A05／A09／A10／A19／A22 修復紀錄](five-gap-compatibility-fix.md)
 已依 repository 內原版 binary artifacts 修正 charge key／206／重複 verify、cart cursor／count／完成旗標、
 FXGS service-owned config、pre-inventory 期限／premium gate／成功30筆，以及 Price-keyed BonusMap。
-兩份 probes 現為 **40 observations／0 GAP／40 MATCH**（第一份因補 A10 的71／location欄位增至16項）；
-完整 `bun run check` 為 **681 pass／0 fail／26,609 expect() calls／35 files**，並通過最新preview工具鏈身分、import-cycle、source-boundary及strict typecheck。
+該批兩份 probes 當時為 **40 observations／0 GAP／40 MATCH**（第一份因補 A10 的71／location欄位增至16項）；
+完整 `bun run check` 當時為 **681 pass／0 fail／26,609 expect() calls／35 files**，並通過最新preview工具鏈身分、import-cycle、source-boundary及strict typecheck。
 這只表示固定的 isolated observations 已一致，不取代 Windows differential 或下列仍開放分組。
-目前 A 類待辦由14組降為 **9組**：A07、A08、A12–A15、A17、A18、A23及其列明未完成邊界。
+該批完成時 A 類待辦由14組降為 **9組**；本輪再關閉A13／A14後為上述7組。
 
 **續輪清點已完成：** [第二輪 A16–A23](remaining-work-audit-2.md) 新增 8 組，
 合計 22 組待辦；A02 自動註冊依使用者要求保留，不列待修。兩份 harness 重跑共
@@ -44,7 +52,7 @@ GitHub 更晚的 Bun canary 下載失敗，未宣稱已升級，詳見 [工具�
 本輪是**清點、查證與重現，不是修復輪次**；沒有把下列業務行為直接改掉。
 不能把「六個服務都有入口」或「178 個測試通過」當成完整官方相容。
 
-- **A：已確認的差異／缺實作**。保留 A01–A15 穩定編號，其中 A02 已依使用者要求改列需求差異；跨兩輪目前剩餘 9 組待辦。
+- **A：已確認的差異／缺實作**。保留 A01–A15 穩定編號，其中 A02 已依使用者要求改列需求差異；跨兩輪目前剩餘 7 組待辦。
   一組可能包含數個相關錯誤；下文未加更新註記的發現文字是清點時歷史紀錄。
   A01–A11 原有共 14 個隔離 probe；A02 現為需求驗證，其餘 13 個重現差異；A12–A14 為靜態對照，A15 為資料部署缺口。
 - **B：仍需核實**。只有風險或尚未完成的核對，不計入已確認錯誤數量。
@@ -249,7 +257,12 @@ A08 prefix probe 已 MATCH（成功 fixture 移除多餘 tail；strict parser �
 - 驗收：多頁、EOF、空／缺檔、指定日期、跨日、重啟、和 billing 成功寫入整合；
   可以用現代持久層實作，但 client 可讀 bytes／cursor 必須保留。
 
-### A13 · P1 · 商城 OLE DATE 用 UTC instant 取代本地曆法時間
+### A13 · 已修復（原 P1）· 商城 OLE DATE 用 UTC instant 取代本地曆法時間
+
+> 以下為修復前證據。現已依 `GetLocalTime → SystemTimeToVariantTime` 改為local calendar fields；
+> Shop／premium ticket／local billing 的SQL-style期限也改為local-calendar day addition後保存UTC ISO。
+> PE bytes、三個明確TZ、DST、wire與實際DB callsite回歸見
+> [A13／A14修復紀錄](time-and-login-rng-compatibility-fix.md)。
 
 - 清點時的 TS（現由 `core/VariantTime.ts` 承擔）：`variantTime` 用 `date.getTime()/86400000+25569`。
 - 官方：購買收據 `.c:19608..19609`、cart 收據 `.c:19893..19894` 使用
@@ -260,12 +273,18 @@ A08 prefix probe 已 MATCH（成功 fixture 移除多餘 tail；strict parser �
 - 驗收：明確設定 TZ 的 child-process 測試、日期／收據 wire 8 bytes、到期邊界。
   `FXGS/ItemMan.ts`、SQLite 日期字串的時間域要一起核對，不能只改顯示時區。
 
-### A14 · P1 · LS 尚未遷移 rand；FXGS 併發限制仍存在
+### A14 · 已修復（原 P1）· LS 尚未遷移 rand；FXGS 併發限制仍存在
+
+> 以下為修復前證據。現已直接固定 CxLogin 自己的 `_srand 0045EEA4`、`_rand 0045EEB1`、
+> TLS `+0x14`預設seed write `00463F80`，並由`CLoginPool`持有可注入、production以epoch seconds
+> seed一次的logical-worker stream。合法handler精確執行`rand() & 3`；錯誤header不消耗。
+> Windows多IOCP worker排程仍保留為明示架構界線，不宣稱單一stream重播其非決定性排程。
+> 詳見[A13／A14修復紀錄](time-and-login-rng-compatibility-fix.md)與[RNG核對](rng-compatibility-audit.md)。
 
 - `LS/LoginPool.ts::OnRequestDestoryService` 仍 `Math.random()*0x8000 & 3`；
   官方 `CxLogin.exe.c:14793` 為 `rand() & 3`，同 seed 序列不相同。
 - 清點時 FXSS 的 RNG 缺口是 A05：不是 Math.random，而是根本沒生成 charge key；
-  後續已直接核對 FxShop CRT 並修復。A14 目前仍指 LS rand 與 FXGS 多-worker 架構界線。
+  後續已直接核對 FxShop CRT 並修復。其後A14只剩LS rand與FXGS多-worker架構界線，現已依上註處理。
 - FXGS 的算法／序列化消耗已修，但 native IOCP worker TLS／seed 時刻與 Bun
   邏輯 worker 的映射仍是架構限制，詳見 [RNG 核對](rng-compatibility-audit.md)。
 - 驗收：分別讀各 EXE 的 CRT 本體、消費點及 seed／執行緒邊界；不能把 FXGS
@@ -339,7 +358,7 @@ bun tools/compatibility-probe.ts
   不加入 `bun test`。輸出 GAP 表示觀察到差異，MATCH 僅表示該 fixture 已一致。
   **exit 0 只表示 probe 執行成功，不表示相容性通過。**
 - 第一輪歷史結果：**14 probes，14 GAP**；A02 需求確認後為 **14 probes，13 GAP、1 MATCH**。
-  後續逐組修復，並為 A10 的71／location增加兩項觀察；目前第一份為 **16／16 MATCH**。
+  後續逐組修復，為 A10 的71／location及A13／A14各增加一項觀察；目前第一份為 **18／18 MATCH**。
 - 歷史差異包括 partial-write `0 vs 3`、charge reply `9000 vs 321`、cart `[10,10] vs [20,10]`、channel type `0 vs 77` 等；
   現在這些固定 fixture 均 MATCH。`shop.test.ts` 的錯誤 cash oracle亦已改為核對 user charge key。
 - `db.test.ts` 的未知帳號自動註冊符合已確認需求並持續保留；probe 全 MATCH 不會取消下列未覆蓋工作。
@@ -363,7 +382,7 @@ bun tools/compatibility-probe.ts
    gift／coupon／單品／cart→billing 回覆→庫存→receipt／Reset。
    不把它拆成幾個空 handler 填完就宣稱商城完成。
 4. **等級／結算鏈**：A11，補所有 caller 與本地／遠端 user-info 差分。
-5. **資料與其餘 audit**：A15、A14，再逐項完成 B 的 service／packet coverage matrix。
+5. **資料與其餘 audit**：A15，再逐項完成 B 的 service／packet coverage matrix；A14已修的單worker消耗不代表Windows併發排程可重播。
 
 每組完成至少須有：native evidence → 明確輸入與狀態 → wire／DB／後續狀態預期 →
 正向與錯誤分支測試 → 既有套件回歸。新實作的內部命名沿用已核實原生用途，

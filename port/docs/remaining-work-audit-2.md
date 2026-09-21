@@ -2,11 +2,17 @@
 
 日期：2026-09-21。接續 [第一輪 A01–A15](remaining-work-audit.md)。
 
-**2026-09-21 最新修復：** [A05／A09／A10／A19／A22 修復紀錄](five-gap-compatibility-fix.md)
+**2026-09-21 最新修復：** [A13 日期時間／A14 Login CRT RNG 修復紀錄](time-and-login-rng-compatibility-fix.md)
+已固定local SYSTEMTIME OLE wire、DST calendar-day持久期限及CxLogin自己的TLS CRT stream／handler消耗。
+第一份probe新增兩項後為18 MATCH；兩份probes合計 **42 MATCH／0 GAP**。完整`bun run check`為
+**688 pass／0 fail／26,656 expect() calls／37 files**，並通過toolchain／159-module import／boundary／strict typecheck。
+A類待辦再降為 **7組**：A07、A08、A12、A15、A17、A18、A23。
+Windows多worker排程仍是明示架構界線，固定probes全MATCH也不代表B類或完整商城結案。
+
+**前一批五組修復：** [A05／A09／A10／A19／A22 修復紀錄](five-gap-compatibility-fix.md)
 完成本文件 A19 的 pre-inventory 領取鏈及 A22 的 Price-keyed BonusMap；連同第一輪三組修復，
-兩份 probes 現為 **40 observations／0 GAP／40 MATCH**，A 類待辦由14組降為 **9組**。
-完整 `bun run check` 為 **681 pass／0 fail／26,609 expect() calls／35 files**，並通過工具鏈／import／boundary／strict typecheck。
-固定 probes 全 MATCH 不代表 A07/A08/A12–A15/A17/A18/A23 或 B 類工作已完成。
+該批兩份 probes 為 **40 observations／0 GAP／40 MATCH**，A 類待辦由14組降為 **9組**。
+完整 `bun run check` 當時為 **681 pass／0 fail／26,609 expect() calls／35 files**，並通過工具鏈／import／boundary／strict typecheck。
 
 **後續修復更新（本次五組前的基準）：** [A01 共用 TCP 發送鏈](transport-compatibility-fix.md)、
 [A11／A21 個人動態資料鏈](user-dyninfo-compatibility-fix.md)、
@@ -235,7 +241,7 @@ A19 上游與 A13 日期仍開放；以下保留修復前證據。
 
 1. **302錯誤／成功wire與cache**清點當時只有靜態確認，後續已補回歸並修復（見 A17 更新）；
    A19 的商城 zero/default、Addable／return10 及 pre-inventory caller／failure budget 後續均已修並回歸；
-   SQL Server 全 catalog／A13日期仍另列。A20 混合400邊界已補測。沒有灌水成 probe 數。
+   SQL Server 全 catalog仍另列；A13日期已由後續修復完成。A20 混合400邊界已補測。沒有灌水成 probe 數。
 2. 購物車 cursor/count 的 A09 已完成；外部 billing／補償未完成 handlers 仍歸 A08/A17。普通遊戲金錢套裝的其餘問題歸 A18，
    framing 歸 A16。這是分層定位，不是把同一個錯誤重新編號。
 3. 原生 Shop `MakePreInventoryPacket` `0041EBD0` 是 `retn 4`，不能因GS版本有內容，
@@ -258,7 +264,7 @@ bun test
 - 全新臨時SQLite、capture sockets與明確的fixture/failure injection；沒有listener／外網連線。
   DB在finally關閉及刪除；不讀寫正式使用者資料。單例只在該standalone process中使用。
 - probe的GAP是差異報告，不是刻意把錯誤當正解的測試；exit0只表示harness完成。
-- 清點時第二輪為 **24 probes / 23 GAP / 1 MATCH**、第一輪為 **14 / 13 / 1**；逐組修復後目前為第二輪 **24/24 MATCH**、第一輪（增補A10兩項後）**16/16 MATCH**。
+- 清點時第二輪為 **24 probes / 23 GAP / 1 MATCH**、第一輪為 **14 / 13 / 1**；逐組修復後目前為第二輪 **24/24 MATCH**、第一輪（增補A10兩項及A13／A14）**18/18 MATCH**。
 - Bun **1.4.3-canary.1 (26e7a4b36)**：**178 pass / 0 fail，1583 expect() calls，11 files，17.50s**。
 - TypeScript **7.0.2**與preview **7.1.0-dev.20260920.1**的`tsc --noEmit`通過；
   兩個probe另以`--ignoreConfig --strict --target ESNext --module ESNext --moduleResolution Bundler
@@ -272,7 +278,7 @@ bun test
 先承接第一輪A01/A10基礎層，再以**完整垂直流程**安排修復或繼續核對：
 
 1. Tw transport A16 → 301/302/311/312及相關handler A08/A17 → 付款、贈送、coupon、receipt/reset。
-2. 遊戲金錢單品／套裝 A18 → DB期限／預庫存 A19 → GS庫存／裝飾 A20，連同A22贈品及A13日期。
+2. 遊戲金錢單品／套裝 A18；已完成的DB期限／預庫存A19、GS庫存／裝飾A20、A22贈品及A13日期持續作回歸護欄。
 3. 結算／離房 → dyn state → detail A11 → DB flush／重入 A21。
 4. A23分片與SQL／編碼一起規劃migration；A02自動註冊持續保留，A03補交易回滾。
 

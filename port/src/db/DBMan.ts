@@ -18,6 +18,7 @@
  */
 import { Database } from "bun:sqlite";
 import { MakeLower } from "../core/MakeLower.ts";
+import { AddLocalCalendarDays } from "../core/LocalTime.ts";
 import { INVENTORY_SLOT_NONE } from "../shared/Item.ts";
 import { SCHEMA_ITEM } from "./CAItemSchema.ts";
 import { mkdirSync, readFileSync } from "node:fs";
@@ -239,9 +240,9 @@ CREATE TABLE IF NOT EXISTS FxGuildLimit (
 );
 `;
 
-/** getdate() + @ValidityPeriod — the DateCreated/TicketDate format. */
+/** SQL `getdate() + @ValidityPeriod`, persisted as an unambiguous UTC ISO instant. */
 function sqliteNowPlus(days: number): string {
-  return new Date(Date.now() + days * 86400_000).toISOString();
+  return AddLocalCalendarDays(Date.now(), days).toISOString();
 }
 
 export class CDBMan {
@@ -711,7 +712,7 @@ export class CDBMan {
     if (!row) return 0;
     const old = row.TicketDate ? Date.parse(row.TicketDate) : NaN;
     const base = !Number.isNaN(old) && old > Date.now() ? old : Date.now();
-    const next = new Date(base + validityPeriod * 86400_000).toISOString();
+    const next = AddLocalCalendarDays(base, validityPeriod).toISOString();
     db.query("UPDATE FxUserDynamic SET TicketDate = ? WHERE ID = ?").run(next, id);
     return 1; // CDBMan::SetPremiumTicket returns BOOL — nonzero on success
   }

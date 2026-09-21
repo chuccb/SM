@@ -7,7 +7,7 @@ import { CRand, RAND_MAX } from "../src/core/CRand.ts";
 
 /** Translate PE32 virtual addresses via section headers (no objdump needed
  * to run the regression suite, and no copied executable fixture). */
-function peCode(executable: "FXGS/FxServer.exe" | "FXSS/FxShop.exe", va: number, length: number): Buffer {
+function peCode(executable: "LS/CxLogin.exe" | "FXGS/FxServer.exe" | "FXSS/FxShop.exe", va: number, length: number): Buffer {
   const pe = readFileSync(join(import.meta.dir, "..", "..", executable));
   const nt = pe.readUInt32LE(0x3c);
   const opt = nt + 24;
@@ -26,7 +26,7 @@ function peCode(executable: "FXGS/FxServer.exe" | "FXSS/FxShop.exe", va: number,
 
 const nativeCode = (va: number, length: number) => peCode("FXGS/FxServer.exe", va, length);
 
-describe("CRT rand/srand (FxServer 0046EA52; FxShop 00462800)", () => {
+describe("CRT rand/srand (CxLogin 0045EEA4; FxServer 0046EA52; FxShop 00462800)", () => {
   test("the executable confirms the recurrence, TLS state offset, mask and initial seed", () => {
     expect(nativeCode(0x46ea52, 13).toString("hex")).toBe(
       "e8ba5b0000" + // call __getptd
@@ -50,6 +50,16 @@ describe("CRT rand/srand (FxServer 0046EA52; FxShop 00462800)", () => {
       "e8464e00008b481469c9fd43030081c1c39e26008948148bc1c1e81025ff7f0000c3",
     );
     expect(peCode("FXSS/FxShop.exe", 0x467650, 7).toString("hex")).toBe("c7401401000000");
+  });
+
+  test("CxLogin links the same TLS recurrence consumed by rand() & 3", () => {
+    expect(peCode("LS/CxLogin.exe", 0x45eea4, 13).toString("hex")).toBe(
+      "e8df5000008b4c2404894814c3",
+    );
+    expect(peCode("LS/CxLogin.exe", 0x45eeb1, 34).toString("hex")).toBe(
+      "e8d25000008b481469c9fd43030081c1c39e26008948148bc1c1e81025ff7f0000c3",
+    );
+    expect(peCode("LS/CxLogin.exe", 0x463f80, 7).toString("hex")).toBe("c7401401000000");
   });
 
   test.each([

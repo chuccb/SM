@@ -10,7 +10,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CPacketSocket } from "../src/core/PacketSocket.ts";
 import { CReceivedPacket, CSendPacket, CipherDegree, enSocket } from "../src/core/Packet.ts";
+import { CRand } from "../src/core/CRand.ts";
 import { CServerConfig } from "../src/core/ServerConfig.ts";
+import { EncodeVariantTime } from "../src/core/VariantTime.ts";
 import { CDBMan, EncodePassword } from "../src/db/DBMan.ts";
 import { CUser as CenterUser, type CenterUserContext } from "../src/Center/CxCenter.ts";
 import {
@@ -26,6 +28,8 @@ import { CUser as GameUser } from "../src/FXGS/User.ts";
 import { CClientSocket as GameSocket } from "../src/FXGS/ClientSocket.ts";
 import { CGuildTable } from "../src/FXGS/Guild.ts";
 import { CLocalUserTable as GameLocalUserTable } from "../src/FXGS/LocalUserTable.ts";
+import { CLoginPool } from "../src/LS/LoginPool.ts";
+import type { CClientSocket as LoginSocket } from "../src/LS/ClientSocket.ts";
 import { CDynInfoCalculator_GetMaxExpInLevel, kLevelTableSize } from "../src/shared/LevelTable.ts";
 
 function body(write: (p: CSendPacket) => void): CReceivedPacket {
@@ -206,6 +210,28 @@ function main(): void {
     location.Decode1(); location.DecodeStr(); location.Decode1();
     report("A10.location-service-index", location.Decode4(), 1);
     report("A11.out-of-range-max-exp", CDynInfoCalculator_GetMaxExpInLevel(kLevelTableSize), 0x7fffffff);
+
+    const priorTimeZone = process.env.TZ;
+    try {
+      process.env.TZ = "Asia/Taipei";
+      const oleWire = EncodeVariantTime(new Date("2026-09-21T00:00:00.999Z"));
+      report("A13.local-calendar-OLE-wire", Buffer.from(oleWire).toString("hex"), "abaaaaaaca99e640");
+    } finally {
+      if (priorTimeZone === undefined) delete process.env.TZ;
+      else process.env.TZ = priorTimeZone;
+    }
+
+    const loginPool = new CLoginPool({} as never, db, {} as never, new CRand(1));
+    const roomCodes: number[] = [];
+    const loginSocket = {
+      m_nHeaderType: 9,
+      GetLocalSerialNo: () => 77,
+      SendPacket: () => enSocket.kioOk,
+      SetGameRoomCode: (code: number) => { roomCodes.push(code); },
+      Close: () => undefined,
+    } as unknown as LoginSocket;
+    for (let i = 0; i < 3; i++) loginPool.OnRequestDestoryService(body((p) => p.Encode4(9)), loginSocket);
+    report("A14.login-destroy-service-CRT-stream", roomCodes, [1, 3, 2]);
 
     console.log(JSON.stringify({ probes, gaps, note: "Diagnostic observations, not a native-server differential run or passing compatibility tests." }));
   } finally {

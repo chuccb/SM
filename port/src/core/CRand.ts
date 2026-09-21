@@ -1,5 +1,6 @@
-/** The CRT rand/srand linked into the shipped game and shop servers, read
- *  from the PEs themselves:
+/** The CRT rand/srand linked into the shipped login, game and shop servers,
+ * read from the PEs themselves:
+ *  CxLogin:  srand 0045EEA4, rand 0045EEB1, __getptd 00463F88.
  *  FxServer: srand 0046EA52, rand 0046EA5F, __getptd 00474611.
  *  FxShop:   srand 00462800, rand 0046280D, __getptd 00467658.
  *  This is a compatibility PRNG, NOT a source of cryptographic randomness.
@@ -11,7 +12,7 @@
 export const RAND_MAX = 0x7fff;
 const RAND_MULTIPLIER = 0x343fd;
 const RAND_INCREMENT = 0x269ec3;
-const RAND_DEFAULT_SEED = 1; // __getptd: 00474659
+const RAND_DEFAULT_SEED = 1; // CxLogin 00463F80; FxServer 00474659; FxShop 00467650
 
 export class CRand {
   private state: number;

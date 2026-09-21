@@ -1,5 +1,6 @@
 /** Native source unit: FX/FxServer/MainSystem.cpp. */
 import { CRand } from "../core/CRand.ts";
+import { GetUnixTimeSeconds } from "../core/LocalTime.ts";
 import { CServerConfig } from "../core/ServerConfig.ts";
 import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
 import { GS_ClientSend } from "../protocol/PacketIDs.ts";
@@ -17,7 +18,7 @@ export class CMainSystem {
    * epoch SECONDS. Bun has one logical request worker, shared by its rooms;
    * other services and the normal timer must not consume this stream.
    * Native IOCP worker scheduling is not emulated (see the RNG audit). */
-  readonly m_WorkerRandom = new CRand(Math.floor(Date.now() / 1000));
+  readonly m_WorkerRandom = new CRand(GetUnixTimeSeconds());
 
   m_nGameDomain = 0; // +4
   m_nChannelType = 0; // +8 (MainSystem+8 — chByteType[ServerIndex])

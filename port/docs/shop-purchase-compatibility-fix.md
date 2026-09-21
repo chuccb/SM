@@ -3,7 +3,7 @@
 日期：2026-09-21。範圍：`OnReqPurchaseStockItem` 的限制／game-Money 發貨、
 Shop `AddNewInventory` adapter，以及實際購入後回 GS／重新登入的庫存存留。
 這不是外部 DigiQ、完整 SQL Server proc、A07/A08/A17/A18 或全服相容完成聲明。
-本文件當時仍開放的 A19 pre-inventory 子鏈後續已完成，見[五組修復紀錄](five-gap-compatibility-fix.md)；A13日期時間域仍獨立保留。
+本文件當時仍開放的 A19 pre-inventory 子鏈後續已完成，見[五組修復紀錄](five-gap-compatibility-fix.md)；A13日期時間域亦已後續完成，見[A13／A14修復紀錄](time-and-login-rng-compatibility-fix.md)。
 
 ## 實際故障與根因
 
@@ -88,7 +88,7 @@ Shop `AddNewInventory` adapter，以及實際購入後回 GS／重新登入的�
 - `bun run check`：**591 pass / 0 fail**（25 files）；包含工具鏈身分檢查與全部 strict typecheck。
 - `bun run probe`：**38 observations / 12 GAP / 26 MATCH**。
   A18三項、A19商城購入三項、A07已建模coupon reset由GAP轉MATCH。
-  當時預庫存領取、其餘交易／日期問題仍開放、待辦分組為14；後續預庫存已修、目前總表為9組，仍不以probe全綠冒稱全部結案。
+  當時預庫存領取、其餘交易／日期問題仍開放、待辦分組為14；後續預庫存及A13／A14已修，目前總表為7組，仍不以probe全綠冒稱全部結案。
 
 沒有執行 Windows 原版 client／server EXE、外部 DigiQ，也不是原版執行結果的動態差分或畫面認證。
 

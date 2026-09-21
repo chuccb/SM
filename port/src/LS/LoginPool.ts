@@ -1,5 +1,7 @@
 /** Native source unit: CX/CxLogin/LoginPool.cpp. */
 import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
+import { CRand } from "../core/CRand.ts";
+import { GetUnixTimeSeconds } from "../core/LocalTime.ts";
 import { CDBMan, EncodePassword } from "../db/DBMan.ts";
 import { CMultiServer } from "./MultiServer.ts";
 import { CChannelCache } from "./ChannelCache.ts";
@@ -18,6 +20,8 @@ import { CUserPool } from "./UserPool.ts";
 const STR_ALREADY_PLAYING = "\xc7\xf6\xc0\xe7 \xb0\xd4\xc0\xd3\xc0\xbb \xc7\xcf\xb0\xed \xb0\xe8\xbd\xc3\xb4\xc2 \xb0\xf7";
 /** aPc (CxLogin.exe.lst: .text:0040F85C push offset aPc ; "PC") */
 const STR_PC = "PC";
+/** `rand() & 3` at CxLogin 0040EAFF..0040EB08. */
+const GAME_ROOM_CODE_MASK = 0x3;
 
 /** CLoginPool extends CUserPool — owns every client socket and the handlers. */
 export class CLoginPool extends CUserPool {
@@ -38,7 +42,13 @@ export class CLoginPool extends CUserPool {
   m_multiServer: CMultiServer;
   m_channelCache = new CChannelCache();
 
-  constructor(center: CCenterProcess, db: CDBMan, multiServer: CMultiServer) {
+  constructor(
+    center: CCenterProcess,
+    db: CDBMan,
+    multiServer: CMultiServer,
+    /** Port logical-worker state corresponding to native CRT TLS. */
+    private readonly workerRandom = new CRand(GetUnixTimeSeconds()),
+  ) {
     super();
     CLoginPool.ms_pInstance = this;
     this.m_center = center;
@@ -263,7 +273,7 @@ export class CLoginPool extends CUserPool {
   OnRequestDestoryService(n: CReceivedPacket, socket: CClientSocket): void {
     if (socket.m_nHeaderType === n.Decode4()) {
       const packet = new CSendPacket(LS_SendPacket.OnRequestDestoryServiceRes, CipherDegree.kPacketEncryptedCRC8);
-      const roomCode = Math.floor(Math.random() * 0x8000) & 3;
+      const roomCode = this.workerRandom.rand() & GAME_ROOM_CODE_MASK;
       packet.Encode4(socket.GetLocalSerialNo());
       packet.Encode4(roomCode);
       socket.SendPacket(packet);

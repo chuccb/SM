@@ -1,5 +1,6 @@
 /** Native source unit: FX/FxShop/MainSystem.cpp. */
 import { CRand } from "../core/CRand.ts";
+import { GetUnixTimeSeconds } from "../core/LocalTime.ts";
 import { CReceivedPacket, CSendPacket } from "../core/Packet.ts";
 import { SC_SendPacket } from "../protocol/PacketIDs.ts";
 import { CENTER_VERSION, CONN_HELLO_VERSION, SVRCLASS_SHOP } from "../protocol/CenterProtocol.ts";
@@ -19,7 +20,7 @@ export class CMainSystem {
    * time(NULL). Bun dispatches Shop requests on one logical worker, so its
    * users share this persistent stream rather than Math.random or per-user
    * reseeding. */
-  readonly m_WorkerRandom = new CRand(Math.floor(Date.now() / 1_000));
+  readonly m_WorkerRandom = new CRand(GetUnixTimeSeconds());
 
   m_strChargeUrl = ""; // +2, InitChargeUrl
   m_nFXAttr = 0; // +4, OnInitialSvrAttr / GetDomain

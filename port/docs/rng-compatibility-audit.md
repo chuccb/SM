@@ -2,10 +2,12 @@
 
 日期：2026-09-21
 
-> **後續 FXSS 更新：** A05 修復已直接讀取 `FxShop.exe` 的 `srand 00462800`、`rand 0046280D`、
-> CRT初值 `00467650`；演算法與FXGS相同，但由Shop自己的長存邏輯worker stream持有，供CUser constructor／SetChargeKey消耗。
-> PE bytes、固定seed 1前兩個key `42/18468`及不使用host random已有回歸。詳見
-> [五組修復紀錄](five-gap-compatibility-fix.md)。LS 的 A14 consumer 仍未因此完成。
+> **後續 FXSS／LS 更新：** A05 修復已直接讀取 `FxShop.exe` 的 `srand 00462800`、`rand 0046280D`、
+> CRT初值 `00467650`；演算法與FXGS相同，但由Shop自己的長存logical-worker stream持有，供CUser constructor／SetChargeKey消耗。
+> A14 後續也直接核對 `CxLogin.exe` 的 `srand 0045EEA4`、`rand 0045EEB1`、TLS初值 `00463F80`，
+> Login pool 現由自己的stream執行destroy-service `rand() & 3`。兩者都不是把FXGS結論無證據套到另一個process；
+> PE bytes與handler consumption均有回歸。詳見[五組修復紀錄](five-gap-compatibility-fix.md)及
+> [A13／A14修復紀錄](time-and-login-rng-compatibility-fix.md)。
 
 ## 範圍與結論
 
@@ -50,6 +52,14 @@ result = (state >>> 16) & 0x7fff
 - seed 0：`38,7719,21238,2437,8855,11797,8365,32285,10450,30612`
 - seed 1：`41,18467,6334,26500,19169,15724,11478,29358,26962,24464`
 
+同一 recurrence 已分別由三份 PE 固定，state owner 仍彼此隔離：
+
+| Process | `srand` | `rand` | TLS default-seed write | Port owner |
+| --- | ---: | ---: | ---: | --- |
+| CxLogin | `0045EEA4` | `0045EEB1` | `00463F80` | `CLoginPool.workerRandom` |
+| FxServer | `0046EA52` | `0046EA5F` | `00474659` | `CMainSystem.m_WorkerRandom` |
+| FxShop | `00462800` | `0046280D` | `00467650` | `CMainSystem.m_WorkerRandom` |
+
 ## 2. Seed、原生執行緒與 Bun 的明確界線
 
 - `CApp::SetUp`（`00427575`）在 `004275BD` 呼叫 `srand(time(NULL))`。
@@ -75,6 +85,11 @@ Bun 的單一邏輯 request worker 是本輪架構取捨：保留一條可核對
 round-robin worker 或全 suite 共用 RNG。建立上下文的時刻也不是對官方 worker
 啟動時刻的重播。若要求同時連線下逐次隨機結果重播，仍需取得原生工作執行緒、
 seed 時刻及事件消耗 trace；僅有相同流量／啟動秒數不足以保證。
+
+CxLogin 同樣以 `CLoginPool.workerRandom` 表達它自己的 Bun logical worker；
+`OnRequestDestoryService` 在合法 header 後精確消耗一次並取 `& 3`，拒絕路徑不抽。
+這條 stream 不與 FXGS／FXSS 共用。此 owner／seed seam 及前三個 seed-1 reply
+`1,3,2` 由 `test/login-rand.test.ts` 固定。
 
 ## 3. FXGS 的全部 12 個 rand call site
 
@@ -153,9 +168,9 @@ boolean，保留載入失敗前的完整 record 前綴，而不把半筆資料�
 
 ## 6. 回歸與工具鏈
 
-新增 **36 個測試**：
+目前此範圍有 **40 個 focused tests**：
 
-- `test/rand.test.ts`：原輪12個，後續加 FxShop PE bytes 後目前13個；PE 指令、固定 seed vectors、五種邊界 seed
+- `test/rand.test.ts`：目前14個；三份服務 PE 指令、固定 seed vectors、五種邊界 seed
   共 50,000 draws 的獨立 BigInt 參考、reseed、stream isolation、不用 host
   RNG、forward shuffle 與消耗次數。
 - `test/game-random.test.ts`：15 個；epoch 秒 seed、房間／練習共用、timer
@@ -163,23 +178,19 @@ boolean，保留載入失敗前的完整 record 前綴，而不把半筆資料�
   練習 AI 順序、premium 156／money／dedup 與其他 ticket 分支。
 - `test/bomberattr.test.ts`：9 個；原始套件、reload／reset、signed clamp、
   名稱長度／位元組／NUL、第二筆 record 每一截斷位置、空檔與缺檔。
+- `test/login-rand.test.ts`：2 個；Login handler 的header gate、精確draw count、
+  reply／socket room code、可注入固定stream及production epoch-second seed。
 
 另補強既有 `test/e2e.test.ts`：兩個真實 socket 的第一局 150 還原相同
 15-bit gameVersion；第二局驗證版本不變、serial 加一。移除原來假設 XOR
 結果必定非零的 assertion（合法的 rand／XOR 結果可以為零）。
 
-驗證工具：Bun `1.4.3-canary.1 (26e7a4b36)`；專案 TypeScript `7.0.2`；
-preview TypeScript `7.1.0-dev.20260920.1`。preview 工具裝在 repository
-外的工作區工具目錄，沒有更改 dependency／lockfile。
-
-最終驗證：
-
-- 完整 `bun test`：**178 pass / 0 fail，1583 assertions，11 files，15.52 秒**。
-- 專案 TypeScript 與 preview TypeScript 的 `tsc --noEmit` 均通過。
-- preview TypeScript 對上述三個新增 RNG／角色表測試檔的獨立 strict 檢查通過。
-- `git diff --check` 通過。
+原輪驗證使用 Bun `1.4.3-canary.1 (26e7a4b36)`，當時完整結果為
+**178 pass / 0 fail，1583 assertions，11 files**。後續依專案工具鏈政策已把
+production dependency 與 strict typecheck 統一到最新可取得的 preview pins；
+最新全套結果記錄於 `remaining-work-audit.md`，不以此處歷史數字取代。
 
 單元／整合回歸與靜態核對不取代原生 Windows 併發差分。
-LS 的既有 `Math.random()` 尚未遷移。FXSS charge-key consumer 後續已以 **FxShop 自己的 PE 證據**完成，
-不是把 FXGS 結論直接套用；兩服務仍持有彼此獨立的 logical-worker stream。
+FXSS charge-key 與 LS destroy-service consumer 後續已分別以 **FxShop／CxLogin 自己的 PE 證據**完成，
+不是把 FXGS 結論直接套用；三個服務仍持有彼此獨立的 logical-worker stream。
 其他 EXE／執行緒邊界、Windows multi-worker 排程與 SQLite 替代層未因此取得全面等價認證。
