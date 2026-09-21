@@ -46,14 +46,15 @@ import {
  * ctor sites whose argument IS the final wire id belong in these tables.
  *
  * Contents:
- *   1. LS   — login server: LS_ReceivedPacket / LS_SendPacket / LS_ClientSend
- *   2. GS   — game server lobby: GS_ReceivedPacket / GS_ClientSend
- *   3. SES  — in-room session: SESSION_ReceivedPacket / GS_ClientSend
- *   4. Shop — SS_ReceivedPacket / SC_SendPacket
- *   5. Util — UTIL_ClientReceivedPacket / UTIL_ClientSend
- *   6. BILL — billing link: TW/LocalBilling/Coupon packet contexts
- *   7. MON  — monitor console: MONITOR_ReceivedPacket / MONITOR_ClientSend
- *   8. PacketIdName — reverse lookup for logs/tests
+ *   1. LS      — Login Server: C2S_LoginPacket / S2C_LoginResponsePacket / S2C_LoginNoticePacket / S2C_LoginPacket
+ *   2. GS      — Game Server Lobby: C2S_GameLobbyPacket / S2C_GamePacket
+ *   3. GS SES  — Game Server In-Room & Session: C2S_GameSessionPacket
+ *   4. GS CHAT — Game Server Chat: C2S_GameChatPacket
+ *   5. Shop    — Shop Server: C2S_ShopPacket / S2C_ShopPacket
+ *   6. Util    — Util / Admin Server: C2S_UtilPacket / S2C_UtilPacket
+ *   7. Billing — Shop ↔ Billing Links: Shop2Billing_TwPacket / Billing2Shop_TwPacket / Shop2Billing_LegacyPacket / Shop2Billing_CouponPacket
+ *   8. Monitor — Center Monitor Console: Monitor2Center_Packet / Center2Monitor_Packet
+ *   9. Registries & Lookup: PACKET_NAME_TABLES, PacketIdDescriptor, PacketIdName
  */
 
 // ═══════════════════════════════ 1. LOGIN SERVER ═══════════════════════════════
@@ -129,7 +130,9 @@ export const LS_ServerSendPacket = S2C_LoginPacket;
 // (FxServer.exe.c:7297: 25/26/27/29/30/31/71/216), whose tail rewinds again
 // for CUserPool; 209 is handled directly by OnRequestUserInventory.  These
 // are inheritance dispatches over the SAME wire opcode, not nested bytes.
-export const GS_ReceivedPacket = {
+
+/** Client → Game Server Lobby packets (CChannelPool / CConnectPool, FxServer.exe.c:6942). */
+export const C2S_GameLobbyPacket = {
   OnReqConnectToSvr: 6,
   OnConnEstablished: 7, // CConnectPool::OnConnEstablished
   OnReqChannelsState: 15,
@@ -153,9 +156,10 @@ export const GS_ReceivedPacket = {
   OnRequestCreatePracticeSession: 86, // vtbl+60 = CGameSessionTable::CreateSessionPractice (the original log line misspells "PraticeSession")
   OnRequestUserInventory: 209,
 } as const;
+export const GS_ReceivedPacket = C2S_GameLobbyPacket;
 
-/** Client-facing packet IDs sent by the game server. */
-export const GS_ClientSend = {
+/** Client-facing packet IDs sent by the game server (Lobby, Room, In-Game, Notices). */
+export const S2C_GamePacket = {
   OnConnect: 0, // CMainSystem::OnConnEstablished [E2 CENTER_VERSION][E2 CONN_HELLO_VERSION][E4 headerType][EStr url]
   OnReqConnectToSvrRes: 6, // FxServer 004036E6: both Center results and local CheckEnterGame refusals
   OnChannelsState: 13, // CCenterProcess::MakeChannelsStatePacket
@@ -251,10 +255,12 @@ export const GS_ClientSend = {
   OnEnableShop: 210, // [E1 attr] — entry accepted; attr flag enables Client's Shop button (bit 0 / m_fInventoryDB; default closed without packet)
   OnEnterGame: 210, // legacy alias for OnEnableShop
 } as const;
+export const GS_ClientSend = S2C_GamePacket;
 
 // ═══════════════════════ 3. GAME SERVER (in-room session) ═══════════════════════
 // CGameSession::OnPacket (FxServer.exe.c:37668) — in-room packets 96..189
-export const SESSION_ReceivedPacket = {
+/** Client → Game Server In-Room Session packets (CGameSession / CListSession / CPracticeSession). */
+export const C2S_GameSessionPacket = {
   OnSetPlayerReady: 96,
   OnSelectMap: 97,
   OnSelectColor: 98, // CBaseSession::OnSelectColor
@@ -295,11 +301,12 @@ export const SESSION_ReceivedPacket = {
   OnHackingSuspected: 186, // vtbl+164 → CGameSession::OnHackingSuspected
   OnNotifyUdpLossRegulator: 187, // CUdpLossRegulator::OnNotifyUdpLoss
 } as const;
+export const SESSION_ReceivedPacket = C2S_GameSessionPacket;
 
-/** CChatPool's client → game-server receive subset.  CChannelPool rewinds the
+/** Client → Game Server Chat packets (CChatPool, FxServer.exe.c:7297). CChannelPool rewinds the
  * same packet before calling this base-class dispatcher; there is no outer
  * chat wrapper and no second opcode byte. */
-export const GS_ChatReceivedPacket = {
+export const C2S_GameChatPacket = {
   OnChatMsg: 25,
   OnAdminNotifyMsg: 26,
   OnWhisper: 27,
@@ -309,13 +316,15 @@ export const GS_ChatReceivedPacket = {
   OnShoutMsg: 71,
   OnSystemCmd: 216,
 } as const;
+export const GS_ChatReceivedPacket = C2S_GameChatPacket;
 
 // ═══════════════════════════════ 4. SHOP SERVER ═══════════════════════════════
 // CMainPool::OnPacket (FxShop.exe.c:20547) — the FxShop client dispatch on the
 // 9801 listener.  The type byte is the shared client namespace; the shop
 // handles its own subset and forwards everything else to CUserPool::OnPacket
 // (the 20 RTT fallback).
-export const SS_ReceivedPacket = {
+/** Client → Shop Server packets (FxShop::CMainPool). */
+export const C2S_ShopPacket = {
   OnReqConnectToSvr: 6,
   OnConnEstablished: 7, // CMainPool::OnConnEstablished
   OnEstimateRTT: 20, // CUserPool::OnPacket default branch
@@ -338,11 +347,13 @@ export const SS_ReceivedPacket = {
   OnRequestTranxData: 225,
   OnRequestShopSvrInfo: 226,
 } as const;
+export const SS_ReceivedPacket = C2S_ShopPacket;
 
 // Shop → client packet types (every CSendPacket::CSendPacket / InitPacket on
 // FxShop.exe.c).  The ids are the same shared namespace, read from the other
 // direction: 200/205/213 are the cached CItemMan table packets.
-export const SC_SendPacket = {
+/** Shop Server → Client packets (FxShop: CMainPool, CItemMan, CBillingProcess). */
+export const S2C_ShopPacket = {
   OnConnect: 0, // CMainSystem::OnConnEstablished — [E2 CENTER_VERSION][E2 CONN_HELLO_VERSION][E4 headerType][EStr url]
   OnReqConnectToSvrRes: 6, // CMainPool::OnCenterResConnectToSvr (matches request OnReqConnectToSvr)
   OnResConnectToSvr: 6, // backwards-compatible alias
@@ -365,13 +376,15 @@ export const SC_SendPacket = {
   OnCartList: 214, // CMainPool::OnRequestCartList
   OnPurchaseCartListRes: 215, // CMainPool::PurchaseCartList tail — [E1 9][E1 0][EBuffer 8 variant time] to the user's socket
 } as const;
+export const SC_SendPacket = S2C_ShopPacket;
 
 // ═══════════════════════════════ 5. UTIL SERVER ═══════════════════════════════
 // CMainPool::OnPacket (CxUtil.exe.c:21528) — the admin-tool relay.  Tools
 // connect on the listen socket (the binary binds the literal 0x1FC0, ignoring
 // cfg ServerPort), log their identities with packet 7 and everything else is
 // relayed to the center.
-export const UTIL_ClientReceivedPacket = {
+/** Admin Client / Tool → Util Server packets (CxUtil::CMainPool). */
+export const C2S_UtilPacket = {
   OnConnEstablished: 7, // [E1 n][n×(EStr name, E4 serial)]
   OnEstimateRTT: 20, // CUserPool::OnEstimateRTT — [E4 t] echoed back
   OnAdminNotifyMsg: 25, // → center MC 4 [EStr]
@@ -381,14 +394,16 @@ export const UTIL_ClientReceivedPacket = {
   OnReqUserInfo: 64, // → center MC 7 [E4 serial][EStr account]
   OnUpdateItem: 66, // → center MC 11 [EStr "UpdateFxItem" iff the leading byte is 11]
 } as const;
+export const UTIL_ClientReceivedPacket = C2S_UtilPacket;
 
-/** What the util sends its admin tools (all degree 0 — SetCipherDegree(0)). */
-export const UTIL_ClientSend = {
+/** Util Server → Admin Client / Tool packets (CxUtil). All degree 0 — SetCipherDegree(0). */
+export const S2C_UtilPacket = {
   OnConnect: 0, // CMainSystem::OnConnEstablished [E2 CENTER_VERSION][E2 CONN_HELLO_VERSION][E4 headerType][EStr url]
   OnEstimateRTTRes: 20, // CUserPool::OnEstimateRTT
   OnAdminNotifyMsg: 26, // CCenterProcess::OnAdminNotifyMsg rebroadcast
   OnUserDetailInfo: 64, // CMainPool::SendUserDetailInfo [E1 n][E4 n2]
 } as const;
+export const UTIL_ClientSend = S2C_UtilPacket;
 
 // ══════════════════════════ 6. SHOP ↔ BILLING LINK ══════════════════════════
 // CBillingSocketTw carries several opcode contexts.  They must not be merged:
@@ -405,8 +420,8 @@ export const BILLING_PACKET_LOG_CONTEXT = {
   Coupon: "COUPON",
 } as const;
 
-/** FxShop → Taiwan billing E4 requests. */
-export const TW_BILLING_SendPacket = {
+/** Shop Server → Taiwan Billing Link packets (FxShop::CBillingSocketTw, E4 opcodes). */
+export const Shop2Billing_TwPacket = {
   RequestRemainCashTw: 301,
   RequestPurchaseTw: 311,
   PurchaseConfirmTw: 321,
@@ -414,20 +429,23 @@ export const TW_BILLING_SendPacket = {
   RequestDigiQAuthorization: 341,
   TwRequestRTT: 351,
 } as const;
+export const TW_BILLING_SendPacket = Shop2Billing_TwPacket;
 
-/** Taiwan billing → FxShop E4 replies. */
-export const TW_BILLING_ReceivedPacket = {
+/** Taiwan Billing Link → Shop Server packets (FxShop::CBillingSocketTw, E4 opcodes). */
+export const Billing2Shop_TwPacket = {
   OnRemainCashTw: 302,
   OnPurchaseOKTw: 312,
   OnPurchaseConfirmTw: 322,
   OnDigiQAuthen: 342,
   OnTwRTT: 352,
 } as const;
+export const TW_BILLING_ReceivedPacket = Billing2Shop_TwPacket;
 
 /** BNB_TAIWAN::enBillingPacket requests: [E1 family=0][E1 opcode]. */
-export const BILLING_SendPacket = {
+export const Shop2Billing_LegacyPacket = {
   RequestGift: 7,
 } as const;
+export const BILLING_SendPacket = Shop2Billing_LegacyPacket;
 
 /** This build has no active enBillingPacket receive dispatch.  Its dormant
  * handler opcodes are not inferred from function names. */
@@ -435,23 +453,28 @@ export const BILLING_SendPacket = {
 /** BNB_TAIWAN::enCouponPacket requests: [E1 family=1][E1 opcode].
  * Coupon reply opcodes are not retained by this binary and are intentionally
  * not guessed or dispatched. */
-export const COUPON_SendPacket = {
+export const Shop2Billing_CouponPacket = {
   RequestCheckCoupon: 0,
   RequestUseCoupon: 1,
 } as const;
+export const COUPON_SendPacket = Shop2Billing_CouponPacket;
 
 // ═══════════════════════════ 7. MONITOR CONSOLE ═══════════════════════════
 // CMonitorSocket::OnPacket (center) — operator console protocol.  The reply
 // reuses the request's id (the dispatch reads the id back off the reply).
-export const MONITOR_ReceivedPacket = {
+/** Monitor Console → Center Server packets (CxCenter::CMonitorSocket). */
+export const Monitor2Center_Packet = {
   OnRequestCurrentUserStat: 0,
   OnRequestSvrState: 1,
 } as const;
+export const MONITOR_ReceivedPacket = Monitor2Center_Packet;
 
-export const MONITOR_ClientSend = {
+/** Center Server → Monitor Console packets (CxCenter::CMonitorSocket). */
+export const Center2Monitor_Packet = {
   OnRequestCurrentUserStat: 0, // [E4 current][E4 dailyPeak]
   OnRequestSvrState: 1, // [E4 n][n×(E1 class, E2 index, EStr name, E4 connNo)]
 } as const;
+export const MONITOR_ClientSend = Center2Monitor_Packet;
 
 // ═══════════════════════════════ 8. TYPED REGISTRY ═══════════════════════════════
 
