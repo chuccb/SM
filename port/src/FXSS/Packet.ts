@@ -4,6 +4,7 @@
  */
 import { CSendPacket as CSendPacketBase, CReceivedPacket, CipherDegree } from "../core/Packet.ts";
 import { Decode4, Encode4 } from "../core/BufferManipulator.ts";
+import { DecodeCP950 } from "../core/Encoding.ts";
 import {
   STANDARD_PACKET_OPCODE_BYTES,
   TAIWAN_BILLING_OPCODE_BYTES,
@@ -120,8 +121,7 @@ export function DecodePacketTw(packet: CReceivedPacket, source: Uint8Array, leng
 }
 
 /** Billing's [E1 byte count][raw ANSI bytes], NOT the client's EStr/u16.
- * Native uses DecodeBuffer into stack storage. Bound the read and preserve
- * every byte (including NUL), without reproducing stack overflow/overread UB.
+ * Native uses DecodeBuffer into stack storage. Decodes CP950 bytes to UTF-8.
  */
 export function DecodeBillingString(packet: CReceivedPacket): string | null {
   if (packet.IsEOS()) return null;
@@ -129,5 +129,5 @@ export function DecodeBillingString(packet: CReceivedPacket): string | null {
   if (packet.m_uLength - packet.m_uOffset < length) return null;
   const start = packet.m_uOffset;
   packet.m_uOffset += length;
-  return Buffer.from(packet.m_pBlock.subarray(start, packet.m_uOffset)).toString("latin1");
+  return DecodeCP950(packet.m_pBlock.subarray(start, packet.m_uOffset));
 }

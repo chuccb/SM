@@ -18,6 +18,7 @@
  */
 import { Database } from "bun:sqlite";
 import { MakeLowerAscii } from "../core/MakeLower.ts";
+import { EncodeCP950 } from "../core/Encoding.ts";
 import { AddLocalCalendarDays } from "../core/LocalTime.ts";
 import { INVENTORY_SLOT_NONE } from "../shared/Item.ts";
 import { SCHEMA_ITEM } from "./CAItemSchema.ts";
@@ -40,13 +41,26 @@ export const USER_DB_SHARD_COUNT = 6;
 
 /**
  * CDBMan::GetUserHashNo — the first unsigned ANSI byte, ASCII A–Z folded,
- * modulo the six native user databases. Protocol strings are Latin-1 byte
- * carriers; Unicode case conversion would change Big5 lead bytes 0xC0–0xDE.
- * Empty input is outside the valid account domain; returning shard 0 here is
- * the port's safe boundary instead of relying on native empty-string storage.
+ * modulo the six native user databases. Supports standard UTF-8 strings by
+ * taking the first byte of its CP950 representation, while preserving
+ * compatibility with raw Latin-1 byte carriers.
  */
 export function GetUserHashNo(id: string): number {
-  const firstByte = id.length === 0 ? 0 : id.charCodeAt(0) & 0xff;
+  if (id.length === 0) return 0;
+  let hasWide = false;
+  for (let i = 0; i < id.length; i++) {
+    if (id.charCodeAt(i) > 255) {
+      hasWide = true;
+      break;
+    }
+  }
+  let firstByte: number;
+  if (hasWide) {
+    const raw = EncodeCP950(id);
+    firstByte = raw.length === 0 ? 0 : raw[0]!;
+  } else {
+    firstByte = id.charCodeAt(0) & 0xff;
+  }
   return MakeLowerAscii(firstByte) % USER_DB_SHARD_COUNT;
 }
 

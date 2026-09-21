@@ -26,9 +26,8 @@ import { CMainSystem } from "./MainSystem.ts";
 import { RegisterShopMainPool } from "./MainPoolRuntime.ts";
 import type { CWebSocket } from "./WebSocket.ts";
 
-// FxShop.exe @0x47ECA0 — 購買商品時發生錯誤 (Big5 bytes).
-const ERR_PURCHASE =
-  "\xc1\xca\xb6\x52\xb0\xd3\xab\x7e\xae\xc9\xb5\x6f\xa5\xcd\xbf\xf9\xbb\x7e";
+// FxShop.exe @0x47ECA0 — 購買商品時發生錯誤
+const ERR_PURCHASE = "購買商品時發生錯誤";
 
 /** CMainPool — the client dispatch (FxShop.exe.c:20547). */
 export class CMainPool extends CUserPool {

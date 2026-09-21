@@ -84,7 +84,7 @@ export function AuditCAItem(catalog: CAItemCatalog) {
     activePackageOffSaleChildren: catalog.tables.FxPackageMap.filter(r => Number(stocks.get(r.PackageSN)?.IsValid) > 0 &&
       Number(stocks.get(r.StockSN)?.IsValid ?? 0) <= 0).map(r => ({ package: r.PackageSN, stock: r.StockSN })),
     sampleProducts: active.filter(r => r.Category === 1).slice(0, 5).map(r => ({
-      SN: r.SN, NameBig5: new TextDecoder("big5").decode(Buffer.from(r.Name as string, "latin1")),
+      SN: r.SN, NameBig5: r.Name as string,
       ItemSN: r.ItemSN, Unit: r.Unit, Price: r.Price, FixedPrice: r.FixedPrice, MoneyType: r.MoneyType,
     })),
     clientAssetReferences: [...new Set(active.map(r => r.DataFile))].sort(),

@@ -14,6 +14,7 @@ import { CDBMan } from "../src/db/DBMan.ts";
 import { CItemMan } from "../src/FXSS/ItemMan.ts";
 import { CUserItemMan } from "../src/FXGS/ItemMan.ts";
 import { CSendPacket } from "../src/core/Packet.ts";
+import { DecodeCP950 } from "../src/core/Encoding.ts";
 
 const source = LoadCAItemBak();
 const dirs: string[] = [];
@@ -29,22 +30,19 @@ test("original backup FILE=1 agrees with sysobjects/syscolumns/sysindexes and na
     .map(r => Object.fromEntries(Object.keys(r).sort().map(k => [k, r[k]])))
     .sort((a, b) => JSON.stringify(a) < JSON.stringify(b) ? -1 : JSON.stringify(a) > JSON.stringify(b) ? 1 : 0)]);
   expect(createHash("sha256").update(JSON.stringify(canonical)).digest("hex"))
-    .toBe("7ebbccdb94bd07cba069da3ae6dd8b69d970b7724db2903889422366dece66a3");
+    .toBe("71a0248f1a07e2bb86b8eb0cb80bf79a901a4fc3332c309fd084e4e9d2ac216c");
   expect(source.sourceRows).toEqual({ ...expected, FxString: 189 });
   expect(source.duplicateStrings).toBe(77);
   const row = source.tables.FxStock.find(r => r.SN === 1102)!;
   expect([row.ItemSN, row.Unit, row.Price, row.FixedPrice, row.MoneyType, row.IsValid]).toEqual([1, 15, 29, 29, 0, 1]);
   expect(row.DateCreated).toBe("2002-01-01T00:00:00.000");
-  expect(new TextDecoder("big5").decode(Buffer.from(row.Name as string, "latin1"))).toBe("針 (15個)");
-  expect(Buffer.from(row.Name as string, "latin1").toString("hex")).toBe("b07720283135add329");
-  expect(source.tables.FxItem.find(r => r.SN === 20122)?.strName).toBe(Buffer.from("ad43bdcfb860a569b752a4f2b455", "hex").toString("latin1"));
+  expect(row.Name).toBe("針 (15個)");
+  expect(source.tables.FxItem.find(r => r.SN === 20122)?.strName).toBe("耶誕節可愛毛帽");
   expect(source.tables.FxPackageMap[0].DateCreated).toBe("2003-12-16T16:02:48.640");
 });
-test("all source records and Big5 bytes survive; no old table, second backup or duplicate page is mixed in", () => {
+test("all source records and UTF-8 strings survive; no old table, second backup or duplicate page is mixed in", () => {
   for (const table of CAITEM_TABLES) {
     expect(source.tables[table]).toHaveLength(expected[table]);
-    for (const row of source.tables[table]) for (const value of Object.values(row))
-      if (typeof value === "string") expect([...value].every(c => c.charCodeAt(0) <= 255)).toBe(true);
   }
   const audit = AuditCAItem(source);
   expect(audit.activeStocks).toBe(549); expect(audit.missingItemStocks).toEqual([]);
@@ -142,7 +140,7 @@ test("Shop compressed caches contain every active product/string/package, with n
     const u8 = () => data[off++];
     const u16 = () => { const n = data.readUInt16LE(off); off += 2; return n; };
     const u32 = () => { const n = data.readUInt32LE(off); off += 4; return n; };
-    const str = () => { const n = u32(), value = data.subarray(off, off + n).toString("latin1"); off += n; return value; };
+    const str = () => { const n = u32(), value = DecodeCP950(data.subarray(off, off + n)); off += n; return value; };
     expect(u16()).toBe(549);
     for (const row of source.tables.FxStock.filter(r => Number(r.IsValid) > 0)) {
       const actual: (number | string | null)[] = [u32(), u8(), str(), u16(), u16(), u32(), u32(), str(), u32(), u32(), u16(), u16(), u16(), u16(), u32(), u8(), u8()];
@@ -174,7 +172,7 @@ test("Shop compressed caches contain every active product/string/package, with n
     const e1 = () => data[off++] ^ 0x5a;
     const e2 = () => { const n = data.readUInt16BE(off) ^ 0xa569; off += 2; return n; };
     const e4 = () => { const n = (data.readUInt32BE(off) ^ 0x96ca5395) >>> 0; off += 4; return n; };
-    const estr = () => { const n = e2(), value = data.subarray(off, off + n).toString("latin1"); off += n; return value; };
+    const estr = () => { const n = e2(), value = DecodeCP950(data.subarray(off, off + n)); off += n; return value; };
     expect(e2()).toBe(1103);
     for (const row of source.tables.FxItem) {
       const actual: (number | string | null)[] = [e4(), e1(), estr(), e4(), e4(), e4(), estr()];

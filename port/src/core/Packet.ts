@@ -20,6 +20,7 @@ import { SimpleStreamDecrypt3, SimpleStreamEncrypt3 } from "./StreamCipher.ts";
 import { UpdateCRC32, UpdateCRC8 } from "./CRC.ts";
 import { DecodeHeader, EncodeHeader } from "./PacketHeaderConverter.ts";
 import type { COSmartStream, CISmartStream } from "./SmartStream.ts";
+import { EncodeCP950, DecodeCP950 } from "./Encoding.ts";
 
 /**
  * CSendPacketBase::m_nCipherDegree — the wire framing of a packet
@@ -186,7 +187,8 @@ export class CSendPacket extends CMemBlock {
   }
 
   EncodeStrAt(uOffset: number, str: string): number {
-    let len = str.length;
+    const raw = EncodeCP950(str);
+    const len = raw.length;
     if (len >= 0x8000) {
       this.Encode2At(uOffset, 0);
       return 2;
@@ -194,21 +196,20 @@ export class CSendPacket extends CMemBlock {
     this.Ensure(uOffset + len + 2);
     this.Encode2At(uOffset, len);
     const block = this.m_pBlock;
-    for (let i = 0; i < len; i++) block[uOffset + 2 + i] = str.charCodeAt(i) & 0xff;
+    for (let i = 0; i < len; i++) block[uOffset + 2 + i] = raw[i]!;
     return len + 2;
   }
 
   /** CSendPacketBase::EncodeEncryptedStrAt — string encrypted with SimpleStreamEncrypt3. */
   EncodeEncryptedStrAt(uOffset: number, str: string, key: number): number {
-    const len = str.length;
+    const raw = EncodeCP950(str);
+    const len = raw.length;
     if (len >= 0x8000) {
       this.Encode2At(uOffset, 0);
       return 2;
     }
     this.Ensure(uOffset + len + 2);
     this.Encode2At(uOffset, len);
-    const raw = new Uint8Array(len);
-    for (let i = 0; i < len; i++) raw[i] = str.charCodeAt(i) & 0xff;
     SimpleStreamEncrypt3(raw, 0, this.m_pBlock, uOffset + 2, len, key);
     return len + 2;
   }
@@ -482,15 +483,15 @@ export class CReceivedPacket extends CMemBlock {
     return result;
   }
 
-  /** CReceivedPacketBase::DecodeStr — u16 length prefix + raw bytes, byte-exact via latin1. */
+  /** CReceivedPacketBase::DecodeStr — u16 length prefix + raw bytes, transcoded from CP950 to UTF-8. */
   DecodeStr(): string {
     const len = this.Decode2();
-    let str = "";
-    for (let i = 0; i < len; i++) {
-      if (this.m_uOffset >= this.m_uLength) break;
-      str += String.fromCharCode(this.m_pBlock[this.m_uOffset++]!);
-    }
-    return str;
+    if (len === 0) return "";
+    const start = this.m_uOffset;
+    const end = Math.min(this.m_uLength, start + len);
+    this.m_uOffset = end;
+    const bytes = this.m_pBlock.subarray(start, end);
+    return DecodeCP950(bytes);
   }
 
   /**
@@ -503,8 +504,7 @@ export class CReceivedPacket extends CMemBlock {
     if (len + uOffset + 2 > this.m_uLength) return { str: "", size: 0 };
     const raw = new Uint8Array(len);
     SimpleStreamDecrypt3(this.m_pBlock, uOffset + 2, raw, 0, len, key);
-    let str = "";
-    for (let i = 0; i < len; i++) str += String.fromCharCode(raw[i]!);
+    const str = DecodeCP950(raw);
     return { str, size: len + 2 };
   }
 

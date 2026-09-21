@@ -7,6 +7,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { DecodeCP950 } from "../core/Encoding.ts";
 
 export const CAITEM_BAK_PATH = join(import.meta.dir, "../../../DB/CAItem.bak");
 export const CAITEM_BAK_SHA256 = "28eb28c71bc6ccde2f01c0c7d4b98242a526453a95b1fe2f3362a15b59b10420";
@@ -112,7 +113,7 @@ function readValue(row: Row, col: Column): string | number | null {
   if (col.type === 167) {
     const value = row.variables[-col.offset - 1];
     requireFormat(col.offset < 0 && value !== undefined, `missing varchar ${col.name}`);
-    return value.toString("latin1"); // DO NOT UTF-8-decode or transcode Big5 bytes
+    return DecodeCP950(value);
   }
   const size = col.type === 48 ? 1 : col.type === 56 ? 4 : col.type === 61 ? 8 : 0;
   requireFormat(size > 0 && col.offset >= 4 && col.offset + size <= row.fixed, `invalid fixed column ${col.name}`);

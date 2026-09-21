@@ -15,6 +15,7 @@
  * EncodeStr + Decode1/Decode2/Decode4/DecodeStr below mirror that.
  */
 import { deflateSync, inflateSync } from "node:zlib";
+import { EncodeCP950, DecodeCP950 } from "./Encoding.ts";
 
 const ADLER32_MODULUS = 65_521;
 const U8_BYTES = Uint8Array.BYTES_PER_ELEMENT;
@@ -97,11 +98,10 @@ export class COSmartStream {
     this.EncodeBuffer(bytes);
   }
   EncodeStr(str: string): void {
-    const len = str.length;
+    const raw = EncodeCP950(str);
+    const len = raw.length;
     this.Encode4(len);
-    const buf = new Uint8Array(len);
-    for (let i = 0; i < len; i++) buf[i] = str.charCodeAt(i) & 0xff;
-    this.EncodeBuffer(buf);
+    this.EncodeBuffer(raw);
   }
 
   /** COSmartStream::CompressBuffernCalcCRC */
@@ -237,8 +237,8 @@ export class CISmartStream {
     const len = this.Decode4();
     if (this.sizeRawBuf - this.posDecode < len)
       throw new Error("[CISmartStream::DecodeStr] not enough decode buffer");
-    let str = "";
-    for (let i = 0; i < len; i++) str += String.fromCharCode(this.pRawBuf[this.posDecode++]!);
-    return str;
+    const raw = this.pRawBuf.subarray(this.posDecode, this.posDecode + len);
+    this.posDecode += len;
+    return DecodeCP950(raw);
   }
 }

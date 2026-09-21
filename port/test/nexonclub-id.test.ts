@@ -29,7 +29,7 @@ const cases: [label: string, email: string, stored: string, wire: string][] = [
   ["match not at end", "abc@nexonclub.com.evil", "abc@nexo", "abc@nexo"],
   ["match at start", "@nexonclub.comabc", "@ne", "@ne"],
   ["two matches", "a@nexonclub.com@nexonclub.com", "a@nexonclub.com", "a@nexonclub.com"],
-  ["raw Big5 prefix", "\xa4\xa4\xa4\xe5@nexonclub.com", "\xa4\xa4\xa4\xe5", "\xa4\xa4\xa4\xe5"],
+  ["raw Big5 prefix", "中文@nexonclub.com", "中文", "中文"],
   ["search crosses NUL in range", "a\0b@nexonclub.com", "a\0b", "a"],
   ["leading NUL", "\0x@nexonclub.com", "\0x", ""],
   ["NUL after the match", "abc@nexonclub.com\0", "abc@", "abc@"],

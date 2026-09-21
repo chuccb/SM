@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { CBillingProcess, CClientSocket, CLocalUserTable, CMainPool } from "../src/FXSS/FxShop.ts";
 import { CReceivedPacket, CSendPacket, enSocket } from "../src/core/Packet.ts";
 import { CSendPacket as BillingPacket } from "../src/FXSS/Packet.ts";
+import { EncodeCP950 } from "../src/core/Encoding.ts";
 import type { CDBMan } from "../src/db/DBMan.ts";
 
 let previousBilling: CBillingProcess | null;
@@ -50,7 +51,8 @@ function received(p: CSendPacket): CReceivedPacket {
   return n;
 }
 function string8(p: CSendPacket, value: string) {
-  p.Encode1(value.length); p.EncodeBuffer(Buffer.from(value, "latin1"));
+  const buf = EncodeCP950(value);
+  p.Encode1(buf.length); p.EncodeBuffer(buf);
 }
 function auth(result = 0, name = "tester", message = "denied") {
   const p = new BillingPacket(342);
@@ -123,11 +125,11 @@ test("342 result zero sends exact 209/12 first, then 301 with existing SID/BID, 
 for (const result of [1, 2, 0xffffffff]) {
   test(`342 nonzero result ${result} sends 209/13 with byte-exact error, no balance query`, () => {
     const { sent } = client(); const forwarded = observeBilling();
-    const n = auth(result, "TeStEr", "\xa4\xa4\0\xe5"); billing.OnPacket(n);
+    const n = auth(result, "TeStEr", "中文\0錯誤"); billing.OnPacket(n);
     expect(n.m_uOffset).toBe(n.m_uLength);
     expect(sent).toHaveLength(1);
     const response = assertReply(sent[0]!, 209);
-    expect(response.Decode1()).toBe(13); expect(response.DecodeStr()).toBe("\xa4\xa4\0\xe5");
+    expect(response.Decode1()).toBe(13); expect(response.DecodeStr()).toBe("中文\0錯誤");
     expect(response.m_uOffset).toBe(response.m_uLength); expect(forwarded).toHaveLength(0);
   });
 }
@@ -160,10 +162,10 @@ for (const result of [0, 2, 0xffffffff]) {
 }
 test("302 result one is failure: 203/0 + raw error, no cache update", () => {
   const { user, sent } = client(); user.m_nBillingCash = 99;
-  const n = balance(1, 123, 500, "\xff\xa4\0denied"); billing.OnPacket(n);
+  const n = balance(1, 123, 500, "拒絕\0denied"); billing.OnPacket(n);
   expect(n.m_uOffset).toBe(n.m_uLength); expect(sent).toHaveLength(1);
   const response = assertReply(sent[0]!, 203);
-  expect(response.Decode1()).toBe(0); expect(response.DecodeStr()).toBe("\xff\xa4\0denied");
+  expect(response.Decode1()).toBe(0); expect(response.DecodeStr()).toBe("拒絕\0denied");
   expect(user.m_nBillingCash).toBe(99);
 });
 for (const kind of ["missing", "busy"] as const) {
@@ -190,11 +192,11 @@ for (const packet of [auth(0), auth(1), balance(0), balance(1)]) {
 test("only the character name uses C-string truncation; credential fields preserve NUL and high bytes", () => {
   const { socket } = client("te\0ster");
   const forwarded = observeBilling();
-  const p = new CSendPacket(224, 2); p.EncodeStr("a\0b"); p.EncodeStr("\xff");
+  const p = new CSendPacket(224, 2); p.EncodeStr("a\0b"); p.EncodeStr("密");
   const n = received(p); n.Decode1(); pool.OnReqDigiQAuthorization(n, socket);
   const request = forwarded[0]!;
   expect(Buffer.from(request.m_pBlock.subarray(0, request.m_uOffset)).toString("hex"))
-    .toBe("000001550361006201ff027465");
+    .toBe("000001550361006202b14b027465");
 });
 test("342 empty error string remains an empty EStr, not a success/default message", () => {
   const { sent } = client();
@@ -205,7 +207,7 @@ test("342 empty error string remains an empty EStr, not a success/default messag
 });
 test("302 accepts the full byte-length message and does not consume following fields as text", () => {
   const { sent } = client();
-  const message = "\xff".repeat(255);
+  const message = "失敗".repeat(50);
   billing.OnPacket(balance(1, 123, 500, message));
   const n = assertReply(sent[0]!, 203);
   expect(n.Decode1()).toBe(0); expect(n.DecodeStr()).toBe(message);

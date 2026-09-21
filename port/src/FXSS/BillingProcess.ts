@@ -11,6 +11,7 @@ import {
 } from "../protocol/PacketIDs.ts";
 import type { ShopItem } from "./Recordsets.ts";
 import { CSendPacket as CBillingSendPacket, DecodeBillingString } from "./Packet.ts";
+import { EncodeCP950 } from "../core/Encoding.ts";
 import { CBillingSocketTw } from "./BillingSocket.ts";
 import { usesLocalBilling } from "../LocalBilling/Config.ts";
 import { BillingReader, string8 } from "../LocalBilling/Protocol.ts";
@@ -242,7 +243,7 @@ export class CBillingProcess {
   RequestDigiQAuthorization(account: string, password: string, name: string): void {
     const p = new CBillingSendPacket(TW_BILLING_SendPacket.RequestDigiQAuthorization);
     for (const s of [account, password, name]) {
-      const buf = Buffer.from(s, "latin1");
+      const buf = EncodeCP950(s);
       p.Encode1(buf.length);
       p.EncodeBuffer(buf);
     }
