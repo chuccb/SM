@@ -17,7 +17,7 @@ import { CPracticeSession } from "../src/FXGS/PracticeSession.ts";
 import { CUdpLossRegulator } from "../src/FXGS/UdpLossRegulator.ts";
 import { CClientSocket } from "../src/FXGS/ClientSocket.ts";
 import { CUser } from "../src/FXGS/User.ts";
-import { GS_ClientSend } from "../src/protocol/PacketIDs.ts";
+import { S2C_GamePacket } from "../src/protocol/PacketIDs.ts";
 
 let saved: {
   idf: CIDFMan | null; bomber: CBomberAttr | null; item: CItemAttr | null;
@@ -83,7 +83,7 @@ function player(session: CGameSession, slot: number, select: number, color = slo
   return { user, socket };
 }
 function launchBody(packets: CReceivedPacket[]) {
-  const packet = packets.find((p) => p.m_nPacketType === GS_ClientSend.OnStartGame)!;
+  const packet = packets.find((p) => p.m_nPacketType === S2C_GamePacket.OnStartGame)!;
   expect(packet).toBeDefined();
   packet.Decode4(); // nondeterministic uptime stamp, NOT part of CRT state
   const map = packet.Decode2();
@@ -177,7 +177,7 @@ describe("Init → random map → launch 116 → kickoff 150", () => {
     CGameSessionTable.ms_pInstance = table;
     const serial = session.m_nGameSerial;
     session.DoStartGame();
-    const kickoff = packets.find((p) => p.m_nPacketType === GS_ClientSend.OnStartGame2)!;
+    const kickoff = packets.find((p) => p.m_nPacketType === S2C_GamePacket.OnStartGame2)!;
     kickoff.Decode4();
     expect(kickoff.Decode4()).toBe((serial ^ 41) >>> 0);
     expect(session.m_nGameSerial).toBe((serial + 1) >>> 0);
@@ -250,7 +250,7 @@ describe("premium lucci item draws (OnRequestEatItem)", () => {
     const gem = item.m_vtEffect.findIndex((effect) => effect === 99);
     session.OnRequestEatItem(eatRequest(0, 0, gem), socket);
     const packet = packets[0]!;
-    expect(packet.m_nPacketType).toBe(GS_ClientSend.OnRequestEatItemRes);
+    expect(packet.m_nPacketType).toBe(S2C_GamePacket.OnRequestEatItemRes);
     expect([packet.Decode1(), packet.Decode1(), packet.Decode1(), packet.Decode1()]).toEqual([0, 0, gem, multiplier]);
     expect(packet.m_uOffset).toBe(packet.m_uLength);
     expect(user.dyn.money).toBe(multiplier * item.m_vtAmount[gem]!);

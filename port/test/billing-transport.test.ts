@@ -13,10 +13,10 @@ import { CBillingProcess, CUser, CMainSystem, CClientSocket } from "../src/FXSS/
 import { ShopItem } from "../src/FXSS/Recordsets.ts";
 import {
   BILLING_PACKET_LOG_CONTEXT,
-  BILLING_SendPacket,
-  COUPON_SendPacket,
-  TW_BILLING_ReceivedPacket,
-  TW_BILLING_SendPacket,
+  Shop2Billing_LegacyPacket,
+  Shop2Billing_CouponPacket,
+  Billing2Shop_TwPacket,
+  Shop2Billing_TwPacket,
 } from "../src/protocol/PacketIDs.ts";
 import {
   STANDARD_PACKET_OPCODE_BYTES,
@@ -48,7 +48,7 @@ function frame(packet: CGameSendPacket): Uint8Array {
   return result;
 }
 function rtt(): CSendPacket {
-  const p = new CSendPacket(TW_BILLING_SendPacket.TwRequestRTT);
+  const p = new CSendPacket(Shop2Billing_TwPacket.TwRequestRTT);
   p.Encode1(123);
   return p;
 }
@@ -118,9 +118,9 @@ describe("Tw packet codec and opcode overloads", () => {
   });
   test("legacy BNB_TAIWAN enum overloads retain both prefix bytes", () => {
     for (const [packet, prefix] of [
-      [CSendPacket.FromBillingPacket(BILLING_SendPacket.RequestGift), "0007"],
-      [CSendPacket.FromCouponPacket(COUPON_SendPacket.RequestCheckCoupon), "0100"],
-      [CSendPacket.FromCouponPacket(COUPON_SendPacket.RequestUseCoupon), "0101"],
+      [CSendPacket.FromBillingPacket(Shop2Billing_LegacyPacket.RequestGift), "0007"],
+      [CSendPacket.FromCouponPacket(Shop2Billing_CouponPacket.RequestCheckCoupon), "0100"],
+      [CSendPacket.FromCouponPacket(Shop2Billing_CouponPacket.RequestUseCoupon), "0101"],
     ] as const) {
       expect(hex(frame(packet))).toBe(`0000000200000007${prefix}`);
     }
@@ -142,7 +142,7 @@ describe("Tw packet codec and opcode overloads", () => {
     expect(EncodePacketTw(rtt(), dest, 8)).toBe(false);
   });
   test("empty body after opcode is valid; empty payload is not decodable", () => {
-    const packet = new CSendPacket(TW_BILLING_ReceivedPacket.OnTwRTT);
+    const packet = new CSendPacket(Billing2Shop_TwPacket.OnTwRTT);
     expect(hex(frame(packet))).toBe("000000040000000700000160");
     const n = new CReceivedPacket();
     expect(DecodePacketTw(n, frame(packet), 12)).toBe(true);
@@ -189,7 +189,7 @@ describe("CBillingSocketTw bounded receive pump", () => {
   });
   test("maximum frame fits exactly, and the next frame is not discarded", () => {
     const { socket, received } = receiver();
-    const p = new CSendPacket(TW_BILLING_ReceivedPacket.OnTwRTT);
+    const p = new CSendPacket(Billing2Shop_TwPacket.OnTwRTT);
     p.EncodeBuffer(new Uint8Array(socket.m_nMaxPacketLen - 12).fill(0x7f));
     const encoded = frame(p);
     expect(encoded.length).toBe(socket.m_mbRcvBuffer.length);
@@ -364,7 +364,7 @@ describe("billing builders and four-byte dispatch integration", () => {
     try {
       const socket = new CBillingSocketTw(false);
       socket.m_bConnected = true;
-      const authorization = new CSendPacket(TW_BILLING_SendPacket.RequestDigiQAuthorization);
+      const authorization = new CSendPacket(Shop2Billing_TwPacket.RequestDigiQAuthorization);
       authorization.EncodeBuffer(Buffer.from("account-password", "latin1"));
       expect(socket.PutPacket(authorization)).toBe(enSocket.kioOk);
       expect(socket.PutPacket(CSendPacket.FromBillingPacket(7))).toBe(enSocket.kioOk);

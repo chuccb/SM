@@ -19,9 +19,9 @@ import { CBomberAttr } from "../src/FXGS/BomberAttr.ts";
 import { CGameSessionTable } from "../src/FXGS/GameSessionTable.ts";
 import type { CClientSocket as GameClientSocket } from "../src/FXGS/ClientSocket.ts";
 import {
-  GS_ChatReceivedPacket,
-  GS_ReceivedPacket,
-  MONITOR_ClientSend,
+  C2S_GameChatPacket,
+  C2S_GameLobbyPacket,
+  Center2Monitor_Packet,
 } from "../src/protocol/PacketIDs.ts";
 import {
   MC_GameServerSendPacket,
@@ -68,14 +68,14 @@ describe("FxServer inherited packet dispatch", () => {
     pool.OnShoutMsg = () => { calls.push("shout"); };
     pool.OnSystemCmd = () => { calls.push("command"); };
     const cases = [
-      [GS_ChatReceivedPacket.OnChatMsg, "chat"],
-      [GS_ChatReceivedPacket.OnAdminNotifyMsg, "admin"],
-      [GS_ChatReceivedPacket.OnWhisper, "whisper"],
-      [GS_ChatReceivedPacket.OnItemMsg, "item"],
-      [GS_ChatReceivedPacket.OnKickoffUser, "kickoff"],
-      [GS_ChatReceivedPacket.OnSystemMsg, "system"],
-      [GS_ChatReceivedPacket.OnShoutMsg, "shout"],
-      [GS_ChatReceivedPacket.OnSystemCmd, "command"],
+      [C2S_GameChatPacket.OnChatMsg, "chat"],
+      [C2S_GameChatPacket.OnAdminNotifyMsg, "admin"],
+      [C2S_GameChatPacket.OnWhisper, "whisper"],
+      [C2S_GameChatPacket.OnItemMsg, "item"],
+      [C2S_GameChatPacket.OnKickoffUser, "kickoff"],
+      [C2S_GameChatPacket.OnSystemMsg, "system"],
+      [C2S_GameChatPacket.OnShoutMsg, "shout"],
+      [C2S_GameChatPacket.OnSystemCmd, "command"],
     ] as const;
     for (const [id, expected] of cases) {
       calls.length = 0;
@@ -95,7 +95,7 @@ describe("FxServer inherited packet dispatch", () => {
     const special = mock((_command: string, _socket: GameClientSocket) => {});
     pool.OnSpecialCommand = special;
     const socket = {} as GameClientSocket;
-    const n = packetWithId(GS_ChatReceivedPacket.OnChatMsg, (p) => p.EncodeStr("/who"));
+    const n = packetWithId(C2S_GameChatPacket.OnChatMsg, (p) => p.EncodeStr("/who"));
     n.Decode1();
     pool.OnChatMsg(n, socket);
     expect(special).toHaveBeenCalledWith("/who", socket);
@@ -110,7 +110,7 @@ describe("FxServer inherited packet dispatch", () => {
       const create = mock((_socket: GameClientSocket, _title: string, _password: string, _selections: number[], _gameType: number) => {});
       table.DoCreateSession = create;
       const socket = { GetUserCount: () => 2 } as GameClientSocket;
-      const request = packetWithId(GS_ReceivedPacket.OnRequestCreateGuildSession, (p) => {
+      const request = packetWithId(C2S_GameLobbyPacket.OnRequestCreateGuildSession, (p) => {
         p.EncodeStr("secret");
         p.Encode1(7);
         p.Encode1(2);
@@ -135,7 +135,7 @@ describe("FxServer inherited packet dispatch", () => {
     const close = mock(() => {});
     table.DoCreateSession = create;
     const socket = { GetUserCount: () => 2, PostClosePacket: close } as unknown as GameClientSocket;
-    const request = packetWithId(GS_ReceivedPacket.OnRequestCreateGuildSession, (p) => {
+    const request = packetWithId(C2S_GameLobbyPacket.OnRequestCreateGuildSession, (p) => {
       p.EncodeStr("secret"); p.Encode1(1); p.Encode1(1); p.Encode1(0);
     });
     request.Decode1();
@@ -246,7 +246,7 @@ describe("CLocalServerMan class-aware dispatch and monitor wire", () => {
     monitor.OnRequestCurrentUserStat();
 
     const n = receivedFrom(sent[0]!);
-    expect(n.Decode1()).toBe(MONITOR_ClientSend.OnRequestCurrentUserStat);
+    expect(n.Decode1()).toBe(Center2Monitor_Packet.OnRequestCurrentUserStat);
     expect([n.Decode4(), n.Decode4(), n.IsEOS()]).toEqual([1, 2, true]);
 
     center.globalUserTable.UpdateDailyPeak(new Date(2026, 8, 22, 1));
@@ -267,7 +267,7 @@ describe("CLocalServerMan class-aware dispatch and monitor wire", () => {
     monitor.OnRequestSvrState();
 
     const n = receivedFrom(sent!);
-    expect(n.Decode1()).toBe(MONITOR_ClientSend.OnRequestSvrState);
+    expect(n.Decode1()).toBe(Center2Monitor_Packet.OnRequestSvrState);
     expect(n.Decode4()).toBe(2);
     expect([n.Decode1(), n.Decode2(), n.DecodeStr(), n.Decode4()]).toEqual([10, 2, "Game A", 7]);
     expect([n.Decode1(), n.Decode2(), n.DecodeStr(), n.Decode4()]).toEqual([11, 3, "Shop A", 0xffffffff]);

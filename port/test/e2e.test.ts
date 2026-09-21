@@ -26,7 +26,7 @@ import { RAND_MAX } from "../src/core/CRand.ts";
 import { CLocalSocket } from "../src/shared/LocalSocket.ts";
 import { SVRCLASS_UTIL, MC_ReceivedPacket } from "../src/protocol/CenterProtocol.ts";
 import { CReceivedPacket, CSendPacket, CipherDegree } from "../src/core/Packet.ts";
-import { GS_ClientSend } from "../src/protocol/PacketIDs.ts";
+import { S2C_GamePacket } from "../src/protocol/PacketIDs.ts";
 import { CA_CONFIG_SEED_IP } from "../src/db/CAConfigBak.ts";
 import { CDBMan, EncodePassword, GetUserHashNo } from "../src/db/DBMan.ts";
 import { SimpleStreamEncrypt3 } from "../src/core/StreamCipher.ts";
@@ -1703,7 +1703,7 @@ describe("audit regression: 82 auto-join, before-join ring, BomberAttr map", () 
     // the happy path: 54 [E1 askerSeat] to the target's socket
     session.OnNotifyUDPLoss(n, askerSocket);
     expect(relay).not.toBeNull();
-    expect(relay!.m_nPacketType).toBe(GS_ClientSend.OnRequestUDPRelayRes);
+    expect(relay!.m_nPacketType).toBe(S2C_GamePacket.OnRequestUDPRelayRes);
     expect(relay!.m_pBlock[1]! ^ 0x5a).toBe(3); // the asker's seat (kPacketEncryptedCRC8)
     // a dead target (m_nFree) stays silent
     relay = null;

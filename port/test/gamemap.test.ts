@@ -14,7 +14,7 @@ import { CGameSession } from "../src/FXGS/GameSession.ts";
 import { CMainSystem } from "../src/FXGS/MainSystem.ts";
 import { CClientSocket } from "../src/FXGS/ClientSocket.ts";
 import { CUser } from "../src/FXGS/User.ts";
-import { GS_ClientSend } from "../src/protocol/PacketIDs.ts";
+import { S2C_GamePacket } from "../src/protocol/PacketIDs.ts";
 
 let savedIDF: CIDFMan | null;
 let savedMaps: CGameMapTmplList | null;
@@ -270,14 +270,14 @@ function room(colors: (number | null)[], session = new CGameSession()) {
 }
 function expectedPacket(type: number, ...values: number[]): Buffer {
   const p = new CSendPacket(type, CipherDegree.kPacketEncryptedCRC8);
-  if (type === GS_ClientSend.OnSessionMapIdx) p.Encode2(values[0]! & 0xffff);
+  if (type === S2C_GamePacket.OnSessionMapIdx) p.Encode2(values[0]! & 0xffff);
   else { p.Encode1(values[0]!); p.EncodeBuffer(Uint8Array.from(values.slice(1))); }
   return Buffer.from(p.m_pBlock.subarray(0, p.m_uOffset));
 }
 
 /** CPracticeSession::MakeSetSlotStatePacket: AI marker, then optional E2 level. */
 function expectedPracticeSlot(slot: number, state: number[], aiLevel: number | null): Buffer {
-  const packet = new CSendPacket(GS_ClientSend.OnSetSlotState, CipherDegree.kPacketEncryptedCRC8);
+  const packet = new CSendPacket(S2C_GamePacket.OnSetSlotState, CipherDegree.kPacketEncryptedCRC8);
   packet.Encode1(slot);
   packet.EncodeBuffer(Uint8Array.from(state));
   packet.Encode1(aiLevel === null ? 0 : 1);
@@ -296,7 +296,7 @@ describe("signed map selection → room state → game map", () => {
     r.select(selection);
     expect(r.session.m_nMapIdx).toBe(selection);
     expect(r.session.m_fModified & 2).toBe(2);
-    expect(r.packets[0]!.body).toEqual(expectedPacket(GS_ClientSend.OnSessionMapIdx, selection));
+    expect(r.packets[0]!.body).toEqual(expectedPacket(S2C_GamePacket.OnSessionMapIdx, selection));
     expect(r.flushes).toEqual([3]);
     const random = spyOn(maps, "GetRandomMapIdx");
     try {
@@ -338,7 +338,7 @@ describe("signed map selection → room state → game map", () => {
     r.select(-2);
     expect(r.session.m_nMapIdx).toBe(-3);
     expect(r.session.m_fModified).toBe(0);
-    expect(r.packets.map((p) => p.body)).toEqual([expectedPacket(GS_ClientSend.OnSessionMapIdx, -3)]);
+    expect(r.packets.map((p) => p.body)).toEqual([expectedPacket(S2C_GamePacket.OnSessionMapIdx, -3)]);
     expect(r.flushes).toEqual([1]);
     expect([r.session.GetColor(0), r.session.GetColor(1)]).toEqual([1, 2]);
   });
@@ -363,8 +363,8 @@ describe("signed map selection → room state → game map", () => {
       expect(input.map((_, slot) => r.session.GetColor(slot))).toEqual(output);
       expect(hook).not.toHaveBeenCalled();
       expect(r.packets.map((p) => p.body)).toEqual([
-        expectedPacket(GS_ClientSend.OnSessionMapIdx, 0),
-        ...output.map((color, slot) => expectedPacket(GS_ClientSend.OnSetSlotState, slot, 0x82, 0xc3, 0xe0 | color)),
+        expectedPacket(S2C_GamePacket.OnSessionMapIdx, 0),
+        ...output.map((color, slot) => expectedPacket(S2C_GamePacket.OnSetSlotState, slot, 0x82, 0xc3, 0xe0 | color)),
       ]);
       expect(r.flushes).toEqual([input.length + 1]);
     } finally { hook.mockRestore(); }
@@ -389,10 +389,10 @@ describe("signed map selection → room state → game map", () => {
       expect(r.session.m_nGameMapIdx).toBe(0); // high-level map excluded despite 50K exp
       expect(launch).toHaveBeenCalledTimes(1);
       expect(hook).not.toHaveBeenCalled();
-      expect(responses[0]!.m_nPacketType).toBe(GS_ClientSend.OnStartGameRes);
+      expect(responses[0]!.m_nPacketType).toBe(S2C_GamePacket.OnStartGameRes);
       expect(r.packets.map((p) => p.body)).toEqual([
-        expectedPacket(GS_ClientSend.OnSetSlotState, 0, 0x82, 0xc3, 0xe0),
-        expectedPacket(GS_ClientSend.OnSetSlotState, 1, 0x82, 0xc3, 0xe3),
+        expectedPacket(S2C_GamePacket.OnSetSlotState, 0, 0x82, 0xc3, 0xe0),
+        expectedPacket(S2C_GamePacket.OnSetSlotState, 1, 0x82, 0xc3, 0xe3),
       ]);
       expect(r.flushes).toEqual([2]);
     } finally { picker.mockRestore(); launch.mockRestore(); hook.mockRestore(); }
@@ -445,7 +445,7 @@ describe("signed map selection → room state → game map", () => {
     expect(practice.m_rgPlayer[2]).toBeNull();
     expect([practice.GetColor(0), practice.GetColor(2)]).toEqual([0, 3]);
     expect(r.packets.map((p) => p.body)).toEqual([
-      expectedPacket(GS_ClientSend.OnSessionMapIdx, -2),
+      expectedPacket(S2C_GamePacket.OnSessionMapIdx, -2),
       expectedPracticeSlot(0, [0x82, 0xc3, 0xe0], null),
       expectedPracticeSlot(2, [0x80, 0xc5, 0xe3], 23),
     ]);
@@ -457,10 +457,10 @@ describe("signed map selection → room state → game map", () => {
     r.select(-2);
     expect([0, 2, 4].map((slot) => r.session.GetColor(slot))).toEqual([0, 3, 0]);
     expect(r.packets.map((p) => p.body)).toEqual([
-      expectedPacket(GS_ClientSend.OnSessionMapIdx, -2),
-      expectedPacket(GS_ClientSend.OnSetSlotState, 0, 0x82, 0xc3, 0xe0),
-      expectedPacket(GS_ClientSend.OnSetSlotState, 2, 0x82, 0xc3, 0xe3),
-      expectedPacket(GS_ClientSend.OnSetSlotState, 4, 0x82, 0xc3, 0xe0),
+      expectedPacket(S2C_GamePacket.OnSessionMapIdx, -2),
+      expectedPacket(S2C_GamePacket.OnSetSlotState, 0, 0x82, 0xc3, 0xe0),
+      expectedPacket(S2C_GamePacket.OnSetSlotState, 2, 0x82, 0xc3, 0xe3),
+      expectedPacket(S2C_GamePacket.OnSetSlotState, 4, 0x82, 0xc3, 0xe0),
     ]);
     expect(r.flushes).toEqual([4]);
   });

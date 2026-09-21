@@ -3,13 +3,13 @@ import { describe, expect, test } from "bun:test";
 import {
   BILLING_PACKET_LOG_CONTEXT,
   BNB_TAIWAN_PacketFamily,
-  GS_ChatReceivedPacket,
+  C2S_GameChatPacket,
   GS_CLIENT_SEND_NAMES,
   C2S_LoginPacket,
   PACKET_NAME_TABLES,
   PacketIdDescriptor,
   PacketIdName,
-  TW_BILLING_SendPacket,
+  Shop2Billing_TwPacket,
 } from "../src/protocol/PacketIDs.ts";
 import {
   CM_GameServerPacket,
@@ -58,10 +58,10 @@ describe("nPacketType context registry", () => {
   });
 
   test("CChatPool is a top-level inherited dispatch, not a nested packet family", () => {
-    expect(Object.values(GS_ChatReceivedPacket).sort((a, b) => a - b))
+    expect(Object.values(C2S_GameChatPacket).sort((a, b) => a - b))
       .toEqual([25, 26, 27, 29, 30, 31, 71, 216]);
     expect(PACKET_NAME_TABLES.GS.recv).toHaveLength(3);
-    const chat = PacketIdDescriptor("GS", "recv", GS_ChatReceivedPacket.OnSystemCmd)!;
+    const chat = PacketIdDescriptor("GS", "recv", C2S_GameChatPacket.OnSystemCmd)!;
     expect(chat).toMatchObject({
       family: "enGameServerPacket",
       direction: "client-to-server",
@@ -90,7 +90,7 @@ describe("nPacketType context registry", () => {
     expect(PacketIdDescriptor("LS", "recv", C2S_LoginPacket.OnNewUser))
       .toMatchObject({ canonicalName: "OnNewUser", containsCredentials: true });
     expect(TAIWAN_BILLING_OPCODE_BYTES).toBe(4);
-    expect(PacketIdDescriptor(BILLING_PACKET_LOG_CONTEXT.Taiwan, "send", TW_BILLING_SendPacket.RequestDigiQAuthorization))
+    expect(PacketIdDescriptor(BILLING_PACKET_LOG_CONTEXT.Taiwan, "send", Shop2Billing_TwPacket.RequestDigiQAuthorization))
       .toMatchObject({
         family: "enGeneralServerPacket", opcodeBytes: 4, containsCredentials: true,
         canonicalName: "RequestDigiQAuthorization",

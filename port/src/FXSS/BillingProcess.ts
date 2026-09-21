@@ -3,10 +3,10 @@ import { CDBMan } from "../db/DBMan.ts";
 import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
 import { ItemCategory } from "../shared/Item.ts";
 import {
-  BILLING_SendPacket,
-  COUPON_SendPacket,
-  TW_BILLING_ReceivedPacket,
-  TW_BILLING_SendPacket,
+  Shop2Billing_LegacyPacket,
+  Shop2Billing_CouponPacket,
+  Billing2Shop_TwPacket,
+  Shop2Billing_TwPacket,
   S2C_ShopPacket,
 } from "../protocol/PacketIDs.ts";
 import type { ShopItem } from "./Recordsets.ts";
@@ -108,7 +108,7 @@ export class CBillingProcess {
         this.m_fConnected = 1;
         console.log("[Shop] Connection to Billing Server established"); // :521
         // CBillingProcess::ConnectToSvr — the 331 hello: [E4 4][E4 GetWorld()]
-        const hello = new CBillingSendPacket(TW_BILLING_SendPacket.OnConnEstablished);
+        const hello = new CBillingSendPacket(Shop2Billing_TwPacket.OnConnEstablished);
         hello.Encode4(BILLING_GAME);
         hello.Encode4(this.m_nSvrTag);
         this.Send(hello);
@@ -151,19 +151,19 @@ export class CBillingProcess {
    *  behind the dedicated 8-byte Tw frame. */
   OnPacket(n: CReceivedPacket): void {
     switch (n.Decode4()) {
-      case TW_BILLING_ReceivedPacket.OnRemainCashTw:
+      case Billing2Shop_TwPacket.OnRemainCashTw:
         this.OnRemainCashTw(n);
         break;
-      case TW_BILLING_ReceivedPacket.OnPurchaseOKTw:
+      case Billing2Shop_TwPacket.OnPurchaseOKTw:
         this.OnPurchaseOKTw(n);
         break;
-      case TW_BILLING_ReceivedPacket.OnPurchaseConfirmTw:
+      case Billing2Shop_TwPacket.OnPurchaseConfirmTw:
         this.OnPurchaseConfirmTw(n);
         break;
-      case TW_BILLING_ReceivedPacket.OnDigiQAuthen:
+      case Billing2Shop_TwPacket.OnDigiQAuthen:
         this.OnDigiQAuthen(n);
         break;
-      case TW_BILLING_ReceivedPacket.OnTwRTT:
+      case Billing2Shop_TwPacket.OnTwRTT:
         console.log("[Shop] Received RTT Response");
         break;
       default:
@@ -180,7 +180,7 @@ export class CBillingProcess {
     if (!user.m_pSocket) return;
     const ip = user.m_pSocket.m_strPeerAddress;
     const name = user.GetName().split("\0", 1)[0]!;
-    const p = new CBillingSendPacket(TW_BILLING_SendPacket.RequestRemainCashTw);
+    const p = new CBillingSendPacket(Shop2Billing_TwPacket.RequestRemainCashTw);
     p.Encode4(user.m_nSID);
     p.Encode4(user.m_nBID);
     p.Encode4(BILLING_GAME);
@@ -200,7 +200,7 @@ export class CBillingProcess {
    *  [E4 serial][E4 0][E4 0][E4 stockSN][E4 price][EStr clubId][EStr name]
    *  [E1 domain][E2 UA+128 HIWORD][EStr +2904 tranx string]. */
   RequestGift(user: CUser, _targetId: string, stockSN: number, price: number): void {
-    const p = CBillingSendPacket.FromBillingPacket(BILLING_SendPacket.RequestGift);
+    const p = CBillingSendPacket.FromBillingPacket(Shop2Billing_LegacyPacket.RequestGift);
     p.Encode4(user.GetGlobalSerialNo());
     p.Encode4(0);
     p.Encode4(0);
@@ -218,13 +218,13 @@ export class CBillingProcess {
    *  [E4 serial][EStr +3008 coupon][EStr clubId][EStr name][E1 domain]
    *  [E2 UA+128 HIWORD]. */
   RequestCheckCoupon(user: CUser): void {
-    const p = CBillingSendPacket.FromCouponPacket(COUPON_SendPacket.RequestCheckCoupon);
+    const p = CBillingSendPacket.FromCouponPacket(Shop2Billing_CouponPacket.RequestCheckCoupon);
     this.EncodeCouponBody(p, user);
     this.Send(p);
   }
 
   RequestUseCoupon(user: CUser): void {
-    const p = CBillingSendPacket.FromCouponPacket(COUPON_SendPacket.RequestUseCoupon);
+    const p = CBillingSendPacket.FromCouponPacket(Shop2Billing_CouponPacket.RequestUseCoupon);
     this.EncodeCouponBody(p, user);
     this.Send(p);
   }
@@ -241,7 +241,7 @@ export class CBillingProcess {
   /** CBillingProcess::RequestDigiQAuthorization — billing 341:
    *  [E1 len][Ebuf]×3 (three length-prefixed ANSI strings). */
   RequestDigiQAuthorization(account: string, password: string, name: string): void {
-    const p = new CBillingSendPacket(TW_BILLING_SendPacket.RequestDigiQAuthorization);
+    const p = new CBillingSendPacket(Shop2Billing_TwPacket.RequestDigiQAuthorization);
     for (const s of [account, password, name]) {
       const buf = EncodeCP950(s);
       p.Encode1(buf.length);
@@ -272,7 +272,7 @@ export class CBillingProcess {
     }
     const ip = user.m_pSocket.m_strPeerAddress;
     const name = user.GetName().split("\0", 1)[0]!;
-    const p = new CBillingSendPacket(TW_BILLING_SendPacket.RequestPurchaseTw);
+    const p = new CBillingSendPacket(Shop2Billing_TwPacket.RequestPurchaseTw);
     p.Encode4(user.m_nSID);
     p.Encode4(user.m_nBID);
     p.Encode4(BILLING_GAME);
@@ -307,7 +307,7 @@ export class CBillingProcess {
   }
 
   private MakePurchaseConfirmTw(reference: string, serial: number, stock: number, result: number): CSendPacket {
-    const p = new CBillingSendPacket(TW_BILLING_SendPacket.PurchaseConfirmTw);
+    const p = new CBillingSendPacket(Shop2Billing_TwPacket.PurchaseConfirmTw);
     string8(p, reference); p.Encode4(serial); p.Encode4(stock); p.Encode4(result);
     return p;
   }
@@ -331,7 +331,7 @@ export class CBillingProcess {
 
   /** CBillingProcess::TwRequestRTT — billing 351: [E1 123]. */
   TwRequestRTT(): void {
-    const p = new CBillingSendPacket(TW_BILLING_SendPacket.TwRequestRTT);
+    const p = new CBillingSendPacket(Shop2Billing_TwPacket.TwRequestRTT);
     p.Encode1(123);
     this.Send(p);
   }

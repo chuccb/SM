@@ -2,7 +2,7 @@
 import { CBillingSocketTw } from "../FXSS/BillingSocket.ts";
 import { CSendPacket } from "../FXSS/Packet.ts";
 import type { CDBMan } from "../db/DBMan.ts";
-import { TW_BILLING_SendPacket as Request, TW_BILLING_ReceivedPacket as Reply, TW_BILLING_SEND_NAMES, TW_BILLING_RECEIVED_NAMES } from "../protocol/PacketIDs.ts";
+import { Shop2Billing_TwPacket as Request, Billing2Shop_TwPacket as Reply, TW_BILLING_SEND_NAMES, TW_BILLING_RECEIVED_NAMES } from "../protocol/PacketIDs.ts";
 import { PacketLog } from "../core/PacketLog.ts";
 import type { CReceivedPacket } from "../core/Packet.ts";
 import { BillingReader, purchaseReply, string8 } from "./Protocol.ts";

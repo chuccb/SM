@@ -42,7 +42,7 @@ import {
  *
  * NOTE on `new CSendPacket(PACKET_TYPE_PLACEHOLDER, deg)` sites: the zero
  * placeholder (the original CSendPacket ctor default) is not a wire id — the
- * real type is set by the follow-up InitPacket(GS_ClientSend.X) call.  Only
+ * real type is set by the follow-up InitPacket(S2C_GamePacket.X) call.  Only
  * ctor sites whose argument IS the final wire id belong in these tables.
  *
  * Contents:
@@ -73,8 +73,6 @@ export const C2S_LoginPacket = {
   OnRequestDestoryService: 60, // (official spelling)
   OnReplyDestoryService: 61,
 } as const;
-export const LS_ClientReceivedPacket = C2S_LoginPacket;
-export const LS_ReceivedPacket = C2S_LoginPacket;
 
 /**
  * Login Server → Client responses (one per matching request id).
@@ -90,8 +88,6 @@ export const S2C_LoginResponsePacket = {
   OnEstimateRTTRes: 20,
   OnRequestDestoryServiceRes: 60,
 } as const;
-export const LS_ServerResponsePacket = S2C_LoginResponsePacket;
-export const LS_SendPacket = S2C_LoginResponsePacket;
 
 /**
  * Login Server → Client unsolicited notifications and broadcasts (no matching request id).
@@ -108,8 +104,6 @@ export const S2C_LoginNoticePacket = {
   OnWhisper: 27, // CCenterProcess::OnWhisper (CxLogin.exe.c:5058) — relay to the target's socket [EStr]×5[E4]×3; no caller in CxCenter.exe.c (arrives via the S2S vtbl)
   OnSystemMsg: 30,
 } as const;
-export const LS_ServerNoticePacket = S2C_LoginNoticePacket;
-export const LS_ClientSend = S2C_LoginNoticePacket;
 
 /**
  * All Login Server → Client packets (union of response packets and unsolicited notifications).
@@ -118,7 +112,6 @@ export const S2C_LoginPacket = {
   ...S2C_LoginResponsePacket,
   ...S2C_LoginNoticePacket,
 } as const;
-export const LS_ServerSendPacket = S2C_LoginPacket;
 
 // ═══════════════════════════ 2. GAME SERVER (lobby) ═══════════════════════════
 // CChannelPool::OnPacket (FxServer.exe.c:6942) — the game-server lobby dispatch.
@@ -156,7 +149,6 @@ export const C2S_GameLobbyPacket = {
   OnRequestCreatePracticeSession: 86, // vtbl+60 = CGameSessionTable::CreateSessionPractice (the original log line misspells "PraticeSession")
   OnRequestUserInventory: 209,
 } as const;
-export const GS_ReceivedPacket = C2S_GameLobbyPacket;
 
 /** Client-facing packet IDs sent by the game server (Lobby, Room, In-Game, Notices). */
 export const S2C_GamePacket = {
@@ -255,7 +247,6 @@ export const S2C_GamePacket = {
   OnEnableShop: 210, // [E1 attr] — entry accepted; attr flag enables Client's Shop button (bit 0 / m_fInventoryDB; default closed without packet)
   OnEnterGame: 210, // legacy alias for OnEnableShop
 } as const;
-export const GS_ClientSend = S2C_GamePacket;
 
 // ═══════════════════════ 3. GAME SERVER (in-room session) ═══════════════════════
 // CGameSession::OnPacket (FxServer.exe.c:37668) — in-room packets 96..189
@@ -301,7 +292,6 @@ export const C2S_GameSessionPacket = {
   OnHackingSuspected: 186, // vtbl+164 → CGameSession::OnHackingSuspected
   OnNotifyUdpLossRegulator: 187, // CUdpLossRegulator::OnNotifyUdpLoss
 } as const;
-export const SESSION_ReceivedPacket = C2S_GameSessionPacket;
 
 /** Client → Game Server Chat packets (CChatPool, FxServer.exe.c:7297). CChannelPool rewinds the
  * same packet before calling this base-class dispatcher; there is no outer
@@ -316,7 +306,6 @@ export const C2S_GameChatPacket = {
   OnShoutMsg: 71,
   OnSystemCmd: 216,
 } as const;
-export const GS_ChatReceivedPacket = C2S_GameChatPacket;
 
 // ═══════════════════════════════ 4. SHOP SERVER ═══════════════════════════════
 // CMainPool::OnPacket (FxShop.exe.c:20547) — the FxShop client dispatch on the
@@ -347,7 +336,6 @@ export const C2S_ShopPacket = {
   OnRequestTranxData: 225,
   OnRequestShopSvrInfo: 226,
 } as const;
-export const SS_ReceivedPacket = C2S_ShopPacket;
 
 // Shop → client packet types (every CSendPacket::CSendPacket / InitPacket on
 // FxShop.exe.c).  The ids are the same shared namespace, read from the other
@@ -376,7 +364,6 @@ export const S2C_ShopPacket = {
   OnCartList: 214, // CMainPool::OnRequestCartList
   OnPurchaseCartListRes: 215, // CMainPool::PurchaseCartList tail — [E1 9][E1 0][EBuffer 8 variant time] to the user's socket
 } as const;
-export const SC_SendPacket = S2C_ShopPacket;
 
 // ═══════════════════════════════ 5. UTIL SERVER ═══════════════════════════════
 // CMainPool::OnPacket (CxUtil.exe.c:21528) — the admin-tool relay.  Tools
@@ -394,7 +381,6 @@ export const C2S_UtilPacket = {
   OnReqUserInfo: 64, // → center MC 7 [E4 serial][EStr account]
   OnUpdateItem: 66, // → center MC 11 [EStr "UpdateFxItem" iff the leading byte is 11]
 } as const;
-export const UTIL_ClientReceivedPacket = C2S_UtilPacket;
 
 /** Util Server → Admin Client / Tool packets (CxUtil). All degree 0 — SetCipherDegree(0). */
 export const S2C_UtilPacket = {
@@ -403,7 +389,6 @@ export const S2C_UtilPacket = {
   OnAdminNotifyMsg: 26, // CCenterProcess::OnAdminNotifyMsg rebroadcast
   OnUserDetailInfo: 64, // CMainPool::SendUserDetailInfo [E1 n][E4 n2]
 } as const;
-export const UTIL_ClientSend = S2C_UtilPacket;
 
 // ══════════════════════════ 6. SHOP ↔ BILLING LINK ══════════════════════════
 // CBillingSocketTw carries several opcode contexts.  They must not be merged:
@@ -429,7 +414,6 @@ export const Shop2Billing_TwPacket = {
   RequestDigiQAuthorization: 341,
   TwRequestRTT: 351,
 } as const;
-export const TW_BILLING_SendPacket = Shop2Billing_TwPacket;
 
 /** Taiwan Billing Link → Shop Server packets (FxShop::CBillingSocketTw, E4 opcodes). */
 export const Billing2Shop_TwPacket = {
@@ -439,13 +423,11 @@ export const Billing2Shop_TwPacket = {
   OnDigiQAuthen: 342,
   OnTwRTT: 352,
 } as const;
-export const TW_BILLING_ReceivedPacket = Billing2Shop_TwPacket;
 
 /** BNB_TAIWAN::enBillingPacket requests: [E1 family=0][E1 opcode]. */
 export const Shop2Billing_LegacyPacket = {
   RequestGift: 7,
 } as const;
-export const BILLING_SendPacket = Shop2Billing_LegacyPacket;
 
 /** This build has no active enBillingPacket receive dispatch.  Its dormant
  * handler opcodes are not inferred from function names. */
@@ -457,7 +439,6 @@ export const Shop2Billing_CouponPacket = {
   RequestCheckCoupon: 0,
   RequestUseCoupon: 1,
 } as const;
-export const COUPON_SendPacket = Shop2Billing_CouponPacket;
 
 // ═══════════════════════════ 7. MONITOR CONSOLE ═══════════════════════════
 // CMonitorSocket::OnPacket (center) — operator console protocol.  The reply
@@ -467,14 +448,12 @@ export const Monitor2Center_Packet = {
   OnRequestCurrentUserStat: 0,
   OnRequestSvrState: 1,
 } as const;
-export const MONITOR_ReceivedPacket = Monitor2Center_Packet;
 
 /** Center Server → Monitor Console packets (CxCenter::CMonitorSocket). */
 export const Center2Monitor_Packet = {
   OnRequestCurrentUserStat: 0, // [E4 current][E4 dailyPeak]
   OnRequestSvrState: 1, // [E4 n][n×(E1 class, E2 index, EStr name, E4 connNo)]
 } as const;
-export const MONITOR_ClientSend = Center2Monitor_Packet;
 
 // ═══════════════════════════════ 8. TYPED REGISTRY ═══════════════════════════════
 
@@ -485,63 +464,63 @@ export const LS_CLIENT_RECEIVED_NAMES = DefinePacketNameTable(
 export const LS_CLIENT_SEND_NAMES = DefinePacketNameTable(
   "enGeneralServerPacket", "CxLogin", "server-to-client", S2C_LoginPacket,
 );
-export const GS_CLIENT_RECEIVED_NAMES = DefinePacketNameTable(
-  "enGameServerPacket", "FxServer::CChannelPool", "client-to-server", GS_ReceivedPacket,
+export const GS_LOBBY_RECEIVED_NAMES = DefinePacketNameTable(
+  "enGameServerPacket", "FxServer::CChannelPool", "client-to-server", C2S_GameLobbyPacket,
 );
 export const GS_SESSION_RECEIVED_NAMES = DefinePacketNameTable(
-  "enGameServerPacket", "FxServer::CGameSession", "client-to-server", SESSION_ReceivedPacket,
+  "enGameServerPacket", "FxServer::CGameSession", "client-to-server", C2S_GameSessionPacket,
 );
 export const GS_CHAT_RECEIVED_NAMES = DefinePacketNameTable(
-  "enGameServerPacket", "FxServer::CChatPool", "client-to-server", GS_ChatReceivedPacket,
+  "enGameServerPacket", "FxServer::CChatPool", "client-to-server", C2S_GameChatPacket,
 );
 export const GS_CLIENT_SEND_NAMES = DefinePacketNameTable(
-  "enGameServerPacket", "FxServer", "server-to-client", GS_ClientSend,
+  "enGameServerPacket", "FxServer", "server-to-client", S2C_GamePacket,
   { canonical: {
-    [GS_ClientSend.OnChatMsg]: "OnChatMsg",
-    [GS_ClientSend.OnKickoffUser]: "OnKickoffUser",
-    [GS_ClientSend.OnBombIgniteRes]: "OnBombIgniteRes",
-    [GS_ClientSend.OnBomberEvent]: "OnBomberEvent",
-    [GS_ClientSend.OnEffectRes]: "OnEffectRes",
-    [GS_ClientSend.OnDropObstacleRes]: "OnDropObstacleRes",
-    [GS_ClientSend.OnDestroyBoxRes]: "OnDestroyBoxRes",
-    [GS_ClientSend.OnLapInfoRes]: "OnLapInfoRes",
-    [GS_ClientSend.OnRequestAirplaneRes]: "OnRequestAirplaneRes",
-    [GS_ClientSend.OnObjCreate]: "OnObjCreate",
+    [S2C_GamePacket.OnChatMsg]: "OnChatMsg",
+    [S2C_GamePacket.OnKickoffUser]: "OnKickoffUser",
+    [S2C_GamePacket.OnBombIgniteRes]: "OnBombIgniteRes",
+    [S2C_GamePacket.OnBomberEvent]: "OnBomberEvent",
+    [S2C_GamePacket.OnEffectRes]: "OnEffectRes",
+    [S2C_GamePacket.OnDropObstacleRes]: "OnDropObstacleRes",
+    [S2C_GamePacket.OnDestroyBoxRes]: "OnDestroyBoxRes",
+    [S2C_GamePacket.OnLapInfoRes]: "OnLapInfoRes",
+    [S2C_GamePacket.OnRequestAirplaneRes]: "OnRequestAirplaneRes",
+    [S2C_GamePacket.OnObjCreate]: "OnObjCreate",
   } },
 );
 export const SHOP_CLIENT_RECEIVED_NAMES = DefinePacketNameTable(
-  "enGeneralServerPacket", "FxShop::CMainPool", "client-to-server", SS_ReceivedPacket,
+  "enGeneralServerPacket", "FxShop::CMainPool", "client-to-server", C2S_ShopPacket,
   { credentials: ["OnReqDigiQAuthorization"] },
 );
 export const SHOP_CLIENT_SEND_NAMES = DefinePacketNameTable(
-  "enGeneralServerPacket", "FxShop", "server-to-client", SC_SendPacket,
+  "enGeneralServerPacket", "FxShop", "server-to-client", S2C_ShopPacket,
 );
 export const UTIL_CLIENT_RECEIVED_NAMES = DefinePacketNameTable(
-  "enGeneralServerPacket", "CxUtil::CMainPool", "client-to-server", UTIL_ClientReceivedPacket,
+  "enGeneralServerPacket", "CxUtil::CMainPool", "client-to-server", C2S_UtilPacket,
 );
 export const UTIL_CLIENT_SEND_NAMES = DefinePacketNameTable(
-  "enGeneralServerPacket", "CxUtil", "server-to-client", UTIL_ClientSend,
+  "enGeneralServerPacket", "CxUtil", "server-to-client", S2C_UtilPacket,
 );
 export const TW_BILLING_SEND_NAMES = DefinePacketNameTable(
-  "enGeneralServerPacket", "FxShop::CBillingSocketTw", "shop-to-billing", TW_BILLING_SendPacket,
+  "enGeneralServerPacket", "FxShop::CBillingSocketTw", "shop-to-billing", Shop2Billing_TwPacket,
   { credentials: ["RequestDigiQAuthorization"], opcodeBytes: TAIWAN_BILLING_OPCODE_BYTES },
 );
 export const TW_BILLING_RECEIVED_NAMES = DefinePacketNameTable(
-  "enGeneralServerPacket", "FxShop::CBillingSocketTw", "billing-to-shop", TW_BILLING_ReceivedPacket,
+  "enGeneralServerPacket", "FxShop::CBillingSocketTw", "billing-to-shop", Billing2Shop_TwPacket,
   { opcodeBytes: TAIWAN_BILLING_OPCODE_BYTES },
 );
 export const BILLING_SEND_NAMES = DefinePacketNameTable(
-  "enBillingPacket", "BNB_TAIWAN::enBillingPacket", "shop-to-billing", BILLING_SendPacket,
+  "enBillingPacket", "BNB_TAIWAN::enBillingPacket", "shop-to-billing", Shop2Billing_LegacyPacket,
 );
 export const COUPON_SEND_NAMES = DefinePacketNameTable(
-  "enCouponPacket", "BNB_TAIWAN::enCouponPacket", "shop-to-billing", COUPON_SendPacket,
+  "enCouponPacket", "BNB_TAIWAN::enCouponPacket", "shop-to-billing", Shop2Billing_CouponPacket,
   { credentials: ["RequestCheckCoupon", "RequestUseCoupon"] },
 );
 export const MONITOR_RECEIVED_NAMES = DefinePacketNameTable(
-  "enMonitorPacket", "CxCenter::CMonitorSocket", "monitor-to-center", MONITOR_ReceivedPacket,
+  "enMonitorPacket", "CxCenter::CMonitorSocket", "monitor-to-center", Monitor2Center_Packet,
 );
 export const MONITOR_SEND_NAMES = DefinePacketNameTable(
-  "enMonitorPacket", "CxCenter::CMonitorSocket", "center-to-monitor", MONITOR_ClientSend,
+  "enMonitorPacket", "CxCenter::CMonitorSocket", "center-to-monitor", Center2Monitor_Packet,
 );
 
 /** Registries keyed exactly like PacketLog's socket log-table tags. */
@@ -551,7 +530,7 @@ export const PACKET_NAME_TABLES: Readonly<Record<string, {
 }>> = {
   LS: { recv: [LS_CLIENT_RECEIVED_NAMES], send: [LS_CLIENT_SEND_NAMES] },
   GS: {
-    recv: [GS_CLIENT_RECEIVED_NAMES, GS_CHAT_RECEIVED_NAMES, GS_SESSION_RECEIVED_NAMES],
+    recv: [GS_LOBBY_RECEIVED_NAMES, GS_CHAT_RECEIVED_NAMES, GS_SESSION_RECEIVED_NAMES],
     send: [GS_CLIENT_SEND_NAMES],
   },
   Shop: { recv: [SHOP_CLIENT_RECEIVED_NAMES], send: [SHOP_CLIENT_SEND_NAMES] },

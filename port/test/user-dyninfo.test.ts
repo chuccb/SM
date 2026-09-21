@@ -23,7 +23,7 @@ import { CGameSession } from "../src/FXGS/GameSession.ts";
 import { CGameSessionTable } from "../src/FXGS/GameSessionTable.ts";
 import { CDynInfoCalculator } from "../src/FXGS/DynInfoCalculator.ts";
 import { DYN_FLUSH_BURST, USER_MONEY_MAX, FxCLIENT_HASH_A, SESSION_IDX_MAX } from "../src/FXGS/Defs.ts";
-import { GS_ClientSend } from "../src/protocol/PacketIDs.ts";
+import { S2C_GamePacket } from "../src/protocol/PacketIDs.ts";
 
 /** Read initialized PE data by VA; no Windows code execution or native-run claim. */
 function nativeInt32s(file: string, va: number, count: number): number[] {
@@ -158,7 +158,7 @@ function dynRow(id: string) {
   return { money: info.money, exp: info.exp, win: info.win, draw: info.draw, lose: info.lose };
 }
 function detail(n: CReceivedPacket) {
-  expect(n.m_nPacketType).toBe(GS_ClientSend.OnRequestUserInfoDetailRes);
+  expect(n.m_nPacketType).toBe(S2C_GamePacket.OnRequestUserInfoDetailRes);
   expect(n.Decode1()).toBe(1);
   const id = n.DecodeStr(), name = n.DecodeStr(), guild = n.DecodeStr(), gender = n.Decode1();
   const stats = [n.Decode4(), n.Decode4(), n.Decode4(), n.Decode4(), n.Decode4(), n.Decode2(), n.Decode4()];
