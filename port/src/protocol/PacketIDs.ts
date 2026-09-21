@@ -57,8 +57,8 @@ import {
  */
 
 // ═══════════════════════════════ 1. LOGIN SERVER ═══════════════════════════════
-// Client → Login Server packets (CLoginPool::OnPacket, CxLogin.exe.c:15254)
-export const LS_ReceivedPacket = {
+/** Client → Login Server packets (CLoginPool::OnPacket, CxLogin.exe.c:15254). */
+export const LS_ClientReceivedPacket = {
   OnAskMultiServer: 1,
   OnAskFirstInfo: 2,
   OnLogin: 3,
@@ -72,12 +72,13 @@ export const LS_ReceivedPacket = {
   OnRequestDestoryService: 60, // (official spelling)
   OnReplyDestoryService: 61,
 } as const;
+export const LS_ReceivedPacket = LS_ClientReceivedPacket;
 
 /**
  * Login Server → Client responses (one per matching request id).
- * The channel-info family (10/11/13/14) and unsolicited notifications are in LS_ClientSend below.
+ * The channel-info family (10/11/13/14) and unsolicited notifications are in LS_ServerNoticePacket.
  */
-export const LS_SendPacket = {
+export const LS_ServerResponsePacket = {
   OnAskMultiServerRes: 1,
   OnAskFirstInfoRes: 2,
   OnLoginRes: 3,
@@ -87,12 +88,12 @@ export const LS_SendPacket = {
   OnEstimateRTTRes: 20,
   OnRequestDestoryServiceRes: 60,
 } as const;
+export const LS_SendPacket = LS_ServerResponsePacket;
 
 /**
- * Login Server → Client packets (unsolicited or notifications without matching request id).
- * Combined with LS_SendPacket, these form the entire server-to-client transmission set.
+ * Login Server → Client unsolicited notifications and broadcasts (no matching request id).
  */
-export const LS_ClientSend = {
+export const LS_ServerNoticePacket = {
   OnConnect: 0, // CMainSystem::OnConnEstablished [E2 CENTER_VERSION][E2 CONN_HELLO_VERSION][E4 headerType][EStr url]
   OnNotice: 7, // CConfigDyn::GetNoticePacket [COSmartStream containing one EStr]
   OnChannelInfo: 10, // CChannelCache::MakeInfoPacket (24883) — [E1 full][OSstream]
@@ -104,13 +105,14 @@ export const LS_ClientSend = {
   OnWhisper: 27, // CCenterProcess::OnWhisper (CxLogin.exe.c:5058) — relay to the target's socket [EStr]×5[E4]×3; no caller in CxCenter.exe.c (arrives via the S2S vtbl)
   OnSystemMsg: 30,
 } as const;
+export const LS_ClientSend = LS_ServerNoticePacket;
 
 /**
  * All Login Server → Client packets (union of response packets and unsolicited notifications).
  */
 export const LS_ServerSendPacket = {
-  ...LS_SendPacket,
-  ...LS_ClientSend,
+  ...LS_ServerResponsePacket,
+  ...LS_ServerNoticePacket,
 } as const;
 
 // ═══════════════════════════ 2. GAME SERVER (lobby) ═══════════════════════════
