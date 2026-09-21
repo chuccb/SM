@@ -8,10 +8,26 @@ import type { CClientSocket } from "./ClientSocket.ts";
 import { CMainSystem } from "./MainSystem.ts";
 import type { _USERACCOUNT, _USERDYNINFO, UserInventory } from "./Recordsets.ts";
 
+export interface DBTranxInfo {
+  ItemSN: number;
+  Amount: number;
+  PreInventorySN: number;
+  IsNew: number;
+  ValidityPeriod: number;
+}
+
+export interface CouponMap {
+  CouponID: number;
+  ItemSN: number;
+  Amount: number;
+  ValidityPeriod: number;
+  LevelLimit: number;
+}
+
 // ============================ CUser ============================
 
-/** CUser — the shop-side user (0xC30 bytes in the original; only fields the
- *  handlers touch are modeled). */
+/** CUser — the shop-side user (0xC30 bytes in the original; fully models
+ *  native transaction structures and member variables). */
 export class CUser {
   /** CRT default state before CApp/CThread calls srand. This fallback keeps
    * isolated CUser construction faithful; the running service uses the
@@ -20,14 +36,11 @@ export class CUser {
 
   m_strName = ""; // CNamedObject (lowercased index key)
   m_nGlobalSerialNo = 0;
-  m_pSocket: CClientSocket | null = null; // +3092
+  m_pSocket: CClientSocket | null = null; // +3092 (dword 773)
   m_nAuthenCode = 0; // +3116 (byte) — the CM 2 authencode (1 → [E1 1][E1 101])
-  m_nSID = -1; // +3108 — CUser::GetSID/SetSID (the account SID); set from the
+  m_nSID = -1; // +3108 (dword 777) — CUser::GetSID/SetSID (the account SID); set from the
   // client's p7 second dword (FxShop.exe.c:19013) and echoed in MC 3
-  m_nBID = -1; // +3112 — CUser::GetBID/SetBID (the SID pair's second dword)
-  m_strCoupon = ""; // +3008 — the client 219 coupon (CMainPool::OnRequestUseCoupon)
-  m_strCouponId = ""; // +3032 — the client 219 registered id
-  m_strTranxInfo = ""; // +2904 — the per-user transaction string (ResetTranxInfo clears it)
+  m_nBID = -1; // +3112 (dword 778) — CUser::GetBID/SetBID (the SID pair's second dword)
   m_nUserAccountHiword = 0; // +152 = _USERACCOUNT+128 — the billing tail E2 (HIWORD)
   m_nCash = 0; // cached FxUserDynamic.Money (game currency, NOT billing cash)
   m_nBillingCash = 0; // +3104 — CUser::SetCash, independent of FxUserDynamic.Money
@@ -37,6 +50,23 @@ export class CUser {
   m_vecUserInventory: UserInventory[] = []; // +0xC8 — grows with purchases
   m_fModifiedClient = 0;
   m_nConnCount = 0;
+
+  // ---------------- TranxInfo (+2872..2908, dwords 718..729) ----------------
+  m_nTranxStockSN = 0;     // +2880 (dword 720): stock item SN being transacted
+  m_nTranxItemSN = 0;      // +2884 (dword 721): item SN
+  m_nTranxAmount = 0;      // +2888 (dword 722): amount/units
+  m_nTranxPreSN = 0;       // +2892 (dword 723): pre-inventory SN
+  m_nTranxState = 0;       // +2896 (dword 724): transaction state / rollback flag
+  m_listTranxInfo: DBTranxInfo[] = []; // +2900 (dword 725): STL list<DBTranxInfo>
+  m_strTranxInfo = "";     // +2904 (dword 726..728): transaction reference string
+  m_nTranxResult = 0;      // +2916 (dword 729): transaction result code
+
+  // ---------------- CouponTranx (+3008..3044, dwords 752..760) ----------------
+  m_strCoupon = "";        // +3008 (dword 752..754): coupon serial string
+  m_nCouponID = 0;         // +3020 (dword 755): coupon ID / index
+  m_nCouponState = 0;      // +3024 (dword 756): coupon state
+  m_listCouponMap: CouponMap[] = []; // +3028 (dword 757): STL list<CouponMap>
+  m_strCouponId = "";      // +3032 (dword 758..760): registered user ID for coupon
 
   constructor(socket: CClientSocket | null) {
     this.m_pSocket = socket;
@@ -96,12 +126,26 @@ export class CUser {
     return end < 0 ? this.m_strNexonClubId : this.m_strNexonClubId.slice(0, end);
   }
 
-  /** CUser::ResetTranxInfo (0041F170), the native fields modeled here.
-   * Cart/connection guards and the separate local settlement marker are NOT
-   * reset by this native routine. Native transaction lists remain unmodeled. */
+  /**
+   * CUser::ResetTranxInfo (0041F170) — strictly mirrors official disassembly:
+   * clears TranxInfo and CouponTranx structures and associated state lists.
+   */
   ResetTranxInfo(): void {
+    // TranxInfo (+2872):
+    this.m_nTranxStockSN = 0;
+    this.m_nTranxItemSN = 0;
+    this.m_nTranxAmount = 0;
+    this.m_nTranxPreSN = 0;
+    this.m_nTranxState = 0;
+    this.m_nTranxResult = 0;
+    this.m_listTranxInfo = [];
     this.m_strTranxInfo = "";
+
+    // CouponTranx (+3008):
     this.m_strCoupon = "";
+    this.m_nCouponID = 0;
+    this.m_nCouponState = 0;
+    this.m_listCouponMap = [];
     this.m_strCouponId = "";
   }
 
