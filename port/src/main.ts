@@ -141,7 +141,7 @@ if (!only || only === "relay") {
 if (!only || only === "game") {
   // FXGS_00{idx}.cfg: ServerIndex {idx} → port 4848 for idx 0 in the shipped
   // topology; the test topology runs five game servers (test/game0.cfg …).
-  const idx = process.argv.includes("--idx") ? Number(process.argv[process.argv.indexOf("--idx") + 1]) : 0;
+  const idx = process.argv.includes("--idx") ? Number(process.argv[process.argv.indexOf("--idx") + 1]) : 1;
   const cfgFile =
     process.argv.includes("--cfg") ? process.argv[process.argv.indexOf("--cfg") + 1] : `../FXGS/FXGS_00${idx}.cfg`;
   const game = await gameMain(resolveCfg(cfgFile), dbDir);
