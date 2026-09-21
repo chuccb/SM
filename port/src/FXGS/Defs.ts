@@ -1,4 +1,4 @@
-/** FXGS shared constants — the slot-state bit fields, the session-idx
+/** Port-only declaration module for FXGS shared native constants — the slot-state bit fields, the session-idx
  *  sentinels and the timing/hash values, named once for the whole unit. */
 
 /** MainSystem+8 — the channel types the GS behaviour keys on (the Center
@@ -11,11 +11,17 @@ export const ACCOUNTING_LOG_CHANNEL_TYPE = 99;
  *  by a trap or by the UDP-loss sweep (:33026, two Encode2(9999)). */
 export const DEATH_COORD = 9999;
 /** the map-template version floor — the loader clamps file dwords < 1000 up
- *  to it (CGameMapTmplList::Load). */
+ *  to it (CGameMapTmpl::LoadMap). */
 export const MAP_VERSION_MIN = 1000;
-/** negative map indexes pick the theme table counting down from here
- *  (CGameMapTmplList dword 321 = the m_apTheme base). */
-export const THEME_IDX_BASE = 321;
+/** Signed i16 map selections (0041C497 / 0041C9C4): -1 = any map,
+ * -2 = theme 0, -3 = theme 1, etc. */
+export const MAP_IDX_RANDOM = -1;
+export const MAP_IDX_THEME_BASE = -2;
+
+/** Convert a themed wire selection to its zero-based theme index. */
+export function GetThemeIdxFromMapIdx(mapIdx: number): number {
+  return MAP_IDX_THEME_BASE - mapIdx;
+}
 /** Every 32-bit stamp in the original is a winmm timeGetTime() uptime
  *  dword — the port routes those through core/timeGetTime (performance.now
  *  wrapped at 2^32); the mask remains for the few raw-epoch leftovers. */
@@ -40,8 +46,12 @@ export const RTT_HASH = 0x11221122;
 export const RTT_HASH_INV = 0xdf1a2e51;
 /** CUserPool::DisconnectTimeoutSocket — 0x9C40 ms without RTT. */
 export const SOCKET_TIMEOUT = 0x9c40;
-/** CUser::DeferFlushModifiedInfo — burst flush threshold (0x19). */
+/** CUser::DeferFlushModifiedInfo — completed-game threshold, not timer ticks. */
 export const DYN_FLUSH_BURST = 0x19;
+/** CUser::IncDecMoney (004090EC) — balance cap after signed int32 addition. */
+export const USER_MONEY_MAX = 1_000_000;
+/** CDBMan::InitPreInventory / CUser fixed pre-inventory pointer table. */
+export const MAX_PRE_INVENTORY_ROWS = 30;
 
 /**
  * CBaseSession m_rgSlotState triple (+68+3·slot) bit fields — byte0: bits 2-4
@@ -66,6 +76,7 @@ export const SLOTSTATE_COLOR_CLEAR = 0xe0; // ~COLOR_MASK & 0xff
  *  the GetPacket switch default ignores session packets in these states). */
 export const SESSION_IDX_NONE = 0xffff; // sitting in the lobby
 export const SESSION_IDX_CONNECTING = 0xfffe; // still connecting
+export const SESSION_SERIAL_NONE = 0xffffffff;
 /** the unsigned idx validity bound — the sentinels above all fail it. */
 export const SESSION_IDX_MAX = 255;
 
@@ -82,10 +93,10 @@ export const SUPREME_ROOM_SWAP_COUNT = 0x2710;
 export const UDP_REGULATE_DELAY = 0x1f40;
 /** CGameSession::DeferReturnPrepareStage (:31979) — 8 s after the end screen. */
 export const RETURN_STAGE_DELAY = 0x1f40;
-/** The result head's view-type byte lives on the strategy now — the base
- *  returns 0, the guild variant 1 (see CGameSessionStrategy above). */
 /** CGameSession::IsLadderGame (4209A6: xor eax,eax) — the SendGameResult head
- *  byte is hardwired 0 in this build. */
+ *  byte is hardwired 0 in this build.  This is the third header byte in the
+ *  client-compatible four-byte layout (the later result-view byte is not
+ *  part of that protocol). */
 export const IS_LADDER_GAME = 0;
 /** asc_48F568 (EUC-KR) — "[\xbe\xcb\xb8\xb2] %s ..." = "[Notification] %s has obtained 100x the luck of experience in the premium channel."
  *  (SendGameResult → SendBigLuckMsg; GetWinExp never sets the trigger flag). */
@@ -94,3 +105,15 @@ export const STR_BIG_LUCK_MSG = "\x5b\xbe\xcb\xb8\xb2\x5d\x20\x25\x73\x20\xb4\xd
 /** The session dimension everywhere: 8 slots / 8 colours / 8 loss-matrix rows
  *  (the original loops the same 8-slot tables with plain do/while). */
 export const MAX_SESSION_SLOTS = 8;
+
+/** CGameContext fixed storage dimensions recovered from GameSession.cpp. */
+export const GAME_CONTEXT_TILE_COLUMNS = 15;
+export const GAME_CONTEXT_TILE_ROWS = 13;
+export const GAME_CONTEXT_TILE_COUNT = GAME_CONTEXT_TILE_COLUMNS * GAME_CONTEXT_TILE_ROWS;
+export const GAME_CONTEXT_BULA_COLUMNS = 45;
+export const GAME_CONTEXT_BULA_ROWS = 26;
+export const GAME_CONTEXT_BULA_COUNT = GAME_CONTEXT_BULA_COLUMNS * GAME_CONTEXT_BULA_ROWS;
+export const GAME_CONTEXT_BOX_CAPACITY = 250;
+export const GAME_CONTEXT_BOX_SERIAL_START = 126;
+export const GAME_CONTEXT_BOMB_CAPACITY = 150;
+export const GAME_CONTEXT_DIE_COORDS_PER_SLOT = 2;

@@ -1,4 +1,5 @@
-/**
+/** Native source unit: common/MultiServer.cpp (CxLogin.pdb: MultiServer1.obj).
+ *
  * CMultiServer (CxLogin.exe.c) — the login server list provider.
  *
  * Init reads three ConfigDB tables:
@@ -24,29 +25,8 @@
 import type { CDBMan } from "../db/DBMan.ts";
 import { COSmartStream } from "../core/SmartStream.ts";
 import { CipherDegree, CSendPacket } from "../core/Packet.ts";
-import { LS_SendPacket } from "../lib/PacketIDs.ts";
-
-export interface _MULTISERVER {
-  SN: number;
-  strName: string;
-  strIp: string;
-  dwParam: number;
-  dwCurrent: number;
-}
-
-export interface _LOGINSERVER {
-  SN: number;
-  strIp: string;
-  nPort: number;
-  nFlag: number;
-}
-
-export interface _MULTISERVERNOTICE {
-  sn: number;
-  nType: number;
-  strValue: string;
-  strAttr: string;
-}
+import { LS_SendPacket } from "../protocol/PacketIDs.ts";
+import type { _LOGINSERVER, _MULTISERVER, _MULTISERVERNOTICE } from "./Recordsets.ts";
 
 export function inet_addr(cp: string): number {
   // the Windows inet_addr: the dotted octets packed in NETWORK byte order —

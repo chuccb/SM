@@ -4,15 +4,17 @@
  * table packets (200/205/213/202), the purchase path (206 → 204, the DB
  * writes) and the misc handlers (214/226/20) — against the real code paths.
  */
-import { describe, test, expect, beforeAll } from "bun:test";
+import { GetTickCount } from "../src/core/GetTickCount.ts";
+import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { mkdirSync, rmSync } from "node:fs";
-import { CServerConfig, CXCENTER_STR_KEYS, FXSHOP_STR_KEYS } from "../src/core/Config.ts";
+import { CServerConfig, CXCENTER_STR_KEYS, FXSHOP_STR_KEYS } from "../src/core/ServerConfig.ts";
 import { CDBMan } from "../src/db/DBMan.ts";
-import { CxCenter, CUser } from "../src/Center/Center.ts";
-import { CxShop } from "../src/FXSS/Shop.ts";
-import { CItemMan } from "../src/FXSS/CItemMan.ts";
-import { SVRCLASS_SHOP } from "../src/lib/S2S.ts";
+import { CCxCenterApp, CLocalServerMan, CUser } from "../src/Center/CxCenter.ts";
+import { CFxShopApp, CLocalUserTable, CUser as ShopUser, UserInventory as ShopUserInventory } from "../src/FXSS/FxShop.ts";
+import { CReceivedPacket, CSendPacket } from "../src/core/Packet.ts";
+import { CItemMan } from "../src/FXSS/ItemMan.ts";
+import { SVRCLASS_SHOP } from "../src/protocol/CenterProtocol.ts";
 import { GetUserHashNo } from "../src/db/DBMan.ts";
 import { CISmartStream } from "../src/core/SmartStream.ts";
 import { TestClient, r1, r2, r4, rstr, gsEncode, gsDecode, type CReceived } from "./TestClient.ts";
@@ -21,22 +23,24 @@ const DIR = import.meta.dir;
 const DB_DIR = DIR + "/tmp-db-shop";
 const SHOP_PORT = 19801;
 
-let center: CxCenter;
-let shop: CxShop;
+let centerApp: CCxCenterApp;
+let center: CLocalServerMan;
+let shop: CFxShopApp;
 
 beforeAll(async () => {
   rmSync(DB_DIR, { recursive: true, force: true });
   mkdirSync(DB_DIR, { recursive: true });
 
   // ---- seed the DB files the shop will open (CAItem / CAConfig / UserInfo) ----
-  new CDBMan(DB_DIR); // create the schema files
+  const schema = new CDBMan(DB_DIR); // create the schema files
+  schema.Close();
   const db = new Database(DB_DIR + "/CAItem.db");
   db.run(`INSERT INTO FxItem (SN, Category, strAttr, nAttr1, nAttr2, nAttr3, strName, nLevel)
-          VALUES (300, 1, 'attr', 10, 0, 0, 'item300', 0)`);
+          VALUES (300, 13, 'attr', 10, 0, 0, 'item300', 0)`);
   db.run(`INSERT INTO FxStock (SN, Category, Name, ItemSN, Unit, DataFile, Price, FixedPrice,
              LimitLevel, LimitEx, ValidityPeriod, ValidityLevel, StringDesc, StringUsage,
              CardNo, MoneyType, zorder, IsValid)
-          VALUES (5000, 1, 'stock5000', 300, 1, '', 100, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1)`);
+          VALUES (5000, 13, 'stock5000', 300, 1, '', 100, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1)`);
   db.run("INSERT INTO FxString (SN, String) VALUES (1, 'HelloWorld')");
   db.close();
   const cfg = new Database(DB_DIR + "/CAConfig.db");
@@ -55,15 +59,16 @@ beforeAll(async () => {
   const ccfg = new CServerConfig(CXCENTER_STR_KEYS, true);
   ccfg.Init(DIR + "/shop-center.cfg");
   CServerConfig.ms_pInstance = ccfg;
-  center = new CxCenter(ccfg);
+  centerApp = new CCxCenterApp(ccfg);
+  center = centerApp.localServerMan;
   center.Init();
-  await center.Listen();
+  centerApp.listenThread.Start();
 
   const scfg = new CServerConfig(FXSHOP_STR_KEYS);
   scfg.Init(DIR + "/shop0.cfg");
   CServerConfig.ms_pInstance = scfg;
-  shop = new CxShop(scfg, DB_DIR);
-  await shop.Init(); // Bun.listen inside Init is synchronous — both ports are live
+  shop = new CFxShopApp(scfg, DB_DIR);
+  await shop.SetUp(); // Bun.listen inside SetUp is synchronous — both ports are live
 
   // the shop's center-link greet is processed asynchronously, and the center
   // wipes the (re-)registered server's users on it (DeleteAllUserOnSvr) —
@@ -73,19 +78,27 @@ beforeAll(async () => {
   // the login flow would have registered "tester" on the center with a
   // pending shop connection; inject it directly (the LS's ReqConnectToSvr
   // would have left the user in the "connecting to shop idx 0" state)
-  const cu = new CUser("tester", SVRCLASS_SHOP, 0, 7);
-  center.userTable.set("tester", cu);
-  center.serialTable.set(7, cu);
+  const cu = new CUser("tester", SVRCLASS_SHOP, 0, 7, 0, 0, center);
+  center.globalUserTable.userTable.set("tester", cu);
+  center.globalUserTable.serialTable.set(7, cu);
+  cu.m_fConnecting = 1; // fixture: the successful check already ran
   cu.SetConnectingToSvr(SVRCLASS_SHOP, 0, center);
+});
+
+afterAll(() => {
+  shop.CleanUp();
+  centerApp.CleanUp();
+  if (!process.env.KEEP_DB) rmSync(DB_DIR, { recursive: true, force: true });
 });
 
 /** A shop client with the connection handshake folded in. */
 async function connectShopUser(name: string, serial: number, consume18 = true): Promise<TestClient> {
   // re-arm the center user's "connecting to the shop" state — the real flow
   // gets it from the LS's ReqConnectToSvr on every shop entry
-  const cu = center.userTable.get(name)!;
-  cu.nConnectingType = SVRCLASS_SHOP;
-  cu.nConnectingIdx = 0;
+  const cu = center.globalUserTable.userTable.get(name)!;
+  cu.m_fConnecting = 1;
+  cu.nConnectStamp = GetTickCount();
+  center.globalUserTable.InsertConnectingList(serial);
   const c = new TestClient();
   await c.connect(SHOP_PORT, { sndDeg: 2, rcvDeg: 2 });
   // the accept packet 0 ([E2 3][E2 7][E4 headerType][EStr patch url]) is
@@ -99,8 +112,8 @@ async function connectShopUser(name: string, serial: number, consume18 = true): 
     e.u8(1); // count
     e.str(name);
     e.u32be(serial); // +3096 — the global serial
-    e.u32be(0xffffffff); // +3104 — write-only in the original
-    e.u32be(0xffffffff); // +3108 — the billing SID (none registered → flag 0)
+    e.u32be(0xffffffff); // +3108 — SID
+    e.u32be(0xffffffff); // +3112 — BID
     e.u8(0); // selected user idx
   });
   // the game client waits for the initial info before anything else
@@ -111,12 +124,29 @@ async function connectShopUser(name: string, serial: number, consume18 = true): 
 function deStream(n: CReceived): CISmartStream {
   const size = r4(n);
   const s = new CISmartStream();
-  s.SetBuffer(n.buf.subarray(n.off, n.off + size), 0);
+  s.SetBuffer(n.buf.subarray(n.off, n.off + size));
   n.off += size;
   return s;
 }
 
 describe("shop flow", () => {
+  test("shop-side packet 201 uses the same native E4 per-user inventory count", () => {
+    const user = new ShopUser(null);
+    user.m_vecUserInventory.push(Object.assign(new ShopUserInventory(), {
+      SN: 123, Slot: 0xf0, ItemSN: 300, Verbose: "", dateAcquired: new Date("2099-01-01T00:00:00.000Z"),
+    }));
+    const packet = new CSendPacket(201, 2);
+    user.MakeUserInventoryPacket(packet);
+    expect(packet.m_uOffset).toBe(24); // type + E4 count + one 19-byte row
+    const decoded = new CReceivedPacket();
+    decoded.SetCipherDegree(2);
+    decoded.SetRcvPacket(packet.m_pBlock, packet.m_uOffset);
+    expect([decoded.Decode1(), decoded.Decode4(), decoded.Decode4(), decoded.Decode1(), decoded.Decode4(), decoded.DecodeStr()])
+      .toEqual([201, 1, 123, 0xf0, 300, ""]);
+    expect(decoded.DecodeRest().length).toBe(8);
+    expect(decoded.m_uOffset).toBe(decoded.m_uLength);
+  });
+
   test("client 7 → center CM 2 → client 18 initial info", async () => {
     const c = await connectShopUser("tester", 7, false);
 
@@ -153,7 +183,7 @@ describe("shop flow", () => {
     const s = deStream(p200);
     expect(s.Decode2()).toBe(1); // one FxStock row
     expect(s.Decode4()).toBe(5000); // SN
-    expect(s.Decode1()).toBe(1); // Category
+    expect(s.Decode1()).toBe(13); // Category — dedicated limited-item fixture
     expect(s.DecodeStr()).toBe("stock5000");
     expect(s.Decode2()).toBe(0); // StringDesc
     expect(s.Decode2()).toBe(0); // StringUsage
@@ -201,7 +231,7 @@ describe("shop flow", () => {
     const p202 = await c.recv(202);
     expect(r2(p202)).toBe(1);
     expect(r4(p202)).toBe(300); // SN
-    expect(r1(p202)).toBe(1); // Category
+    expect(r1(p202)).toBe(13); // Category
     expect(rstr(p202)).toBe("attr"); // strAttr
     expect(r4(p202)).toBe(10); // nAttr1 — the purchase limit
     expect(r4(p202)).toBe(0);
@@ -336,3 +366,149 @@ describe("shop flow", () => {
 // keep the tree-shaker honest about the imports used only in type positions
 void gsEncode;
 void gsDecode;
+
+
+// A06: actual SQLite account -> encrypted Shop login -> client coupon request.
+// Capture the billing send boundary; no external billing/payment is contacted.
+test("Shop login derives the club ID from DB email and carries it into coupon billing", async () => {
+  using info = new Database(`${DB_DIR}/UserInfo${String(GetUserHashNo("tester")).padStart(2, "0")}.db`);
+  const original = info.query<{ Email: string }, []>("SELECT Email FROM FxUserAccount WHERE ID='tester'").get()!;
+  try {
+    for (const [email, clubId] of [["mailowner@nexonclub.com", "mailowner"], ["mailowner@example.com", ""]]) {
+      info.query("UPDATE FxUserAccount SET Email=? WHERE ID='tester'").run(email!);
+      const client = await connectShopUser("tester", 7);
+      const sent = Promise.withResolvers<CSendPacket>();
+      const capture = spyOn(shop.billing, "Send").mockImplementation(packet => { sent.resolve(packet); });
+      const timeout = setTimeout(() => sent.reject(new Error("coupon request did not reach billing")), 2000);
+      try {
+        expect(CLocalUserTable.ms_pInstance!.FindUserFromGlobalSerialNo(7)!.GetNexonClubId()).toBe(clubId);
+        client.send(219, e => { e.str("fixture-coupon"); e.str(""); });
+        const packet = await sent.promise;
+        const decoded = new CReceivedPacket(); decoded.SetRcvPacket(packet.m_pBlock, packet.m_uOffset);
+        expect([decoded.Decode1(), decoded.Decode1(), decoded.Decode4()]).toEqual([1, 0, 7]);
+        expect(decoded.DecodeStr()).toBe("fixture-coupon");
+        expect(decoded.DecodeStr()).toBe(clubId);
+        expect(decoded.DecodeStr()).toBe("tester");
+      } finally {
+        clearTimeout(timeout); capture.mockRestore(); client.close();
+      }
+    }
+  } finally {
+    info.query("UPDATE FxUserAccount SET Email=? WHERE ID='tester'").run(original.Email);
+  }
+});
+
+// Local test peer only, NOT an offline-authorization mode for production.
+for (const [authResult, cashResult] of [[0, 0], [5, 0], [0, 1]] as const) {
+  test(`DigiQ TCP 224 -> 341/342 -> 209 -> 301/302 -> 203; auth=${authResult}, cash=${cashResult}`, async () => {
+    const { CSendPacket: BillingPacket } = await import("../src/FXSS/Packet.ts");
+    const peers = new Set<Bun.Socket<Uint8Array>>();
+    const errors = Promise.withResolvers<never>();
+    void errors.promise.catch(() => {});
+    const ids: number[] = [];
+    const message = "\xa4\xa4 authorization denied";
+    function string8(p: CSendPacket, value: string) {
+      p.Encode1(value.length); p.EncodeBuffer(Buffer.from(value, "latin1"));
+    }
+    function readString8(n: CReceivedPacket) {
+      const length = n.Decode1();
+      const start = n.m_uOffset; n.m_uOffset += length;
+      return Buffer.from(n.m_pBlock.subarray(start, n.m_uOffset)).toString("latin1");
+    }
+    function respond(peer: Bun.Socket<Uint8Array>, p: CSendPacket) {
+      // Independent Tw framing: BE DWORD length, marker 7, raw payload.
+      const frame = Buffer.alloc(8 + p.m_uOffset);
+      frame.writeUInt32BE(p.m_uOffset); frame.writeUInt32BE(7, 4);
+      frame.set(p.m_pBlock.subarray(0, p.m_uOffset), 8);
+      peer.write(frame);
+    }
+    const server = Bun.listen<Uint8Array>({
+      hostname: "127.0.0.1", port: 0,
+      socket: {
+        open(peer) { peers.add(peer); peer.data = new Uint8Array(); },
+        close(peer) { peers.delete(peer); },
+        data(peer, chunk) {
+          try {
+            peer.data = Buffer.concat([peer.data, chunk]);
+            while (peer.data.length >= 8) {
+              const frame = Buffer.from(peer.data);
+              const length = frame.readUInt32BE();
+              expect(frame.readUInt32BE(4)).toBe(7);
+              if (frame.length < length + 8) break;
+              const n = new CReceivedPacket(); n.SetRcvPacket(frame.subarray(8, length + 8), length);
+              peer.data = frame.subarray(length + 8);
+              const id = n.Decode4(); ids.push(id);
+              if (id === 331) {
+                expect([n.Decode4(), n.Decode4()]).toEqual([4, 0]);
+              } else if (id === 341) {
+                expect([readString8(n), readString8(n), readString8(n)])
+                  .toEqual(["fixture-id", "fixture-pw", "tester"]);
+                const p = new BillingPacket(342);
+                p.Encode4(0x11223344); p.Encode4(0xaabbccdd);
+                string8(p, "tester"); p.Encode4(authResult);
+                if (authResult !== 0) string8(p, message);
+                respond(peer, p);
+              } else if (id === 301) {
+                expect(authResult).toBe(0);
+                expect([n.Decode4(), n.Decode4(), n.Decode4(), n.Decode4()])
+                  .toEqual([0xffffffff, 0xffffffff, 4, 0]);
+                expect(readString8(n)).toBe("tester");
+                expect(n.Decode4()).toBe(7); expect(readString8(n)).toBe("127.0.0.1");
+                const p = new BillingPacket(302);
+                p.Encode4(0); string8(p, "tester");
+                p.Encode4(7); p.Encode4(750); p.Encode4(cashResult);
+                if (cashResult === 1) string8(p, message);
+                respond(peer, p);
+              } else {
+                throw new Error(`Unexpected billing opcode ${id}`);
+              }
+              expect(n.m_uOffset).toBe(n.m_uLength);
+            }
+          } catch (error) { errors.reject(error); }
+        },
+      },
+    });
+    const billing = shop.billing;
+    const previous = { servers: billing.m_aBillingSvr, socket: billing.m_pSocket, connected: billing.m_fConnected };
+    let client: TestClient | undefined;
+    try {
+      billing.m_aBillingSvr = [{ SN: 0, ip: "127.0.0.1", port: server.port }];
+      await Promise.race([errors.promise, (async () => {
+        expect(await billing.ConnectToSvr()).toBe(1);
+        client = await connectShopUser("tester", 7);
+        const user = shop.userTable.FindUser("tester")!;
+        const currency = user.m_nCash;
+        expect(user.m_nBillingCash).toBe(0); // packet 7 supplies SID/BID, not cash
+        client.send(224, e => { e.str("fixture-id"); e.str("fixture-pw"); });
+        const response = await client.recv(209);
+        if (authResult !== 0) {
+          expect(r1(response)).toBe(13); expect(rstr(response)).toBe(message);
+          expect(ids).toEqual([331, 341]);
+          expect(client.hasPending(203)).toBe(false);
+        } else {
+          expect([r1(response), r4(response), r4(response)]).toEqual([12, 0x11223344, 0xaabbccdd]);
+          const cash = await client.recv(203);
+          if (cashResult === 1) {
+            expect(r1(cash)).toBe(0); expect(rstr(cash)).toBe(message);
+            expect(user.m_nBillingCash).toBe(0);
+          } else {
+            expect([r1(cash), r4(cash)]).toEqual([1, 750]);
+            expect(user.m_nBillingCash).toBe(750);
+          }
+          expect(cash.off).toBe(cash.buf.length);
+          expect(ids).toEqual([331, 341, 301]);
+        }
+        expect(response.off).toBe(response.buf.length);
+        expect(user.m_nCash).toBe(currency);
+      })()]);
+    } finally {
+      client?.close();
+      billing.m_pSocket?.Close();
+      billing.m_pSocket = previous.socket;
+      billing.m_fConnected = previous.connected;
+      billing.m_aBillingSvr = previous.servers;
+      for (const peer of peers) peer.end();
+      server.stop(true);
+    }
+  });
+}

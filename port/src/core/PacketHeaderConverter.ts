@@ -7,6 +7,10 @@
  * FxServer / CxLogin / FxShop / CxUtil / CxCenter).
  * Row 0 is the identity table; rows are pairwise inverse.
  */
+export const PACKET_HEADER_TYPE_COUNT = 0x10;
+const PACKET_HEADER_TYPE_MASK = PACKET_HEADER_TYPE_COUNT - 1;
+const PACKET_TYPE_MASK = 0xff;
+
 export const gsConvertTableEncode: readonly Uint8Array[] = [
   Uint8Array.from([
   0x00, 0x01, 0x29, 0x23, 0xBE, 0x84, 0xE1, 0x6C, 0xD6, 0xAE, 0x52, 0x90, 0x49, 0xF1, 0xBB, 0xE9,
@@ -591,10 +595,10 @@ export const gsConvertTableDecode: readonly Uint8Array[] = [
 
 /** CPacketHeaderConverter::EncodeHeader */
 export function EncodeHeader(nType: number, nPacketType: number): number {
-  return gsConvertTableEncode[nType & 0xF]![nPacketType & 0xFF]!;
+  return gsConvertTableEncode[nType & PACKET_HEADER_TYPE_MASK]![nPacketType & PACKET_TYPE_MASK]!;
 }
 
 /** CPacketHeaderConverter::DecodeHeader */
 export function DecodeHeader(nType: number, nPacketType: number): number {
-  return gsConvertTableDecode[nType & 0xF]![nPacketType & 0xFF]!;
+  return gsConvertTableDecode[nType & PACKET_HEADER_TYPE_MASK]![nPacketType & PACKET_TYPE_MASK]!;
 }

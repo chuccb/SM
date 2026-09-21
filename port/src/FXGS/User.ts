@@ -1,20 +1,26 @@
-/** CUser — one player (the dynamic-info unit, the inventory, the guild
- *  serial) — and CClientSocket, its packet socket. */
+/** Native source unit: FX/FxServer/User.cpp. */
+import { CSendPacket } from "../core/Packet.ts";
+import type { CClientSocket } from "./ClientSocket.ts";
+import { CDBMan, type _USERDYNINFO } from "../db/DBMan.ts";
+import { CDynInfoCalculator_GetLevel, kLevelTableSize } from "../shared/LevelTable.ts";
+import { INVENTORY_SLOT_NONE, ItemCategory } from "../shared/Item.ts";
+import {
+  CHANNEL_TYPE_GUILD,
+  DYN_FLUSH_BURST,
+  MAX_PRE_INVENTORY_ROWS,
+  SESSION_IDX_NONE,
+  USER_MONEY_MAX,
+} from "./Defs.ts";
+import { CUserItemMan } from "./ItemMan.ts";
+import { PreInventory, UserInventory, type _USERACCOUNT } from "./Recordsets.ts";
+import { EncodeVariantTime } from "../core/VariantTime.ts";
+import { CMainSystem } from "./MainSystem.ts";
+import { CGuildTable } from "./Guild.ts";
 
-import { Encode1, Encode2, Encode4, EncodeBuffer } from "../core/BufferManipulator.ts";
-import { CPacketSocket } from "../core/CPacketSocket.ts";
-import { CSendPacket, enSocket, type enSocket as EnSocket } from "../core/Packet.ts";
-import { CDBMan } from "../db/DBMan.ts";
-import { CLIENTSOCKET_HEADER_CODE_MODIFIER, CLIENTSOCKET_HEADER_CODE_RCV, CLIENTSOCKET_HEADER_CODE_SND, CLIENTSOCKET_SEQ, CLIENTSOCKET_SEQ_DELTA } from "../lib/PacketIDs.ts";
-import { CDynInfoCalculator_GetLevel, kLevelTableSize } from "../LS/LevelTable.ts";
-import { timeGetTime } from "../core/timeGetTime.ts";
-import { CChannelPool } from "./Chat";
-import { CHANNEL_TYPE_GUILD, DYN_FLUSH_BURST, SESSION_IDX_NONE } from "./Defs";
-import { CConnectPool } from "./Pools";
-import { CUserItemMan, GetVariantTime, PreInventory, UserInventory, _USERACCOUNT, _USERDYNINFO } from "./CUserItemMan";
-import { CGameSessionTable } from "./SessionTable";
-import { CCenterProcess, CMainSystem } from "./System";
-import { CGuildTable, CLocalUserTable } from "./Tables";
+/** _mbscmp equality on ANSI byte carriers: case-sensitive, NUL-terminated. */
+function sameItemName(left: string, right: string): boolean {
+  return left.split("\0", 1)[0] === right.split("\0", 1)[0];
+}
 
 // ============================ CUser ============================
 
@@ -22,26 +28,24 @@ import { CGuildTable, CLocalUserTable } from "./Tables";
 export class CUser {
   m_strName: string;
   account: _USERACCOUNT;
-  dyn: _USERDYNINFO;
+  dyn: _USERDYNINFO; // +196; numeric members start at byte +208
   m_pSocket: CClientSocket | null;
   m_nFree = 0; // +20 (CSafeObject::m_nFree — 0 while the user object is live)
-  m_nSlotIdx = -1; // +490
-  m_nGlobalSerialNo = 0; // +491 (CUser::SetGlobalSerialNo)
-  m_nGuildSN = 0; // +493 (CUser::SetGuildSerialNo; filled from the p7 tail)
-  m_fMoneyModified = 0; // +494
-  m_nWinCount = 0; // +216
-  m_nDrawCount = 0; // +220
-  m_nLoseCount = 0; // +224
-  m_fExpModified = 0; // +495
-  m_nLevel = 0; // +496
-  m_nBonusLevel = 0; // +497
-  m_nPremiumSvrId = 0; // +498
-  m_nPremiumSvrIdx = 0; // +499
-  m_nFlushCount = 0; // +500 (DeferFlushModifiedInfo burst counter)
+  m_nSlotIdx = -1; // byte +1960
+  m_nGlobalSerialNo = 0; // byte +1964 (CUser::SetGlobalSerialNo)
+  m_nGuildSN = 0; // byte +1972 (CUser::SetGuildSerialNo; filled from the p7 tail)
+  // Descriptive TS dirty-flag names; offsets here are bytes, not DWORD indices.
+  m_fDynInfoModified = 0; // +1976: money/exp/win/draw/lose, not just money
+  m_fLevelModified = 0; // +1980: level changed, not every exp change
+  m_nLevel = 0; // byte +1984
+  private m_nFakeLevel = 0; // +1988: Get/SetFakeLevel (not real level or authorization)
+  private m_fLevelIcon = 0; // +1992: SetLevelIcon display flag
+  private m_nLevelIconSn = 0; // +1996: GetLevelIconSn
+  private m_nGame = 0; // +2000: unsigned IncGame/GetGame counter
   m_fPremiumTicket = 0; // +2004 byte
-  m_fModifiedClient = 0; // +2008 (the p7 tail byte)
+  private m_fClientInitialized = 0; // +2008: IsClientInitialized, independent of games
   m_vtInventory: UserInventory[] = [];
-  m_apPreInventory: (PreInventory | null)[] = new Array(30).fill(null);
+  m_apPreInventory: (PreInventory | null)[] = new Array(MAX_PRE_INVENTORY_ROWS).fill(null);
   m_nPreInventoryCount = 0; // +1920
 
   constructor(socket: CClientSocket) {
@@ -68,6 +72,11 @@ export class CUser {
       GuildSn: 0,
     };
     this.dyn = { strID: "", money: 0, exp: 0, win: 0, draw: 0, lose: 0 };
+  }
+
+  /** CUser::HasAuthority (0041688A) is a literal zero-return stub. */
+  HasAuthority(_authority: number): number {
+    return 0;
   }
 
   GetName(): string {
@@ -130,34 +139,63 @@ export class CUser {
     this.m_nLevel = CDynInfoCalculator_GetLevel(this.dyn.exp);
   }
 
+  /** Native GetFakeLevel / SetFakeLevel (00403134 / 00408DF1). */
+  GetFakeLevel(): number { return this.m_nFakeLevel; }
+  SetFakeLevel(level: number): void { this.m_nFakeLevel = level | 0; }
+
+  /** Native GetLevelIconSn / SetLevelIcon (0040313B / 00408DFE). */
+  GetLevelIconSn(): number { return this.m_nLevelIconSn; }
+  SetLevelIcon(enabled: number, sn: number): void {
+    this.m_fLevelIcon = enabled | 0;
+    this.m_nLevelIconSn = sn | 0;
+  }
+
+  /** Native GetAuthencode / SetAuthenCode (00408E22 / 00408148).
+   * The asymmetrical spelling is from the supplied symbols. */
+  GetAuthencode(): number { return this.m_fPremiumTicket & 0xff; }
+  SetAuthenCode(code: number): void { this.m_fPremiumTicket = code & 0xff; }
+
   /** CUser::GetLookLevel — level + bonus clamped to 1..kLevelTableSize.
    *  The official compares directly against the same 450 the level table
    *  is sized by (FxServer.exe.c:26980, `if (n450 > 450) return 450;`). */
   GetLookLevel(): number {
-    const n = this.m_nLevel + this.m_nBonusLevel;
+    const n = (this.m_nLevel + this.m_nFakeLevel) | 0;
     if (n < 1) return 1;
     if (n > kLevelTableSize) return kLevelTableSize;
     return n;
   }
 
-  /** CUser::IncDecMoney — clamps into 0..1000000 and marks the flush flag. */
-  /** CUser::IncWin / IncDraw / IncLose (41D1C1..41D219) — count + the money flush flag. */
+  /** IncWin/Draw/Lose (0041D1C1..0041D219) mutate the SAME _USERDYNINFO
+   *  read by detail packets and WriteUserDynInfo; no parallel counters. */
   IncWin(): void {
-    this.m_nWinCount++;
-    this.m_fMoneyModified = 1;
+    this.dyn.win = (this.dyn.win + 1) | 0;
+    this.m_fDynInfoModified = 1;
   }
   IncDraw(): void {
-    this.m_nDrawCount++;
-    this.m_fMoneyModified = 1;
+    this.dyn.draw = (this.dyn.draw + 1) | 0;
+    this.m_fDynInfoModified = 1;
   }
   IncLose(): void {
-    this.m_nLoseCount++;
-    this.m_fMoneyModified = 1;
+    this.dyn.lose = (this.dyn.lose + 1) | 0;
+    this.m_fDynInfoModified = 1;
   }
 
   /** CUser::IncGame (41D245) — bumps the dyn burst counter (+2000). */
   IncGame(): void {
-    this.m_nFlushCount++;
+    this.m_nGame = (this.m_nGame + 1) >>> 0;
+  }
+
+  /** CUser::GetGame (0041691C) — unsigned games since the last flush. */
+  GetGame(): number {
+    return this.m_nGame;
+  }
+
+  /** CUser::IsClientInitialized / SetClientInitialized (00408155/0040815C). */
+  IsClientInitialized(): number {
+    return this.m_fClientInitialized;
+  }
+  SetClientInitialized(initialized: number): void {
+    this.m_fClientInitialized = initialized | 0;
   }
 
   /** CUser::GetSelfidx (FxServer.exe.c:26610) — this user's index inside its socket. */
@@ -168,37 +206,36 @@ export class CUser {
     return -1;
   }
 
+  /** CUser::IncDecMoney — native signed add first, then clamp. */
   IncDecMoney(value: number): void {
-    this.dyn.money += value;
-    this.dyn.money = Math.max(0, Math.min(1000000, this.dyn.money));
-    this.m_fMoneyModified = 1;
+    const money = (this.dyn.money + value) | 0;
+    this.dyn.money = Math.max(0, Math.min(USER_MONEY_MAX, money));
+    this.m_fDynInfoModified = 1;
   }
 
   /** CUser::IncDecExp — returns +1 levelup / -1 leveldown / 0. */
   IncDecExp(value: number): number {
     const old = this.m_nLevel;
-    this.dyn.exp = Math.max(0, this.dyn.exp + value);
-    this.m_fMoneyModified = 1;
+    this.dyn.exp = Math.max(0, (this.dyn.exp + value) | 0);
+    this.m_fDynInfoModified = 1;
     this.SetLevel();
     if (this.m_nLevel !== old) {
-      this.m_fExpModified = 1;
+      this.m_fLevelModified = 1;
       return this.m_nLevel > old ? 1 : -1;
     }
     return 0;
   }
 
-  /** CUser::DeferFlushModifiedInfo — prUpdateUserDynamic when forced or bursty. */
+  /** CUser::DeferFlushModifiedInfo (00417603) — snapshot/reset under the
+   *  native lock, then write outside it. JS execution here is synchronous.
+   *  The original clears dirty state even when WriteUserDynInfo fails. */
   DeferFlushModifiedInfo(db: CDBMan, fForce: number): void {
-    if (fForce !== 0 || this.m_nFlushCount >= DYN_FLUSH_BURST) {
-      this.m_nFlushCount = 0;
-      if (this.m_fMoneyModified !== 0) {
-        db.prUpdateUserDynamic(this.dyn.strID, this.dyn.money, this.dyn.exp, this.dyn.win, this.dyn.draw, this.dyn.lose);
-        this.m_fMoneyModified = 0;
-      }
-      this.m_fExpModified = 0;
-    } else {
-      this.m_nFlushCount++;
-    }
+    if (fForce === 0 && this.GetGame() < DYN_FLUSH_BURST) return;
+    const info = this.m_fDynInfoModified !== 0 ? { ...this.dyn } : null;
+    this.m_nGame = 0;
+    this.m_fDynInfoModified = 0;
+    this.m_fLevelModified = 0;
+    if (info) db.WriteUserDynInfo(info);
   }
 
   /** CUser::AddInventory */
@@ -211,29 +248,29 @@ export class CUser {
     return this.m_vtInventory.find((i) => i.ItemSN === ItemSN) ?? null;
   }
 
-  /** CUser::GetUserInventoryFromAll — by item id string. */
+  /** CUser::GetUserInventoryFromAll — exact resource-name comparison (_mbscmp), not the display name. */
   GetUserInventoryFromAll(name: string): UserInventory | null {
-    return this.m_vtInventory.find((i) => i.strName === name) ?? null;
+    return this.m_vtInventory.find((i) => sameItemName(i.strAttr, name)) ?? null;
   }
 
   /** CUser::HasFunctionalItem (category 2). */
   HasFunctionalItem(name: string): boolean {
-    return this.m_vtInventory.some((i) => i.Type === 2 && i.strName === name);
+    return this.m_vtInventory.some((i) => i.Type === ItemCategory.Functional && sameItemName(i.strAttr, name));
   }
 
   /** CUser::GetInventoryLoaded — equipped (SlotByte != 0xFF) of a category. */
   GetInventoryLoaded(n: number): UserInventory | null {
-    return this.m_vtInventory.find((i) => i.Type === n && i.SlotByte !== 0xff) ?? null;
+    return this.m_vtInventory.find((i) => i.Type === n && i.SlotByte !== INVENTORY_SLOT_NONE) ?? null;
   }
 
   /** CUser::GetSlotDecorationLoaded (category 10). */
   GetSlotDecorationLoaded(i: number): UserInventory | null {
-    return this.m_vtInventory.find((x) => x.Type === 10 && x.Slot === i && x.SlotByte !== 0xff) ?? null;
+    return this.m_vtInventory.find((x) => x.Type === ItemCategory.SlotDecoration && x.nAttr2 === i && x.SlotByte !== INVENTORY_SLOT_NONE) ?? null;
   }
 
   /** CUser::GetCharDecoLoaded (category 12). */
   GetCharDecoLoaded(i: number): UserInventory | null {
-    return this.m_vtInventory.find((x) => x.Type === 12 && x.Slot === i && x.SlotByte !== 0xff) ?? null;
+    return this.m_vtInventory.find((x) => x.Type === ItemCategory.CharDeco && x.nAttr2 === i && x.SlotByte !== INVENTORY_SLOT_NONE) ?? null;
   }
 
   /** CUser::AppendSimpleInfoPacket — the shared rank/guild/list entry. */
@@ -244,7 +281,7 @@ export class CUser {
     // rides through vtbl+24 = Encode2 (CSendPacketBase vtable 0x492198:
     // +20 E1 / +24 E2 / +28 E4 / +32 EStr), NOT Encode4.
     packet.Encode2(this.GetLookLevel());
-    if (this.m_nPremiumSvrId !== 0) packet.Encode4(this.m_nPremiumSvrIdx);
+    if (this.m_fLevelIcon !== 0) packet.Encode4(this.m_nLevelIconSn);
     else packet.Encode4(0);
     packet.Encode4(this.m_nGuildSN);
     if (CMainSystem.ms_pInstance!.m_nChannelType === CHANNEL_TYPE_GUILD) {
@@ -257,16 +294,18 @@ export class CUser {
     packet.Encode2(0);
   }
 
-  /** CUser::MakeUserInventoryPacket — packet 201 per-user body. */
+  /** CUser::MakeUserInventoryPacket — packet 201 per-user body.
+   * The vector count is E4: FxServer.exe.lst:00416C40–00416C41 calls the
+   * send-packet vtable at +0x1C, which is Encode4 (004921B4), not Encode2. */
   MakeUserInventoryPacket(packet: CSendPacket): void {
-    packet.Encode2(this.m_vtInventory.length);
+    packet.Encode4(this.m_vtInventory.length);
     for (const inv of this.m_vtInventory) {
       packet.Encode4(inv.ItemSN);
       packet.Encode1(inv.SlotByte);
       packet.Encode4(inv.Amount);
       packet.EncodeStr(inv.Verbose);
       // CTime::GetVariantTime — an 8-byte OLE date
-      packet.EncodeBuffer(new Uint8Array(new Float64Array([GetVariantTime(inv.DateCreated)]).buffer));
+      packet.EncodeBuffer(EncodeVariantTime(inv.DateCreated));
     }
   }
 
@@ -293,226 +332,4 @@ export class CUser {
     packet.Encode2(list.length);
     for (const inv of list) packet.Encode2(inv.ItemSN);
   }
-}
-
-// ============================ CClientSocket ============================
-
-/** CClientSocket — one connected game client (FxServer.exe.c:9818). */
-export class CClientSocket extends CPacketSocket {
-  /** CClientSocket::OnReceiveCompletionPacket guards the client links only
-   *  (FxServer.exe.c:9673). */
-  m_fReceiveFloodGuard = true;
-
-  protected ReportReceiveOverflow(): void {
-    console.error(`Socket receive buffer overflow(${this.bunSocket?.remoteAddress ?? ""}), disconnected.`);
-  }
-
-  protected ReportSendOverflow(): void {
-    console.error(`Socket send buffer overflow, close connection: (${this.bunSocket?.remoteAddress ?? ""})`);
-  }
-
-  /** CClientSocket::PutPacket's wrapper switch (FxServer.exe.c:9526). */
-  protected ReportPutError(err: EnSocket): void {
-    const addr = this.bunSocket?.remoteAddress ?? "";
-    if (err === enSocket.kioNotConnected) {
-      console.error(`Not-connected client [${addr}] socket tried to put packet.`);
-      this.PostClosePacket(); // the GS build's case 1 falls into the LABEL_7 close (FxServer.exe.c:9534); the other exes' client wrappers just return
-    } else if (err === enSocket.kioInvalidPacket) console.error("tried to send invalid( =\tNULL ) packet");
-  }
-
-  /** CClientSocket::GetPacket's sequencing line carries the cipher detail
-   *  (FxServer.exe.c:9466) — only the GS build spells it out.  The
-   *  official's m_nPacketSeq is CClientSocket+52 (this+13), the snd seq of
-   *  the +- dump — not the rcv base. */
-  protected ReportSequencingErrorLine(addr: string): void {
-    console.error(
-      `Error in client packet sequencing(m_nHeaderType, m_nPacketSeq = ${this.m_nHeaderType}, ${this.m_nPacketSndSeq}), close connection: [${addr}]`,
-    );
-  }
-  static ms_nHeaderTypeCounter = 0; // dword_4AF338
-  static ms_tblSN2Obj = new Map<number, CClientSocket>();
-
-  m_nLocalSerialNo = 0; // CSerialObject SN
-  m_nPoolType = 0; // +468 stage tag (0 connect, 3 channels, 1 lobby, 2 room, 4 playing, 6 practice)
-  m_nSessionIdx = SESSION_IDX_NONE; // +500 — a WORD in the original (ctor `mov word -1`,
-  // FxServer.exe.c:9831): 0xFFFF = none/lobby, 0xFFFE (-2) = connecting, else slot
-  m_nSessionSerialNo = 0; // +504 (CUser::SetSessionSerialNo)
-  m_fImpPoint = 0; // +472 (CClientSocket::SetImpPoint — modified client)
-  m_dwLastRTT = 0; // the socket's last RTT reply time
-  m_apUser: (CUser | null)[] = []; // +460
-  m_nUserCount = 0; // +456
-  m_anBeforeJoinSession: number[] = []; // +476..+496 (5-deep ring)
-  m_dwIdleTime = timeGetTime() - 5000;
-  /** The CBaseSession::PutPacket queue (this+56); FlushPacket drains it. */
-  m_pendingPackets: CSendPacket[] = [];
-
-  constructor() {
-    super(CPacketSocket.dwRcvBufferSize, CPacketSocket.dwSndBufferSize, {
-      onPacket: (_sock, packet) => CMainSystem.ms_pInstance?.DispatchClient(packet, this),
-    });
-    this.m_szLogTag = "GS";
-    this.m_fClientLink = true;
-    this.m_nLocalSerialNo = CClientSocket.ms_tblSN2Obj.size + 1;
-    const nHeaderType = CClientSocket.ms_nHeaderTypeCounter % 16;
-    CClientSocket.ms_nHeaderTypeCounter++;
-    this.SetHeaderType(nHeaderType);
-    this.SetHeaderCode(CLIENTSOCKET_HEADER_CODE_RCV, CLIENTSOCKET_HEADER_CODE_SND, CLIENTSOCKET_HEADER_CODE_MODIFIER);
-    this.SetSequence(CLIENTSOCKET_SEQ, CLIENTSOCKET_SEQ, CLIENTSOCKET_SEQ_DELTA, CLIENTSOCKET_SEQ_DELTA);
-    CClientSocket.ms_tblSN2Obj.set(this.m_nLocalSerialNo, this);
-  }
-
-  /** CClientSocket::GetSocketFromLocalSerialNo */
-  static GetSocketFromLocalSerialNo(n: number): CClientSocket | null {
-    return CClientSocket.ms_tblSN2Obj.get(n) ?? null;
-  }
-
-  /** CClientSocket::AddNewUsers */
-  AddNewUsers(n: number): void {
-    this.m_apUser = [];
-    for (let i = 0; i < n; i++) this.m_apUser.push(new CUser(this));
-    this.m_nUserCount = n;
-  }
-
-  /** CClientSocket::SetUser / GetUser / GetUserCount */
-  SetUser(i: number, user: CUser): void {
-    this.m_apUser[i] = user;
-  }
-
-  GetUser(i: number): CUser | null {
-    return this.m_apUser[i] ?? null;
-  }
-
-  GetUserCount(): number {
-    return this.m_nUserCount;
-  }
-
-  /** CClientSocket::GetMaxLevelUser */
-  GetMaxLevelUser(): CUser | null {
-    let best: CUser | null = null;
-    for (const u of this.m_apUser) {
-      if (u && (!best || u.m_nLevel > best.m_nLevel)) best = u;
-    }
-    return best;
-  }
-
-  /** CClientSocket::CheckInBeforeJoinSession */
-  CheckInBeforeJoinSession(idx: number): boolean {
-    return this.m_anBeforeJoinSession.includes(idx);
-  }
-
-  /**
-   * CClientSocket::AddBeforeJoinSession (FxServer.exe.c:8908) — remember a
-   * session idx this socket left, in the fixed 5-entry array at +476 with the
-   * count at +496: once full, entry 0 falls off ([119]<=[120]<=[121]<=
-   * [122]<=[123]=idx).
-   */
-  AddBeforeJoinSession(idx: number): void {
-    if (this.CheckInBeforeJoinSession(idx)) return;
-    if (this.m_anBeforeJoinSession.length >= 5) this.m_anBeforeJoinSession.shift();
-    this.m_anBeforeJoinSession.push(idx);
-  }
-
-  /** CClientSocket::GetSelfidxFromSerialNo */
-  GetSelfidxFromSerialNo(n: number): number {
-    return this.m_apUser.findIndex((u) => u && u.m_nGlobalSerialNo === n);
-  }
-
-  /** CClientSocket::IsAttatchedUser — does this socket own the user? */
-  IsAttatchedUser(user: CUser): boolean {
-    return this.m_apUser.includes(user);
-  }
-
-  /** CClientSocket::HasAuthority — always 0 without the operator link. */
-  /** CClientSocket::HasAuthority (:8558) and CUser::HasAuthority (:26476)
-   *  are both bare `retn 0` in the shipped binary — every caller's bit
-   *  argument (1 operator-slot, 21/22/23/25 …) is a dead branch there, so
-   *  the bit semantics cannot be confirmed from behaviour and stay
-   *  unamed at the call sites. */
-  static HasAuthority(_a1: number): number {
-    return 0;
-  }
-
-  /** CClientSocket::GetMaxLevelUserIdx (FxServer.exe.c:8871) — the roster
-   *  index of the highest-level user (the raw +1984 level field). */
-  static GetMaxLevelUserIdx(socket: CClientSocket): number {
-    let best = 0;
-    let max = 0;
-    for (let i = 0; i < socket.GetUserCount(); i++) {
-      const level = socket.GetUser(i)!.m_nLevel;
-      if (level > max) {
-        max = level;
-        best = i;
-      }
-    }
-    return best;
-  }
-
-  /** CBaseSession::PutPacket target (CClientSocket vtbl+56) — queue a copy
-   *  of the session's shared packet.  (CPacketSocket::PutPacket above is the
-   *  encode-into-send-buffer primitive the base socket uses.) */
-  PutPacketQueued(packet: CSendPacket): void {
-    const copy = new CSendPacket(packet.m_nPacketType, packet.m_nCipherDegree);
-    copy.EncodeBuffer(packet.m_pBlock.subarray(1, packet.m_uOffset)); // skip the type byte
-    this.m_pendingPackets.push(copy);
-  }
-
-  /** CClientSocket vtbl+64 — send everything the sessions queued. */
-  FlushQueued(): void {
-    if (this.m_pendingPackets.length === 0) return;
-    const queue = this.m_pendingPackets;
-    this.m_pendingPackets = [];
-    for (const p of queue) this.SendPacket(p);
-  }
-
-  /** CClientSocket vtbl+76 — one last packet, then destroy the connection. */
-  ForceSendAndClose(packet: CSendPacket): void {
-    this.SendPacket(packet);
-    this.Close();
-  }
-
-  PostClosePacket(): void {
-    this.Close();
-  }
-
-  /** CClientSocket::SafeFree — session teardown, pool removal, user frees. */
-  Close(): void {
-    if (!this.m_bConnected) return;
-    const db = CCenterProcess.ms_pInstance?.db ?? null;
-    // CGameSessionTable::DestroyPlayer when seated
-    CGameSessionTable.ms_pInstance?.DestroyPlayer(this, 0);
-    // pool removal (connect pool before entry, channel pool afterwards)
-    const pool = this.m_nPoolType === 0 ? CConnectPool.ms_pInstance : CChannelPool.ms_pInstance;
-    pool?.DeleteSocket(this);
-    // per-user cleanup: table removal, dyn/inventory flush, center p1
-    for (const user of this.m_apUser) {
-      if (!user) continue;
-      CLocalUserTable.ms_pInstance?.Remove(user);
-      user.DeferFlushModifiedInfo(db!, 1);
-      if ((CMainSystem.ms_pInstance!.m_fInventoryDB & 1) !== 0) {
-        for (const inv of user.m_vtInventory) {
-          if (inv.fModified === 0) continue;
-          inv.fModified = 0;
-          db!.prUpdateInventoryAmount(user.dyn.strID, inv.ItemSN, inv.Amount);
-        }
-      }
-      if (user.m_nGlobalSerialNo !== 0) CCenterProcess.ms_pInstance?.UnregisterConnection(user.m_nGlobalSerialNo);
-      user.m_pSocket = null;
-    }
-    this.m_apUser = [];
-    this.m_nUserCount = 0;
-    CClientSocket.ms_tblSN2Obj.delete(this.m_nLocalSerialNo);
-    super.Close();
-  }
-}
-
-/** CClientSocket::GetInfoStr (FxServer.exe.c:10083) — the report tag of the
- *  original: "addr:%dP" with the seated user count, then each seat's name —
- *  ":" before the first and "," between, "NULL" for an empty seat. */
-export function GetInfoStr(socket: CClientSocket): string {
-  const count = socket.GetUserCount();
-  let str = `${socket.bunSocket?.remoteAddress ?? ""}:${count}P`;
-  for (let i = 0; i < count; i++) {
-    str += (i === 0 ? ":" : ",") + (socket.GetUser(i)?.GetName() ?? "NULL");
-  }
-  return str;
 }

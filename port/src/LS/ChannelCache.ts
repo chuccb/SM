@@ -1,4 +1,5 @@
-/**
+/** Native source unit: common/ChannelCache.cpp (CxLogin.pdb: ChannelCache1.obj).
+ *
  * CChannelCache (CxLogin.exe.c) — the per-login-server channel list cache.
  *
  * Fed by CCenterProcess::OnLocalServerInfo (p3 from the center) and
@@ -14,7 +15,7 @@
  */
 import { COSmartStream } from "../core/SmartStream.ts";
 import { CipherDegree, CSendPacket } from "../core/Packet.ts";
-import { LS_ClientSend } from "../lib/PacketIDs.ts";
+import { LS_ClientSend } from "../protocol/PacketIDs.ts";
 
 export class CChannelCache {
   m_nChannelNo = 0;

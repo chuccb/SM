@@ -1,130 +1,24 @@
-/**
- * MTUDPServer / CUDPPacketDispatcher — the login server's unreliable UDP
- * transport (CxLogin.exe.c:22580-22700 and 26148-28158).
- *
- * Boot order (CxLogin.exe.c:16086-16104): MTUDPServer ctor (MTUDPBase(1)) →
- * vtbl+20 = MTUDPServer::Startup → StartupBase(0) → CUDPPacketDispatcher
- * ctor + Resume → CListenThread.  StartupBase binds INADDR_ANY on
- * GetNumAttribute("ServerPort") + MTUDP_UDP_PORT_OFFSET, sets FIONBIO and
- * SO_RCVBUF 4096, stores the bound address and resumes the receive thread;
- * the thread (MTUDPServer::Proc) select/recvfrom-loops into
- * MTUDPBase::ProcessIncomingData, which finds-or-creates the cHost for the
- * peer address and chains every validated frame payload into the host's
- * cUnreliableQueueIn.  The dispatcher thread (CUDPPacketDispatcher::Proc)
- * drains MTUDPBase::GetUnreliableData across all hosts and runs
- * OnUDPPacket per frame — whose only payload on the login server is the
- * type-0 'check udp comm' handshake:
- *
- *   client → [E1 0][E4 globalSerialNo]        (payload length 5)
- *   server → [E1 2]                           (payload length 1)
- *
- * The client learns its global serial number from the OnLoginRes packet,
- * probes this port once, and the host is destroyed after every handled
- * datagram — the reply is one UnreliableSendTo and nothing more.
- *
- * The port keeps the original's two-thread shape as: the socket's data
- * event runs ProcessIncomingData (the receive thread), then one
- * CUDPPacketDispatcher::Proc drain (the dispatcher thread) — the same
- * call sequence, without the Sleep(5)/Sleep(10) polling.
- */
-import { BuildFrame, HOSTHANDLE, MTUDP_UDP_PORT_OFFSET, SplitDatagram } from "../FXGS/MTUDP.ts";
-import { CServerConfig } from "../core/Config.ts";
-import { PacketLog } from "../core/PacketLog.ts";
-import type { CUser } from "./Login.ts";
+/** Native source unit: common/MTUDPServer.cpp (CxLogin.pdb: MTUDPServer.obj). */
+import { CServerConfig } from "../core/ServerConfig.ts";
+import { type HOSTHANDLE, MTUDP_UDP_PORT_OFFSET } from "../shared/MTUDP.ts";
+import { MTUDPBase } from "./MTUDPBase.ts";
+import { CUDPPacketDispatcher } from "./UDPPacketDispatcher.ts";
 
-/** MTUDPBase::GetUnreliableData's drain buffer size (CUDPPacketDispatcher::Proc). */
-const UDP_DRAIN_BUFFER_SIZE = 0x1000;
-/** MTUDPServer::StartupBase's SO_RCVBUF (kept for the record; Bun fixes the
- *  socket buffer itself and offers no knob). */
 const UDP_RCVBUF_SIZE = 4096;
 
-/** cUnreliableQueueIn (CxLogin.exe.c:26148) — a growable record chain of
- *  [E4 len][payload] entries.  AddPacket drops with a report at the 0x3000
- *  capacity gate (`count + len + 2 <= 0x3000`, verbatim), GetPacket copies
- *  min(maxSize, len) and removes the whole record (the original's
- *  truncation semantics). */
-class cUnreliableQueueIn {
-  /** the AddPacket capacity gate (CxLogin.exe.c:26195) */
-  static readonly CAPACITY = 0x3000;
-  /** the longest packet AddPacket accepts (CxLogin.exe.c:26178) */
-  static readonly MAX_PACKET = 0xff;
-
-  m_anBuf = new Uint8Array(cUnreliableQueueIn.CAPACITY + 8);
-  m_nCount = 0; // +12324: bytes queued
-  m_nPacketCount = 0; // +12328: packets queued, ever
-  m_dwLastTick = 0; // +12332
-
-  /** cUnreliableQueueIn::AddPacket (CxLogin.exe.c:26173) — the original's
-   *  second argument is a flag the two call sites pass as literal 0.
-   *  [E4 len][payload] entries; 2 bytes of queue overhead per entry. */
-  AddPacket(_flags: number, pSrc: Uint8Array, len: number, tick: number): void {
-    if (pSrc === null || len === 0 || len > cUnreliableQueueIn.MAX_PACKET) return;
-    if (this.m_nCount + len + 2 > cUnreliableQueueIn.CAPACITY) {
-      console.error(`CUnreliableQueueIn::AddPacket - rcv buffer overflow ${len},${this.m_nCount}`);
-      return;
-    }
-    const at = 36 + this.m_nCount;
-    for (let k = 0; k < 4; k++) this.m_anBuf[at + k] = (len >>> (24 - 8 * k)) & 0xff; // Encode4 (BE)
-    this.m_anBuf.set(pSrc.subarray(0, len), at + 4);
-    this.m_nCount += 4 + len;
-    this.m_nPacketCount += 1;
-    this.m_dwLastTick = tick;
-  }
-
-  /** cUnreliableQueueIn::GetPacket — returns the bytes copied (0 = empty). */
-  GetPacket(pDes: Uint8Array, maxSize: number): number {
-    if (this.m_nCount === 0) return 0;
-    const len =
-      ((this.m_anBuf[36]! << 24) | (this.m_anBuf[37]! << 16) | (this.m_anBuf[38]! << 8) | this.m_anBuf[39]!) >>> 0;
-    const n = Math.min(maxSize, len);
-    pDes.set(this.m_anBuf.subarray(40, 40 + n), 0);
-    const rest = this.m_nCount - len - 4;
-    if (rest > 0) this.m_anBuf.copyWithin(36, 40 + len, 40 + len + rest);
-    this.m_nCount = rest;
-    return n;
-  }
-
-  Clear(): void {
-    this.m_nCount = 0;
-  }
-}
-
-/** cHost — MTUDPBase's per-peer record.  The login server only exercises
- *  the unreliable-in queue (+120) and the unreliable-send counter (+12460);
- *  the rest of the original's ~12 KB (net clocks, reliable windows) never
- *  runs on this link. */
-class cHost {
-  m_addrIp: number; // +4, host byte order (ntohl(sin_addr))
-  m_nPort: number; // +8
-  m_nUnreliableSendCount = 0; // +12460
-  m_queueIn = new cUnreliableQueueIn(); // +120
-
-  constructor(ip: number, port: number) {
-    this.m_addrIp = ip;
-    this.m_nPort = port;
-  }
-}
-
-const ipPortKey = (ip: number, port: number): string => `${ip}:${port}`;
-
 /** MTUDPServer (CxLogin.exe.c:28080) — MTUDPBase(bAutoDelete=1). */
-export class MTUDPServer {
+export class MTUDPServer extends MTUDPBase {
   static ms_pInstance: MTUDPServer | null = null;
 
-  m_nSocket: import("bun").udp.Socket<"buffer"> | null = null; // +20
-  m_nBytesRecv = 0; // +40
-  m_nBytesSend = 0; // +44
-  m_mpHost = new Map<string, cHost>(); // +28 — the (ip, port) host map
-  m_nIp = 0; // +48 — the bound address (INADDR_ANY)
-  m_nPort = 0; // +52 — the bound port (getsockname)
-  m_dispatcher: CUDPPacketDispatcher;
+  readonly m_dispatcher: CUDPPacketDispatcher;
 
   constructor() {
+    super();
     MTUDPServer.ms_pInstance = this;
-    this.m_dispatcher = new CUDPPacketDispatcher();
+    this.m_dispatcher = new CUDPPacketDispatcher(this);
   }
 
-  /** MTUDPServer::Startup (vtbl+20) → MTUDPBase::StartupBase(0)
+  /** MTUDPServer::StartupBase
    *  (CxLogin.exe.c:28118): socket(AF_INET, SOCK_DGRAM), bind
    *  INADDR_ANY:GetNumAttribute("ServerPort")+1, FIONBIO, getsockname,
    *  SO_RCVBUF, "MTUDP initialized succefully", CThread::Resume.  On any
@@ -150,7 +44,7 @@ export class MTUDPServer {
             port: Number(port),
           };
           this.ProcessIncomingData(new Uint8Array(data as Buffer), host);
-          this.m_dispatcher.Proc();
+          this.OnPacketsAvailable();
         },
         error: (_socket, err) => console.error(`MTUDP::ThreadProc() ::select - errorcode:${String(err)}`),
       },
@@ -162,144 +56,18 @@ export class MTUDPServer {
     console.log("MTUDP listening thread started.");
   }
 
-  /** MTUDPBase::ProcessIncomingData (27821) — find-or-create the cHost and
-   *  chain every CRC-valid frame into its in-queue.  A CRC failure discards
-   *  the rest of the datagram, exactly like the original. */
-  /** PacketLog server tag — snapshotted at construction (single-process mode). */
-  m_szLogTag = PacketLog.tag;
 
-  ProcessIncomingData(pSrc: Uint8Array, host: HOSTHANDLE): void {
-    if (PacketLog.ShowsClient()) PacketLog.Datagram("recv", pSrc, this.m_szLogTag);
-    let pHost = this.m_mpHost.get(ipPortKey(host.ip, host.port));
-    if (pHost === undefined) {
-      const pCreated = this.HostCreate(host.ip, host.port);
-      if (pCreated === null) {
-        console.error("HostCreate failed for nonexistent host");
-        return;
-      }
-      pHost = pCreated;
-    }
-    const frames = SplitDatagram(pSrc, host, "[LS]");
-    const tick = Date.now() >>> 0;
-    for (const frame of frames) {
-      pHost.m_queueIn.AddPacket(0, frame.payload, frame.payload.length, tick);
-    }
+  /** MTUDPServer::Startup (vtbl+20) — the native zero-address wrapper. */
+  async Startup(): Promise<void> {
+    await this.StartupBase(0);
   }
 
-  /** MTUDPBase::HostCreate (27745) */
-  HostCreate(ip: number, port: number): cHost | null {
-    const host = new cHost(ip, port);
-    this.m_mpHost.set(ipPortKey(ip, port), host);
-    return host;
+  protected override OnPacketsAvailable(): void {
+    this.m_dispatcher.Proc();
   }
 
-  /** MTUDPBase::GetUnreliableData (26966) — pull one record from the hosts
-   *  in map order; fills the HOSTHANDLE of the owning host. */
-  GetUnreliableData(buf: Uint8Array, maxSize: number): { nLen: number; handle: HOSTHANDLE } | null {
-    for (const host of this.m_mpHost.values()) {
-      const nLen = host.m_queueIn.GetPacket(buf, maxSize);
-      if (nLen !== 0) return { nLen, handle: { ip: host.m_addrIp, port: host.m_nPort } };
-    }
-    return null;
+  override Cleanup(): void {
+    super.Cleanup();
+    if (MTUDPServer.ms_pInstance === this) MTUDPServer.ms_pInstance = null;
   }
-
-  /** MTUDPBase::UnreliableSendTo (27157) — [len][payload][crc8] out through
-   *  the socket to the registered host. */
-  UnreliableSendTo(buf: Uint8Array, len: number, ip: number, port: number): number {
-    const pHost = this.m_mpHost.get(ipPortKey(ip, port));
-    if (pHost === null || pHost === undefined) {
-      console.error(`MTUDPBase::ReliableSendTo - Invalid parameters. ${ip}, ${port}`);
-      return 1;
-    }
-    if (buf !== null && len + 1 > 0xff) {
-      console.error("Request to send too long udp packet");
-      return 2;
-    }
-    const frame = BuildFrame(buf.subarray(0, len));
-    const fSent = this.m_nSocket!.send(frame, port, u32ToAddress(ip));
-    this.m_nBytesSend += frame.length;
-    if (PacketLog.ShowsClient()) PacketLog.Datagram("send", buf.subarray(0, len), this.m_szLogTag);
-    if (!fSent) {
-      console.error(`MTUDPBase::ResendData() - Sent 0 of ${frame.length} bytes.`);
-    }
-    pHost.m_nUnreliableSendCount += 1;
-    return 0;
-  }
-
-  /** MTUDPBase::HostDestroy (27235) */
-  HostDestroy(ip: number, port: number): void {
-    this.m_mpHost.delete(ipPortKey(ip, port));
-  }
-
-  /** MTUDPBase::HostDestroyAll (27267) */
-  HostDestroyAll(): void {
-    this.m_mpHost.clear();
-  }
-
-  /** MTUDPBase::Cleanup (26302) — "MTUDPBase cleaning up." + closesocket +
-   *  CThread::Terminate; the MTUDPServer dtor runs HostDestroyAll first. */
-  Cleanup(): void {
-    console.log("MTUDPBase cleaning up.");
-    this.m_nSocket?.close();
-    this.m_nSocket = null;
-    this.HostDestroyAll();
-  }
-}
-
-/** u32 → dotted quad (the host-order in_addr the hosts are keyed by). */
-function u32ToAddress(v: number): string {
-  return `${(v >>> 24) & 0xff}.${(v >>> 16) & 0xff}.${(v >>> 8) & 0xff}.${v & 0xff}`;
-}
-
-/** CUDPPacketDispatcher (CxLogin.exe.c:22580) — the drain thread. */
-export class CUDPPacketDispatcher {
-  static ms_pInstance: CUDPPacketDispatcher | null = null;
-
-  constructor() {
-    CUDPPacketDispatcher.ms_pInstance = this;
-  }
-
-  /** CUDPPacketDispatcher::Proc (22655) — drain every queued record. */
-  Proc(): void {
-    const pServer = MTUDPServer.ms_pInstance!;
-    const pBuf = new Uint8Array(UDP_DRAIN_BUFFER_SIZE);
-    let got = pServer.GetUnreliableData(pBuf, UDP_DRAIN_BUFFER_SIZE);
-    while (got !== null) {
-      this.OnUDPPacket(pBuf.subarray(0, got.nLen), got.handle);
-      got = pServer.GetUnreliableData(pBuf, UDP_DRAIN_BUFFER_SIZE);
-    }
-  }
-
-  /** CUDPPacketDispatcher::OnUDPPacket (22617) — the login server's only
-   *  UDP payload: the type-0 'check udp comm' handshake. */
-  OnUDPPacket(datagram: Uint8Array, host: HOSTHANDLE): void {
-    if (datagram[0] !== 0) return; // the frame type byte (always 0 here)
-    const pServer = MTUDPServer.ms_pInstance!;
-    if (datagram.length !== 5) {
-      pServer.HostDestroy(host.ip, host.port);
-      return;
-    }
-    const serial = ((datagram[1]! << 24) | (datagram[2]! << 16) | (datagram[3]! << 8) | datagram[4]!) >>> 0; // Decode4 (BE)
-    const user = FindUserFromGlobalSerialNo(serial);
-    if (user === null) {
-      pServer.HostDestroy(host.ip, host.port);
-      return;
-    }
-    if (user.GetGlobalSerialNo() === 0) {
-      console.error(`Unauthenticated user try to send 'check udp comm' packet(${user.GetName()})`);
-      user.socket.Close(); // the user's CSocket, vtbl+72(0)
-      pServer.HostDestroy(host.ip, host.port);
-      return;
-    }
-    pServer.UnreliableSendTo(Uint8Array.of(2), 1, host.ip, host.port);
-    pServer.HostDestroy(host.ip, host.port);
-  }
-}
-
-/** CLocalUserTable::FindUserFromGlobalSerialNo — resolved through the login
- *  pool's table (the original reaches TSingleton<CLocalUserTable>).  Wired
- *  by Login.ts at startup to keep the import cycle one-way. */
-export let FindUserFromGlobalSerialNo: (sn: number) => CUser | null = () => null;
-export function SetLocalUserTableFinder(fn: (sn: number) => CUser | null): void {
-  FindUserFromGlobalSerialNo = fn;
 }

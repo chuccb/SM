@@ -11,22 +11,24 @@
  *  - the relays 25/26/31/32/64/66 and the center-side answers
  *    (CM 8 / CM 13 / CM 14 / CM 1→11 / CM 7→10→64)
  */
-import { beforeAll, describe, expect, test } from "bun:test";
+import { CONNECTION_TIMEOUT_MS, CONNECTING_LIST_BUCKET_COUNT } from "../src/Center/Defs.ts";
+import { GetTickCount } from "../src/core/GetTickCount.ts";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CxCenter, CUser } from "../src/Center/Center.ts";
-import { CServerConfig, CXCENTER_STR_KEYS, CXLOGIN_STR_KEYS } from "../src/core/Config.ts";
+import { CCxCenterApp, CLocalServerMan, CUser } from "../src/Center/CxCenter.ts";
+import { CServerConfig, CXCENTER_STR_KEYS, CXLOGIN_STR_KEYS } from "../src/core/ServerConfig.ts";
 import { CSendPacket } from "../src/core/Packet.ts";
-import { CDBMan, GetUserHashNo } from "../src/db/DBMan.ts";
-import { CLocalSocket } from "../src/lib/CenterLink.ts";
-import { SVRCLASS_GAME, SVRCLASS_UTIL } from "../src/lib/S2S.ts";
+import { CDBMan } from "../src/db/DBMan.ts";
+import { CLocalSocket } from "../src/shared/LocalSocket.ts";
+import { SVRCLASS_GAME, SVRCLASS_UTIL } from "../src/protocol/CenterProtocol.ts";
 import {
   CCenterProcess,
   CClientSocket as LsClientSocket,
   CLoginPool,
-} from "../src/LS/Login.ts";
-import { LS_ClientSend } from "../src/lib/PacketIDs.ts";
+} from "../src/LS/CxLogin.ts";
+import { LS_ClientSend } from "../src/protocol/PacketIDs.ts";
 import { CMultiServer } from "../src/LS/MultiServer.ts";
 import {
   CClientSocket,
@@ -34,16 +36,18 @@ import {
   CMainPool,
   CMainSystem,
   main as utilMain,
-} from "../src/FXUS/UtilServer.ts";
+} from "../src/FXUS/CxUtil.ts";
 import type { CReceivedPacket } from "../src/core/Packet.ts";
 import { TestClient, r1, r2, r4, rstr } from "./TestClient.ts";
 
 const DIR = join(tmpdir(), "util-test-");
 const TOOL_PORT = 8128; // CListenThread::Proc's literal 0x1FC0
 
-let center: CxCenter;
+let centerApp: CCxCenterApp;
+let center: CLocalServerMan;
+let utilApp: Awaited<ReturnType<typeof utilMain>> | null = null;
 /** every CM packet the fake game-server link receives. */
-const linkInbox: { id: number; n: CReceived }[] = [];
+const linkInbox: { id: number; n: CReceivedPacket }[] = [];
 let fakeGs: CLocalSocket | null = null;
 
 async function waitLink(wantId: number, timeoutMs = 4000): Promise<CReceivedPacket> {
@@ -106,11 +110,12 @@ beforeAll(async () => {
   const ccfg = new CServerConfig(CXCENTER_STR_KEYS, true);
   ccfg.Init(join(dir, "util-center.cfg"));
   CServerConfig.ms_pInstance = ccfg;
-  center = new CxCenter(ccfg);
+  centerApp = new CCxCenterApp(ccfg);
+  center = centerApp.localServerMan;
   center.Init();
-  await center.Listen();
+  centerApp.listenThread.Start();
 
-  await utilMain(join(dir, "util0.cfg"));
+  utilApp = await utilMain(join(dir, "util0.cfg"));
   for (let i = 0; i < 200 && !center.GetSvr(SVRCLASS_UTIL, 0)?.socket; i++) await Bun.sleep(5);
   expect(center.GetSvr(SVRCLASS_UTIL, 0)?.socket).toBeTruthy();
   // the register's vtbl+20 SendInitialAttr flips CMainSystem+4 from -1 to 0
@@ -124,6 +129,14 @@ beforeAll(async () => {
   await fakeGs.ConnectToCenter("127.0.0.1", 23828, SVRCLASS_GAME, 0, 1, 1);
   for (let i = 0; i < 200 && !center.GetSvr(SVRCLASS_GAME, 0)?.socket; i++) await Bun.sleep(5);
   expect(center.GetSvr(SVRCLASS_GAME, 0)?.socket).toBeTruthy();
+});
+
+afterAll(() => {
+  fakeGs?.Close();
+  fakeGs = null;
+  utilApp?.CleanUp();
+  utilApp = null;
+  centerApp.CleanUp();
 });
 
 /** A tool that already consumed its accept hello. */
@@ -157,8 +170,8 @@ describe("util server (CxUtil)", () => {
     // would have registered it: on game server 0, session 4242)
     const cu = new CUser("op1", SVRCLASS_GAME, 0, 5001, 0, 0, center);
     cu.nSessionIdx = 4242;
-    center.userTable.set("op1", cu);
-    center.serialTable.set(5001, cu);
+    center.globalUserTable.userTable.set("op1", cu);
+    center.globalUserTable.serialTable.set(5001, cu);
 
     const t = await connectTool();
     t.send(7, (e) => {
@@ -208,15 +221,15 @@ describe("util server (CxUtil)", () => {
 
   test("32 → CM 1 name-keyed → CM 11 [E4 SN] to the user's server", async () => {
     const cu = new CUser("op2", SVRCLASS_GAME, 0, 5002, 0, 0, center);
-    center.userTable.set("op2", cu);
-    center.serialTable.set(5002, cu);
+    center.globalUserTable.userTable.set("op2", cu);
+    center.globalUserTable.serialTable.set(5002, cu);
 
     const t = await connectTool();
     t.send(32, (e) => e.str("op2"));
     const cm11 = await waitLink(11);
     expect(cm11.Decode4()).toBe(5002);
     // the util's delete has no residency check — the user is gone
-    expect(center.userTable.has("op2")).toBe(false);
+    expect(center.globalUserTable.userTable.has("op2")).toBe(false);
   });
 
   test("66 → empty CM 14 to the game + shop lists", async () => {
@@ -260,18 +273,19 @@ describe("util server (CxUtil)", () => {
 
 describe("center timer machinery (CTimerThread)", () => {
   test("the %2 tick broadcasts CM 4 [E4 gsCount][E4 connNo] to the LS+GS links", async () => {
-    center.StartTimer();
+    centerApp.timerThread.Start();
     // drain whatever the periodic broadcast already pushed
     const before = linkInbox.filter((p) => p.id === 4).length;
     linkInbox.length = 0;
     void before;
-    // the ctor's SetSvrIdx carries the conn counters (CxCenter 21590)
+    // the ctor's SetSvrIdx carries the conn counters (CUser 00415640)
     const svr = center.GetSvr(SVRCLASS_GAME, 0)!;
     const connBefore = svr.nConnNo;
     const cu = new CUser("timerop", SVRCLASS_GAME, 0, 7003, 0, 0, center);
-    center.userTable.set("timerop", cu);
-    center.serialTable.set(7003, cu);
+    center.globalUserTable.userTable.set("timerop", cu);
+    center.globalUserTable.serialTable.set(7003, cu);
     expect(svr.nConnNo).toBe(connBefore + 1); // the ctor's IncConn
+    cu.m_fConnecting = 1; // fixture: successful check arms flag before the move
     cu.SetConnectingToSvr(SVRCLASS_GAME, 0, center);
     expect(svr.nConnNo).toBe(connBefore + 1); // the same-server move nets zero
     const cm4 = await waitLink(4, 2500);
@@ -279,18 +293,18 @@ describe("center timer machinery (CTimerThread)", () => {
     expect(cm4.Decode4()).toBe(svr.nConnNo); // the live conn count
   });
 
-  test("the timeout sweep processes one %6 shard per call (0x445C stamp)", async () => {
-    const cu = center.userTable.get("timerop")!;
+  test("the timeout sweep processes one serial %6 bucket per call (0x445C stamp)", async () => {
+    const cu = center.globalUserTable.userTable.get("timerop")!;
     const connBefore = center.GetSvr(SVRCLASS_GAME, 0)!.nConnNo;
-    cu.nConnectStamp = (Date.now() & 0x7fffffff) - 0x5000; // 20 s > 0x445C → overdue
+    cu.nConnectStamp = (GetTickCount() - CONNECTION_TIMEOUT_MS - 1) >>> 0; // strictly overdue
     // six calls cover every shard exactly once
-    for (let i = 0; i < 6; i++) center.DeleteConnectionTimeoutUser();
-    expect(center.userTable.has("timerop")).toBe(false);
-    expect(center.serialTable.has(7003)).toBe(false);
+    for (let i = 0; i < CONNECTING_LIST_BUCKET_COUNT; i++) center.globalUserTable.DeleteConnectionTimeoutUser();
+    expect(center.globalUserTable.userTable.has("timerop")).toBe(false);
+    expect(center.globalUserTable.serialTable.has(7003)).toBe(false);
     // SetFree's DecConn undoes exactly the ctor's IncConn
     expect(center.GetSvr(SVRCLASS_GAME, 0)!.nConnNo).toBe(connBefore - 1);
-    // and the shard placement really is GetUserHashNo
-    expect(GetUserHashNo("timerop")).toBeLessThan(6);
+    // Connecting-list placement is by serial, NOT the account name/DB hash.
+    expect(cu.fFree).toBe(1);
   });
 });
 
@@ -324,6 +338,12 @@ describe("login server (CxLogin)", () => {
     center.m_cfg = cfg;
     pool = new CLoginPool(center, db, multiServer);
     center.AttachPool(pool);
+  });
+
+  afterAll(() => {
+    center.Stop();
+    db.Close();
+    CLoginPool.ms_pInstance = null;
   });
 
   test("client 11 carries the fx messages and the premium reward", () => {
@@ -406,7 +426,7 @@ describe("login server (CxLogin)", () => {
     fresh.m_bConnected = true;
     pool.AddSocket(stale);
     pool.AddSocket(fresh);
-    stale.m_dwLastRTT = (Date.now() & 0x7fffffff) - 30001; // just past 0x7530
+    stale.m_dwLastRTT = (GetTickCount() - 30_001) >>> 0; // just past 0x7530
     pool.DisconnectTimeoutSocket();
     expect(stale.m_bConnected).toBe(false);
     expect(fresh.m_bConnected).toBe(true);

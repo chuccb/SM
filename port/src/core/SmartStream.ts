@@ -16,12 +16,45 @@
  */
 import { deflateSync, inflateSync } from "node:zlib";
 
+const ADLER32_MODULUS = 65_521;
+const U8_BYTES = Uint8Array.BYTES_PER_ELEMENT;
+const U16_BYTES = Uint16Array.BYTES_PER_ELEMENT;
+const U32_BYTES = Uint32Array.BYTES_PER_ELEMENT;
+const SMART_STREAM_MAGIC = 0x18;
+const SMART_STREAM_MAGIC_BYTES = U8_BYTES;
+const SMART_STREAM_INNER_FLAG_BYTES = U8_BYTES;
+const SMART_STREAM_RAW_SIZE_BYTES = U32_BYTES;
+const SMART_STREAM_HEADER_BYTES = SMART_STREAM_MAGIC_BYTES + SMART_STREAM_RAW_SIZE_BYTES;
+const SMART_STREAM_STORED = 0;
+const SMART_STREAM_COMPRESSED = 1;
+const SMART_STREAM_DEFLATE_LEVEL = 9;
+
+function dataView(bytes: Uint8Array): DataView {
+  return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+}
+
+function WriteU32LE(target: Uint8Array, offset: number, value: number): void {
+  dataView(target).setUint32(offset, value, true);
+}
+
+function ReadU32LE(source: Uint8Array, offset: number): number {
+  return dataView(source).getUint32(offset, true);
+}
+
+function WrapSmartStream(inner: Uint8Array): Uint8Array {
+  const outer = new Uint8Array(SMART_STREAM_HEADER_BYTES + inner.length);
+  outer[0] = SMART_STREAM_MAGIC;
+  WriteU32LE(outer, SMART_STREAM_MAGIC_BYTES, inner.length);
+  outer.set(inner, SMART_STREAM_HEADER_BYTES);
+  return outer;
+}
+
 export function adler32(buf: Uint8Array, off = 0, len = buf.length - off): number {
   let a = 1;
   let b = 0;
   for (let i = 0; i < len; i++) {
-    a = (a + buf[off + i]!) % 65521;
-    b = (b + a) % 65521;
+    a = (a + buf[off + i]!) % ADLER32_MODULUS;
+    b = (b + a) % ADLER32_MODULUS;
   }
   return ((b << 16) | a) >>> 0;
 }
@@ -51,63 +84,62 @@ export class COSmartStream {
   }
 
   Encode1(n: number): void {
-    this.EncodeBuffer(Uint8Array.of(n & 0xff), 1);
+    this.EncodeBuffer(Uint8Array.of(n));
   }
   Encode2(n: number): void {
-    this.EncodeBuffer(Uint8Array.of(n & 0xff, (n >>> 8) & 0xff), 2);
+    const bytes = new Uint8Array(U16_BYTES);
+    dataView(bytes).setUint16(0, n, true);
+    this.EncodeBuffer(bytes);
   }
   Encode4(n: number): void {
-    this.EncodeBuffer(Uint8Array.of(n & 0xff, (n >>> 8) & 0xff, (n >>> 16) & 0xff, (n >>> 24) & 0xff), 4);
+    const bytes = new Uint8Array(U32_BYTES);
+    dataView(bytes).setUint32(0, n, true);
+    this.EncodeBuffer(bytes);
   }
   EncodeStr(str: string): void {
     const len = str.length;
     this.Encode4(len);
     const buf = new Uint8Array(len);
     for (let i = 0; i < len; i++) buf[i] = str.charCodeAt(i) & 0xff;
-    this.EncodeBuffer(buf, len);
+    this.EncodeBuffer(buf);
   }
 
   /** COSmartStream::CompressBuffernCalcCRC */
   CompressBuffernCalcCRC(): void {
-    let comp: Uint8Array | null = null;
-    if (this.sizeRawBuf !== 0) comp = deflateSync(this.pRawBuf.subarray(0, this.sizeRawBuf), { level: 9 });
-    if (comp !== null && comp.length + 4 < this.sizeRawBuf && this.sizeRawBuf !== 0) {
-      // compressed form
-      const inner = new Uint8Array(5 + comp.length);
-      inner[0] = 1;
-      const rawSize = this.sizeRawBuf;
-      inner[1] = rawSize & 0xff;
-      inner[2] = (rawSize >>> 8) & 0xff;
-      inner[3] = (rawSize >>> 16) & 0xff;
-      inner[4] = (rawSize >>> 24) & 0xff;
-      inner.set(comp, 5);
-      this.sizeCompBuf = inner.length + 5;
-      const outer = new Uint8Array(this.sizeCompBuf);
-      outer[0] = 24;
-      const innerLen = inner.length;
-      outer[1] = innerLen & 0xff;
-      outer[2] = (innerLen >>> 8) & 0xff;
-      outer[3] = (innerLen >>> 16) & 0xff;
-      outer[4] = (innerLen >>> 24) & 0xff;
-      outer.set(inner, 5);
-      this.pCompBuf = outer;
+    const raw = this.pRawBuf.subarray(0, this.sizeRawBuf);
+    const compressed = this.sizeRawBuf === 0
+      ? null
+      : deflateSync(raw, { level: SMART_STREAM_DEFLATE_LEVEL });
+
+    let inner: Uint8Array;
+    if (
+      compressed !== null &&
+      compressed.length + SMART_STREAM_RAW_SIZE_BYTES < this.sizeRawBuf
+    ) {
+      inner = new Uint8Array(
+        SMART_STREAM_INNER_FLAG_BYTES + SMART_STREAM_RAW_SIZE_BYTES + compressed.length,
+      );
+      inner[0] = SMART_STREAM_COMPRESSED;
+      WriteU32LE(inner, SMART_STREAM_INNER_FLAG_BYTES, this.sizeRawBuf);
+      inner.set(
+        compressed,
+        SMART_STREAM_INNER_FLAG_BYTES + SMART_STREAM_RAW_SIZE_BYTES,
+      );
     } else {
-      // stored form
-      const inner = new Uint8Array(1 + this.sizeRawBuf);
-      inner[0] = 0;
-      inner.set(this.pRawBuf.subarray(0, this.sizeRawBuf), 1);
-      this.sizeCompBuf = inner.length + 5;
-      const outer = new Uint8Array(this.sizeCompBuf);
-      outer[0] = 24;
-      const innerLen = inner.length;
-      outer[1] = innerLen & 0xff;
-      outer[2] = (innerLen >>> 8) & 0xff;
-      outer[3] = (innerLen >>> 16) & 0xff;
-      outer[4] = (innerLen >>> 24) & 0xff;
-      outer.set(inner, 5);
-      this.pCompBuf = outer;
+      inner = new Uint8Array(SMART_STREAM_INNER_FLAG_BYTES + this.sizeRawBuf);
+      inner[0] = SMART_STREAM_STORED;
+      inner.set(raw, SMART_STREAM_INNER_FLAG_BYTES);
     }
-    this.nCompHash = this.sizeRawBuf !== 0 ? adler32(this.pCompBuf!, 5, this.sizeCompBuf - 5) : 0;
+
+    this.pCompBuf = WrapSmartStream(inner);
+    this.sizeCompBuf = this.pCompBuf.length;
+    this.nCompHash = this.sizeRawBuf === 0
+      ? 0
+      : adler32(
+        this.pCompBuf,
+        SMART_STREAM_HEADER_BYTES,
+        this.sizeCompBuf - SMART_STREAM_HEADER_BYTES,
+      );
     this.bValidCompBuf = 1;
   }
 
@@ -146,35 +178,42 @@ export class CISmartStream {
   /** CISmartStream::CalcCRCnUncompressBuffer */
   CalcCRCnUncompressBuffer(pBuf: Uint8Array, off: number, nSize: number): void {
     this.nCompHash = adler32(pBuf, off, nSize);
-    if (pBuf[off] === 0) {
-      this.sizeRawBuf = nSize - 1;
-      this.pRawBuf = pBuf.slice(off + 1, off + 1 + this.sizeRawBuf);
-    } else if (pBuf[off] === 1) {
-      const rawSize =
-        (pBuf[off + 1]! | (pBuf[off + 2]! << 8) | (pBuf[off + 3]! << 16) | (pBuf[off + 4]! << 24)) >>> 0;
-      this.sizeRawBuf = rawSize;
-      this.pRawBuf = inflateSync(pBuf.subarray(off + 5, off + nSize));
+    if (pBuf[off] === SMART_STREAM_STORED) {
+      this.sizeRawBuf = nSize - SMART_STREAM_INNER_FLAG_BYTES;
+      this.pRawBuf = pBuf.slice(
+        off + SMART_STREAM_INNER_FLAG_BYTES,
+        off + SMART_STREAM_INNER_FLAG_BYTES + this.sizeRawBuf,
+      );
+    } else if (pBuf[off] === SMART_STREAM_COMPRESSED) {
+      this.sizeRawBuf = ReadU32LE(pBuf, off + SMART_STREAM_INNER_FLAG_BYTES);
+      this.pRawBuf = inflateSync(
+        pBuf.subarray(
+          off + SMART_STREAM_INNER_FLAG_BYTES + SMART_STREAM_RAW_SIZE_BYTES,
+          off + nSize,
+        ),
+      );
     }
     this.posDecode = 0;
   }
 
   /**
    * CISmartStream::SetBuffer — parse a buffer produced by COSmartStream.
-   * Returns the number of bytes consumed (inner length + 5-byte header).
+   * Returns the number of bytes consumed (inner length + outer header).
    */
-  SetBuffer(pBuf: Uint8Array, _off = 0): number {
-    if (pBuf[0] !== 24) throw new Error("[CISmartStream::SetBuffer(LPCBYTE)] wrong magic number");
-    const compLen =
-      (pBuf[1]! | (pBuf[2]! << 8) | (pBuf[3]! << 16) | (pBuf[4]! << 24)) >>> 0;
+  SetBuffer(pBuf: Uint8Array): number {
+    if (pBuf[0] !== SMART_STREAM_MAGIC) {
+      throw new Error("[CISmartStream::SetBuffer(LPCBYTE)] wrong magic number");
+    }
+    const compLen = ReadU32LE(pBuf, SMART_STREAM_MAGIC_BYTES);
     if (compLen !== 0) {
-      this.CalcCRCnUncompressBuffer(pBuf, 5, compLen);
+      this.CalcCRCnUncompressBuffer(pBuf, SMART_STREAM_HEADER_BYTES, compLen);
     } else {
       this.pRawBuf = new Uint8Array(0);
       this.sizeRawBuf = 0;
       this.nCompHash = 0;
       this.posDecode = 0;
     }
-    return compLen + 5;
+    return compLen + SMART_STREAM_HEADER_BYTES;
   }
 
   DecodeBuffer(len: number): Uint8Array {
@@ -186,15 +225,13 @@ export class CISmartStream {
   }
 
   Decode1(): number {
-    return this.DecodeBuffer(1)[0]!;
+    return this.DecodeBuffer(U8_BYTES)[0]!;
   }
   Decode2(): number {
-    const b = this.DecodeBuffer(2);
-    return (b[0]! | (b[1]! << 8)) & 0xffff;
+    return dataView(this.DecodeBuffer(U16_BYTES)).getUint16(0, true);
   }
   Decode4(): number {
-    const b = this.DecodeBuffer(4);
-    return ((b[0]! | (b[1]! << 8) | (b[2]! << 16) | (b[3]! << 24)) >>> 0);
+    return dataView(this.DecodeBuffer(U32_BYTES)).getUint32(0, true);
   }
   DecodeStr(): string {
     const len = this.Decode4();

@@ -9,8 +9,8 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { CIDFMan } from "../src/FXGS/CData.ts";
-import { CItemAttr } from "../src/FXGS/GameData.ts";
+import { CIDFMan } from "../src/FXGS/IDFMan.ts";
+import { CItemAttr } from "../src/FXGS/ItemAttr.ts";
 
 describe("CItemAttr (Attr/ItemAttr, FxServer.exe.c:17080)", () => {
   let saved: CIDFMan | null;

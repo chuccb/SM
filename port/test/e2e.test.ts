@@ -3,9 +3,11 @@
  * account creation, channel lists — against the real code paths.
  */
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
-import { CServerConfig, CXCENTER_STR_KEYS } from "../src/core/Config.ts";
-import { CxCenter, CUser as CenterCUser } from "../src/Center/Center.ts";
-import { main as loginMain } from "../src/LS/Login.ts";
+import { CServerConfig, CXCENTER_STR_KEYS } from "../src/core/ServerConfig.ts";
+import { CCxCenterApp, CLocalServerMan, CUser as CenterCUser, type CenterUserContext } from "../src/Center/CxCenter.ts";
+import { CONNECTION_TIMEOUT_MS, CONNECTING_LIST_BUCKET_COUNT } from "../src/Center/Defs.ts";
+import { GetTickCount } from "../src/core/GetTickCount.ts";
+import { main as loginMain } from "../src/LS/CxLogin.ts";
 import { inet_addr } from "../src/LS/MultiServer.ts";
 import {
   CClientSocket,
@@ -18,17 +20,23 @@ import {
   CMainSystem,
   CUser,
   main as gameMain,
-} from "../src/FXGS/GameServer.ts";
+} from "../src/FXGS/FxServer.ts";
 import { UpdateCRC32 } from "../src/core/CRC.ts";
-import { CLocalSocket } from "../src/lib/CenterLink.ts";
-import { SVRCLASS_UTIL, MC_ReceivedPacket } from "../src/lib/S2S.ts";
+import { RAND_MAX } from "../src/core/CRand.ts";
+import { CLocalSocket } from "../src/shared/LocalSocket.ts";
+import { SVRCLASS_UTIL, MC_ReceivedPacket } from "../src/protocol/CenterProtocol.ts";
 import { CReceivedPacket, CSendPacket, CipherDegree } from "../src/core/Packet.ts";
-import { GS_ClientSend } from "../src/lib/PacketIDs.ts";
+import { GS_ClientSend } from "../src/protocol/PacketIDs.ts";
 import { CA_CONFIG_SEED_IP } from "../src/db/CAConfigBak.ts";
-import { SimpleStreamEncrypt3, SimpleStreamDecrypt3 } from "../src/core/StreamCipher.ts";
-import { copyFileSync, mkdirSync, rmSync } from "node:fs";
+import { CDBMan, EncodePassword, GetUserHashNo } from "../src/db/DBMan.ts";
+import { SimpleStreamEncrypt3 } from "../src/core/StreamCipher.ts";
+import { copyFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { Database } from "bun:sqlite";
 import { inflateSync } from "node:zlib";
+import { BillingStore } from "../src/LocalBilling/Store.ts";
+import { BillingServer } from "../src/LocalBilling/Server.ts";
+import { registerLocalBilling } from "../src/LocalBilling/Config.ts";
+import { CUserItemMan as GSItemMan } from "../src/FXGS/ItemMan.ts";
 
 const DIR = import.meta.dir;
 const DB_DIR = DIR + "/tmp-db";
@@ -62,8 +70,9 @@ function writeGameDataPackage(): void {
   // Attr/ItemAttr: the 8-byte header + an empty id→item map section.
   const itemAttr = Buffer.alloc(12);
   itemAttr.writeUInt32LE(0, 8); // mapCount
-  // Map/room1: version 1000 + the 17 template dwords (maxTeam 8,
-  // maxPlayer 8, no level/premium gate)
+  // Map/room1 and Map/practice1: version 1000 + the 17 template dwords
+  // (maxTeam 8, maxPlayer 8, no level/premium gate).  Attr/MapGroup marks
+  // only practice1 for CPracticeSession's native random-map override.
   const map = Buffer.alloc(18 * 4);
   map.writeUInt32LE(1000, 0); // version
   map.writeUInt32LE(8, 4); // max team (+32)
@@ -83,11 +92,25 @@ function writeGameDataPackage(): void {
   map.writeUInt32LE(0, 60); // +116
   map.writeUInt32LE(0, 64); // +120
   map.writeUInt32LE(0, 68); // +84
+  const i32 = (value: number): Buffer => {
+    const out = Buffer.alloc(4);
+    out.writeInt32LE(value);
+    return out;
+  };
+  const idfName = (value: string): Buffer => Buffer.concat([i32(value.length), Buffer.from(value, "latin1")]);
+  const mapGroup = Buffer.concat([
+    i32(1),
+    idfName("PraticeMapGroup"), // the official asset's spelling
+    i32(1),
+    idfName("practice1"),
+  ]);
   // the package: FxServer.idx = [u32 count]{[u32 nameLen][name][u32 off][u32 len]}
   const entries = [
     { name: "Attr/BomberAttr", data: bomber },
     { name: "Attr/ItemAttr", data: itemAttr },
+    { name: "Attr/MapGroup", data: mapGroup },
     { name: "Map/room1", data: map },
+    { name: "Map/practice1", data: Buffer.from(map) },
   ];
   const idxParts: Buffer[] = [Buffer.alloc(4)];
   idxParts[0]!.writeUInt32LE(entries.length, 0);
@@ -104,10 +127,10 @@ function writeGameDataPackage(): void {
     offset += e.data.length;
   }
   testMapCrc = UpdateCRC32(0, new Uint8Array(map), 0, map.byteLength) >>> 0;
-  require("node:fs").writeFileSync(DATA_DIR + "/FxServer.idx", Buffer.concat(idxParts));
-  require("node:fs").writeFileSync(DATA_DIR + "/FxServer.idd", Buffer.concat(iddParts));
+  writeFileSync(DATA_DIR + "/FxServer.idx", Buffer.concat(idxParts));
+  writeFileSync(DATA_DIR + "/FxServer.idd", Buffer.concat(iddParts));
   // the game server cfg — the package base is dirname(cfg) + "/FxServer"
-  require("node:fs").copyFileSync(DIR + "/game0.cfg", DATA_DIR + "/game.cfg");
+  copyFileSync(DIR + "/game0.cfg", DATA_DIR + "/game.cfg");
 }
 import {
   TestClient,
@@ -116,17 +139,16 @@ import {
   r4,
   rstr,
   rbuf,
-  rencstr,
-  concat,
-  gsEncode,
-  gsDecode,
   type CReceived,
   type Encoder,
 } from "./TestClient.ts";
-import { BuildFrame } from "../src/FXGS/MTUDP.ts";
-import { UpdateCRC8 } from "../src/FXGS/MTUDP.ts";
+import { BuildFrame } from "../src/shared/MTUDP.ts";
+import { UpdateCRC8 } from "../src/shared/MTUDP.ts";
 
-let center: CxCenter;
+let centerApp: CCxCenterApp;
+let center: CLocalServerMan;
+let loginApp: Awaited<ReturnType<typeof loginMain>> | null = null;
+let gameApp: Awaited<ReturnType<typeof gameMain>> | null = null;
 
 /** The type-77 guild channel boots as its own process (the six original
  *  servers are six processes, and the second FXGS's CMainSystem singletons
@@ -142,12 +164,12 @@ beforeAll(async () => {
   writeGameDataPackage();
   const cfg = new CServerConfig(CXCENTER_STR_KEYS, true);
   cfg.Init(DIR + "/center.cfg");
+  cfg.ParseConfigString("FXAttrShop = 1"); // same as shipped Center cfg: exercise real GS inventory loading
   CServerConfig.ms_pInstance = cfg;
-  center = new CxCenter(cfg);
-  center.Init();
-  await center.Listen();
-  center.StartTimer();
-  await loginMain(DIR + "/login.cfg", DB_DIR);
+  centerApp = new CCxCenterApp(cfg);
+  center = centerApp.localServerMan;
+  centerApp.SetUp();
+  loginApp = await loginMain(DIR + "/login.cfg", DB_DIR);
   await Bun.sleep(300); // let the LS attach
   // The production flow attaches game servers right after the login server;
   // their attach re-broadcasts the channel info with the now-derived header
@@ -156,16 +178,24 @@ beforeAll(async () => {
   // original).
 });
 
-afterAll(() => {
-  guildGsProc?.kill();
-  guildGsProc = null; // a re-run must not see a dead handle
+afterAll(async () => {
+  if (guildGsProc) {
+    guildGsProc.kill();
+    await guildGsProc.exited;
+    guildGsProc = null; // a re-run must not see a dead handle
+  }
+  gameApp?.CleanUp();
+  gameApp = null;
+  loginApp?.CleanUp();
+  loginApp = null;
+  centerApp.CleanUp();
   if (!process.env.KEEP_DB) rmSync(DB_DIR, { recursive: true, force: true });
 });
 
 describe("center link", () => {
   test("LS attached and received channel info", () => {
     expect(center.GetSvr(1, 0)?.socket).not.toBeNull();
-    expect(center.GetSvr(1, 0)!.socket!.fGreeted).toBe(true);
+    expect(Reflect.get(center.GetSvr(1, 0)!.socket!, "fGreeted")).toBe(true);
   });
 });
 
@@ -214,17 +244,18 @@ describe("login flow", () => {
     // CAString row (CxLogin.exe.c:29957 "type = 0 or type = 1")
     expect(notice[0]!).toBe(1); // count
     expect(notice[1]!).toBe(0); // type
-    const nstr = () => {
-      const len = notice[o2!]! | (notice[o2! + 1]! << 8) | (notice[o2! + 2]! << 16) | (notice[o2! + 3]! << 24);
-      o2! += 4;
-      let t = "";
-      for (let i = 0; i < len; i++) t += String.fromCharCode(notice[o2++!]!);
-      return t;
+    const noticeView = new DataView(notice.buffer, notice.byteOffset, notice.byteLength);
+    let noticeOffset = 2;
+    const readNoticeString = () => {
+      const length = noticeView.getUint32(noticeOffset, true);
+      noticeOffset += 4;
+      const value = Buffer.from(notice.subarray(noticeOffset, noticeOffset + length)).toString("latin1");
+      noticeOffset += length;
+      return value;
     };
-    let o2 = 2;
-    expect(nstr()).toBe("ChargeUrl");
-    expect(nstr()).toBe("http://www.digicell.com.tw/opencard/money.aspx");
-    expect(o2).toBe(notice.length);
+    expect(readNoticeString()).toBe("ChargeUrl");
+    expect(readNoticeString()).toBe("http://www.digicell.com.tw/opencard/money.aspx");
+    expect(noticeOffset).toBe(notice.length);
   });
 
   test("AskFirstInfo returns the nexonclub URLs", async () => {
@@ -254,7 +285,6 @@ describe("login flow", () => {
       e.str("900101"); // s6 Birthday
       e.str("tester01"); // s7 Name
       e.str("tester01@mail.nexonclub.com"); // s8 Email
-      e.u16be ? null : null;
       e.u8(1); // EmailRcv
       e.u8(1); // Gender
       e.str("Taipei"); // Address
@@ -306,13 +336,13 @@ describe("login flow", () => {
     // re-broadcast then populates the LS channel cache.  The real game server
     // (FXGS, game0.cfg) takes the fake's place: same identification bytes
     // (class 10, idx 0, game version 7, client version 3).
-    await gameMain(DATA_DIR + "/game.cfg", DB_DIR);
+    gameApp = await gameMain(DATA_DIR + "/game.cfg", DB_DIR);
     // ...and the type-77 guild channel (game3.cfg → FXGSPort3 17888) as a
     // real second process, so the guild strategy runs against the same
     // center, LS and DB the other describes use.
     copyFileSync(DIR + "/game3.cfg", DATA_DIR + "/game77.cfg");
     guildGsProc = Bun.spawn(
-      ["bun", "run", "src/main.ts", "--only", "game", "--cfg", DATA_DIR + "/game77.cfg", "--db", DB_DIR],
+      [process.execPath, "run", "src/main.ts", "--only", "game", "--no-caitem-import", "--cfg", DATA_DIR + "/game77.cfg", "--db", DB_DIR],
       { cwd: DIR + "/..", stdout: "ignore", stderr: "ignore" },
     );
     for (let t = 0; t < 100 && !center.GetSvr(10, 3)?.socket; t++) await Bun.sleep(100);
@@ -338,7 +368,7 @@ describe("login flow", () => {
   test("RequestEnterChannelStage returns the cached channel packets", async () => {
     // the game-server attach re-broadcast landed in the pending queue; drop
     // the stale copies before asking for a fresh set
-    client.pending.length = 0;
+    client.discardPending();
     // hash 0 → mismatch → full info variant
     client.send(9, (e) => {
       e.u32be(0);
@@ -506,16 +536,16 @@ describe("game server entry flow (FXGS)", () => {
       e.u32be(0); // y — x^y = the known client hash
       e.u8(1); // z
     });
-    // 210 [E1 attr] — attr = the center's FXAttrShop flag (0 here)
+    // 210 [E1 attr] — attr = the center's FXAttrShop flag (enabled)
     const p210 = await gs.recv(210);
-    expect(r1(p210)).toBe(0);
+    expect(r1(p210)).toBe(1);
     // 202 — the whole FxItem table (empty in the test DB)
     const p202 = await gs.recv(202);
     expect(r2(p202)).toBe(0);
-    // 201 [E1 n][per-user inventory] — no rows: an empty inventory
+    // 201 [E1 users][E4 item count per user] — no rows: an empty inventory
     const p201 = await gs.recv(201);
     expect(r1(p201)).toBe(1);
-    expect(r2(p201)).toBe(0);
+    expect(r4(p201)).toBe(0);
     // the lobby announce + the rank list (packet 15 empty, then 70):
     // the entry leaves the socket at the lobby stage
     const p15 = await gs.recv(15);
@@ -526,14 +556,14 @@ describe("game server entry flow (FXGS)", () => {
     expect(rstr(p70)).toBe("tester01");
     r1(p70); // gender
     expect(r2(p70)).toBe(1); // look level (Encode2 — FxServer.exe.c:27149 vtbl+24)
-    expect(r4(p70)).toBe(0); // premium svr idx
+    expect(r4(p70)).toBe(0); // level-icon SN
     expect(r4(p70)).toBe(0); // guild sn
     expect(r2(p70)).toBe(0); // guild mark
   });
 
   test("EnterChannelStage (16) leaves the lobby for the channel stage", async () => {
     await Bun.sleep(1200); // let the center's 0.8 s state broadcast land
-    gs.send(16, (e) => {});
+    gs.send(16, () => {});
     const p13 = await gs.recv(13);
     const cnt = r2(p13);
     expect(cnt).toBe(5);
@@ -551,7 +581,7 @@ describe("game server entry flow (FXGS)", () => {
   });
 
   test("ReqChannelsState (15) re-delivers 13+14 on the channel stage", async () => {
-    gs.send(15, (e) => {});
+    gs.send(15, () => {});
     const p13 = await gs.recv(13);
     expect(r2(p13)).toBe(5);
     expect(r2(p13)).toBe(1); // the user still shows on channel 0
@@ -573,23 +603,23 @@ describe("game server entry flow (FXGS)", () => {
     expect(r4(p)).toBe(0); // draw
     expect(r4(p)).toBe(0); // lose
     expect(r4(p)).toBe(0); // exp
-    expect(r4(p)).toBe(0x7fffffff); // max exp at the top level
+    expect(r4(p)).toBe(3000); // native table: upper threshold for level 1
     expect(r2(p)).toBe(1); // level 1
     expect(r4(p)).toBe(0); // money
     expect(r1(p)).toBe(10);
     expect(r4(p)).toBe(0); // ServerIndex
     expect(r2(p)).toBe(65535); // session idx (-1)
     expect(r1(p)).toBe(0); // reveal
-    expect(r4(p)).toBe(0); // premium svr idx
+    expect(r4(p)).toBe(0); // level-icon SN
     r1(p); // community svr
-    expect(r2(p)).toBe(0); // no decorations
-    expect(r2(p)).toBe(0); // (slot tail)
+    expect(r1(p)).toBe(0); // native SendGameSlotInfo E1 count
+    expect(r2(p)).toBe(0); // fake-level tail
     expect(r2(p)).toBe(0); // category-3 items: none
   });
 
   test("EnterLobbyStage (83) returns to the lobby and creates a room (80)", async () => {
     // from the channel stage back to the lobby
-    gs.send(83, (e) => {});
+    gs.send(83, () => {});
     await gs.recv(15);
     gs.send(80, (e) => {
       e.str("my room"); // title
@@ -611,7 +641,7 @@ describe("game server entry flow (FXGS)", () => {
     await gs.recv(112);
     // the room list the leaver asked for on the way out (PutAllSessionInfo)
     // leaves with the room destroyed (the only member left)
-    gs.send(83, (e) => {});
+    gs.send(83, () => {});
     await gs.recv(15);
   });
 
@@ -668,32 +698,35 @@ function encStrInto(e: Encoder, s: string, key: number): void {
 /** Register + log in through the LS, then walk the full GS entry path.
  *  opts.gsIdx/gsPort pick the game server (the packet-6 E4 is the
  *  small-loaded index the center routes by), guildSn is the guild serial the
- *  GS entry reads, mid runs between the LS login and the GS connect. */
+ *  GS entry reads, mid runs between the LS login and the GS connect;
+ *  existingAccount skips registration when exercising a real re-login. */
 async function enterGame(
   name: string,
-  opts: { gsIdx?: number; gsPort?: number; guildSn?: number; mid?: () => void | Promise<void> } = {},
+  opts: { gsIdx?: number; gsPort?: number; guildSn?: number; existingAccount?: boolean; onInventory?: (p: CReceived) => void; mid?: () => void | Promise<void> } = {},
 ): Promise<{ ls: TestClient; gs: TestClient; sn: number }> {
   const ls = new TestClient();
   await ls.connect(13838, { sndDeg: CipherDegree.kPacketEncryptedCRC8, rcvDeg: CipherDegree.kPacketEncryptedCRC8 });
-  ls.pending.length = 0;
-  ls.send(5, (e) => {
-    e.str(name); // s1 = ID
-    e.str(name); // s2 = Password
-    e.str("q");
-    e.str("a");
-    e.str("123456-1234567");
-    e.str("900101");
-    e.str(name);
-    e.str(name + "@mail.nexonclub.com");
-    e.u8(1); // EmailRcv
-    e.u8(1); // Gender
-    e.str("Taipei");
-    e.str("02-12345678");
-    e.str("profile");
-    e.u8(0); // Reveal
-  });
-  const created = await ls.recv(5);
-  expect(r1(created)).toBe(0);
+  ls.discardPending();
+  if (!opts.existingAccount) {
+    ls.send(5, (e) => {
+      e.str(name); // s1 = ID
+      e.str(name); // s2 = Password
+      e.str("q");
+      e.str("a");
+      e.str("123456-1234567");
+      e.str("900101");
+      e.str(name);
+      e.str(name + "@mail.nexonclub.com");
+      e.u8(1); // EmailRcv
+      e.u8(1); // Gender
+      e.str("Taipei");
+      e.str("02-12345678");
+      e.str("profile");
+      e.u8(0); // Reveal
+    });
+    const created = await ls.recv(5);
+    expect(r1(created)).toBe(0);
+  }
   ls.send(3, (e) => {
     e.u8(1);
     encStrInto(e, name, 0x11223344);
@@ -734,7 +767,8 @@ async function enterGame(
   });
   await gs.recv(210);
   await gs.recv(202);
-  await gs.recv(201);
+  const inventory = await gs.recv(201);
+  opts.onInventory?.(inventory);
   await gs.recv(15);
   await gs.recv(70);
   return { ls, gs, sn };
@@ -744,6 +778,7 @@ let roomChief: TestClient | null = null;
 let roomMember: TestClient | null = null;
 let roomLobby: TestClient | null = null; // tester02, parked in the lobby
 let roomSerial = 0; // the room's +148 serial (the UDP check echoes it)
+let roomGameVersion = -1; // CRT rand value recovered from the first kickoff
 let roomMemberSN = 0; // tester03's global serial
 let testMapCrc = 0; // the CRC32 the GS computed over the test map blob
 
@@ -751,11 +786,11 @@ describe("game server room flow (FXGS)", () => {
   test("tester02 walks the entry path and sees the empty room list (83)", async () => {
     const { gs } = await enterGame("tester02");
     roomLobby = gs;
-    gs.send(83, (e) => {});
+    gs.send(83, () => {});
     await gs.recv(15);
     // no rooms: PutAllSessionInfo's loop writes no 83 packet at all
     await Bun.sleep(150);
-    expect(gs.pending.find((p) => p.id === 83)).toBeUndefined();
+    expect(gs.hasPending(83)).toBe(false);
     gs.send(20, (e) => {
       e.u32be(0x1234);
       e.u32be(0x11221122);
@@ -795,7 +830,7 @@ describe("game server room flow (FXGS)", () => {
     expect(rstr(p105)).toBe("tester01"); // AppendSimpleInfoPacket
     r1(p105); // gender
     expect(r2(p105)).toBe(1); // look level (Encode2 — FxServer.exe.c:27149 vtbl+24)
-    expect(r4(p105)).toBe(0); // premium svr idx
+    expect(r4(p105)).toBe(0); // level-icon SN
     expect(r4(p105)).toBe(0); // guild sn
     expect(r2(p105)).toBe(0); // guild mark revision
     expect(r1(p105)).toBe(0); // slot accessory: no slot decos
@@ -825,7 +860,7 @@ describe("game server room flow (FXGS)", () => {
 
   test("join (81): the joiner gets the room 105s + 112 + game type", async () => {
     const { gs, sn } = await enterGame("tester03");
-    gs.send(83, (e) => {});
+    gs.send(83, () => {});
     await gs.recv(15);
     const p83 = await gs.recv(83);
     expect(r2(p83)).toBe(0); // room 0
@@ -903,21 +938,22 @@ describe("game server room flow (FXGS)", () => {
     expect(rbuf(p107b, 3)[0]).toBe(0x04);
   });
 
-  test("select map (97) broadcasts 112 and re-issues the slot states", async () => {
+  test("select map (97): random, theme and explicit choices broadcast 112 + 107 to both clients", async () => {
     const chief = roomChief!;
     const member = roomMember!;
-    chief.send(97, (e) => {
-      e.u16(0); // map 0
-    });
-    const p112 = await chief.recv(112);
-    expect(r2(p112)).toBe(0); // the chosen map
-    // case 8: every seated slot's state is re-sent (colors unchanged)
-    for (let i = 0; i < 2; i++) {
-      const p107 = await chief.recv(107);
-      expect(r1(p107)).toBe(i);
+    // Map 0 is the ordinary 8-team map in theme 0. Negative selections must
+    // reach the same colour fold as map 0, not unsigned map 65535/65534.
+    for (const selection of [0xffff, 0xfffe, 0]) {
+      chief.send(97, (e) => e.u16(selection));
+      for (const client of [chief, member]) {
+        expect(r2(await client.recv(112))).toBe(selection);
+        for (let slot = 0; slot < 2; slot++) {
+          const packet = await client.recv(107);
+          expect(r1(packet)).toBe(slot);
+          expect(Array.from(rbuf(packet, 3))).toEqual(slot === 0 ? [2, 0, 0] : [4, 1, 1]);
+        }
+      }
     }
-    const p112b = await member.recv(112);
-    expect(r2(p112b)).toBe(0);
   });
 
   test("select color (98) → 108, select bomber (99) → 109", async () => {
@@ -954,10 +990,10 @@ describe("game server room flow (FXGS)", () => {
 
   test("set game type mod (103) → 92", async () => {
     const chief = roomChief!;
-    chief.send(103, (e) => {});
+    chief.send(103, () => {});
     await chief.recv(92);
     await roomMember!.recv(92);
-    chief.send(102, (e) => {});
+    chief.send(102, () => {});
     await chief.recv(93);
   });
 
@@ -1049,7 +1085,7 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
       e.u8(1); // color 1
     });
     await chief.recv(108);
-    chief.send(106, (e) => {});
+    chief.send(106, () => {});
     const p115 = await chief.recv(115);
     expect(r1(p115)).toBe(0); // CanStartGame = go
     const p116 = await chief.recv(116);
@@ -1089,8 +1125,8 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
   test("the MTUDP launch handshake: type 1 (mapCRC+attrs) then type 11 (peer info) → 150 + 120", async () => {
     const chief = roomChief!;
     const member = roomMember!;
-    chief.pending.length = 0;
-    member.pending.length = 0;
+    chief.discardPending();
+    member.discardPending();
     const udp = await Bun.udpSocket({});
     const sendCheck = async (gserial: number, type: number): Promise<void> => {
       // the type-1 body: [type][E4 gserial][E2 idx][E4 serial][2×(E4 ip][E2 port)]
@@ -1164,7 +1200,10 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
       // share it, so only pin non-zero
       expect(r4(p150)).toBeGreaterThan(0);
       const seq = r4(p150);
-      expect(seq).toBeGreaterThan(0); // serial ^ version
+      const version = (seq ^ roomSerial) >>> 0;
+      expect(version).toBeLessThanOrEqual(RAND_MAX); // CRT rand is 15-bit; XOR may legitimately be zero
+      if (roomGameVersion === -1) roomGameVersion = version;
+      expect(version).toBe(roomGameVersion);
       expect(r4(p150)).toBe(0); // ghostStart (tmpl+60, RAW seconds on the wire)
       expect(r4(p150)).toBe(0); // ghostFreq (tmpl+64, RAW seconds on the wire)
     }
@@ -1220,7 +1259,7 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
 
   test("practice room (86): the AI seats, the 100→110 close-with-level and the 110→111 level moves", async () => {
     const { gs } = await enterGame("tester06");
-    gs.send(83, (e) => {});
+    gs.send(83, () => {});
     await gs.recv(15);
     gs.send(86, (e) => {
       e.u8(1); // one player
@@ -1279,7 +1318,7 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
     expect(r1(dup)).toBe(3);
   });
 
-  test("the practice room dies with its socket: the next create reuses slot 0", async () => {
+  test("the reused practice room starts immediately without TCP109 or UDP and remains connected", async () => {
     const { gs } = await enterGame("tester08");
     gs.send(86, (e) => {
       e.u8(1);
@@ -1288,14 +1327,86 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
     const created = await gs.recv(89);
     expect(r1(created)).toBe(0);
     expect(r2(created)).toBe(0); // slot 0 again — the dup-86 disconnect freed it
+    r4(created); // practice session serial
+    await gs.recv(105); // the human seat
+    for (let slot = 1; slot < 8; slot++) await gs.recv(107); // AI + six closed seats
+
+    // The native CPracticeSession::LaunchGameStageEx calls DeferStartGame
+    // immediately after 116.  Unlike an ordinary room, neither TCP109 nor
+    // either MTUDP check is a prerequisite for packet 150.
+    gs.send(106, () => {});
+    const can = await gs.recv(115);
+    expect(r1(can)).toBe(0);
+    const launch = await gs.recv(116);
+    expect(r4(launch)).toBeGreaterThan(0); // launch timeGetTime
+    expect(r2(launch)).toBe(1); // Map/practice1, selected by PraticeMapGroup
+    expect(r1(launch)).toBe(2); // one human + its AI seat
+    for (const [slot, color] of [[0, 0], [1, 7]]) {
+      expect(r1(launch)).toBe(slot);
+      expect(r1(launch)).toBe(0); // no captain in normal game type
+      expect(r1(launch)).toBeLessThan(8); // spawn
+      r1(launch); // bomber
+      expect(r1(launch)).toBe(color);
+    }
+    expect(launch.off).toBe(launch.buf.length);
+    await gs.recv(173); // airplane item probabilities close LaunchGameStage
+    const kickoff = await gs.recv(150);
+    expect(r4(kickoff)).toBeGreaterThan(0); // CGameClock start time
+    r4(kickoff); // gameSerial ^ gameVersion
+    expect(r4(kickoff)).toBe(0); // ghost start (raw seconds)
+    expect(r4(kickoff)).toBe(0); // ghost frequency (raw seconds)
+    expect(kickoff.off).toBe(kickoff.buf.length);
+
+    // Reproduce the user's late TCP109 shape exactly at field level. Practice
+    // ignores it, stays in phase 1, and must never enter the phase-0 UDP-loss
+    // sweep that emitted packet 195 in the broken implementation.
+    gs.send(109, (e) => {
+      e.u32be(0x028aa605);
+      e.u8(5, 1, 1, 5);
+      e.u32be(0xffffffff);
+    });
+    await expect(gs.recv(195, 900)).rejects.toThrow("timeout");
+    expect(gs.closed).toBe(false);
+
+    // Complete the same live 89 -> roster -> 106 -> events -> 163 path.
+    // AI slot 1 dies to human slot 0, then human slot 0 reports the finish.
+    gs.send(146, (e) => {
+      e.u8(0x41);
+      e.u16(280);
+      e.u16(39);
+      e.u8(0);
+      e.u8(0);
+    });
+    const death = await gs.recv(159);
+    expect([r1(death), r2(death), r2(death), r1(death), r1(death)])
+      .toEqual([0x41, 280, 39, 0, 0]);
+    gs.send(146, (e) => {
+      e.u8(0x60);
+      e.u16(280);
+      e.u16(54);
+    });
+    const result = await gs.recv(163);
+    expect(result.buf).toHaveLength(34);
+    expect([r1(result), r1(result), r1(result), r1(result)]).toEqual([0, 0, 0, 0]);
+    expect(r1(result)).toBe(1); // human marker immediately follows the four-byte head
+    expect(r4(result)).toBeGreaterThan(0);
+    expect([r1(result), r1(result), r1(result)]).toEqual([0, 1, 0]); // win, kill, save
+    const expPercentage = r2(result);
+    expect(r2(result)).toBe(expPercentage); // unchanged exp percentages
+    expect(r2(result)).toBeGreaterThan(0); // look level
+    expect([r1(result), r1(result)]).toEqual([0, 0]);
+    expect([r1(result), r1(result), r1(result), r1(result)]).toEqual([2, 2, 0, 0]);
+    expect(r2(result)).toBeGreaterThan(0); // AI level
+    expect(Array.from({ length: 7 }, () => r1(result))).toEqual(Array(7).fill(0));
+    expect(result.off).toBe(result.buf.length); // exact 34-byte packet body consumed
     gs.close();
   });
 
   test("kill + finish → 163 GameResult faithful, and 164 waits the full 8 s", async () => {
     const chief = roomChief!;
     const member = roomMember!;
-    chief.pending.length = 0;
-    member.pending.length = 0;
+    chief.discardPending();
+    member.discardPending();
     // slot0 (the chief) reports being killed by slot 1: event 4 —
     // [E1 slotcode][E2 x][E2 y][E1 killer][E1 drops]
     chief.send(146, (e) => {
@@ -1329,8 +1440,7 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
       expect(r1(res)).toBe(0); // the 5/6/7-state flag
       expect(r1(res)).toBe(1); // winTeam — the finisher's colour; the launch re-seats
       // through GetColorForNewComer, which deals 0 to the chief and 1 to the member
-      expect(r1(res)).toBe(0); // strategy vtbl+44 view type (a normal room)
-      expect(r1(res)).toBe(0); // session vtbl+156 ladder
+      expect(r1(res)).toBe(0); // session vtbl+156 ladder; no later result-view byte
       expect(r1(res)).toBe(0); // the diff-team used-item flag
       const serials: number[] = [];
       for (let slot = 0; slot < 8; slot++) {
@@ -1339,8 +1449,8 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
         const result = r1(res);
         if (slot === 0) expect(result).toBe(2); // the killed chief lost
         if (slot === 1) expect(result).toBe(0); // the finisher won
-        expect(r1(res)).toBe(0); // +12048
-        expect(r1(res)).toBe(0); // +12016
+        expect(r1(res)).toBe(slot === 1 ? 1 : 0); // GetKillCount (+12048): slot 1 killed slot 0
+        expect(r1(res)).toBe(0); // GetSaveCount (+12016)
         const pctOld = r2(res);
         const pctNew = r2(res);
         expect(pctOld).toBe(pctNew); // the sub-15 s time factor zeroes the reward
@@ -1352,6 +1462,14 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
       expect(serials[0]).not.toBe(serials[1]);
       expect(res.off).toBe(res.buf.length); // nothing trailing
     }
+    // The same mutated _USERDYNINFO must be visible on the live encrypted
+    // detail path, even though fewer than 25 games have been completed.
+    member.send(67, (e) => e.str("tester03"));
+    const detail = await member.recv(71);
+    expect(r1(detail)).toBe(1);
+    expect(rstr(detail)).toBe("tester03"); rstr(detail); rstr(detail); r1(detail);
+    expect([r4(detail), r4(detail), r4(detail)]).toEqual([1, 0, 0]);
+    expect(r4(detail)).toBe(0); expect(r4(detail)).toBe(3000); expect(r2(detail)).toBe(1);
     // the 164 return-to-stage must NOT ride an early tick: the official
     // gate is timeGetTime() - m_dwEndTime > 0x1F40 (8 s) in the u32 stamp
     // domain — a result screen cut short after one tick crashed clients
@@ -1379,8 +1497,8 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
     // This is the path a crash-free client finally reaches; replay the
     // whole launch (106 → 115/116 → the UDP type-1 re-arms the launch-ok
     // bits → the kickoff 150) and prove the round is live once more.
-    chief.pending.length = 0;
-    member.pending.length = 0;
+    chief.discardPending();
+    member.discardPending();
     member.send(96, (e) => {
       e.u8(1); // re-ready — DoReturnPrepareStage wiped the group codes
     });
@@ -1389,7 +1507,7 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
       e.u8(1); // color 1 again — CanStartGame wants two teams
     });
     await chief.recv(108);
-    chief.send(106, (e) => {});
+    chief.send(106, () => {});
     const can2 = await chief.recv(115);
     expect(r1(can2)).toBe(0); // CanStartGame = go
     await chief.recv(116);
@@ -1420,8 +1538,10 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
     // the kickoff 150s — DoStartGame on the round-2 launch
     const p150c2 = await chief.recv(150, 4000);
     expect(r4(p150c2)).toBeGreaterThan(0);
+    expect((r4(p150c2) ^ ((roomSerial + 1) >>> 0)) >>> 0).toBe(roomGameVersion);
     const p150m2 = await member.recv(150, 4000);
     expect(r4(p150m2)).toBeGreaterThan(0);
+    expect((r4(p150m2) ^ ((roomSerial + 1) >>> 0)) >>> 0).toBe(roomGameVersion);
     // the round is live: a kill relays again
     chief.send(146, (e) => {
       e.u8(0x40);
@@ -1445,20 +1565,39 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
     expect(r4(p106)).toBeGreaterThan(0); // the member's serial
     // SetNewChief(-1) has no one left to crown — no 107s
     // drop tester02's stale lobby broadcasts so the 87 below is the destroy
-    roomLobby!.pending.length = 0;
+    roomLobby!.discardPending();
     // the chief leaving destroys the room; the lobby learns via the timer 87
     chief.close();
     const lobby = await enterGame("tester04");
-    lobby.gs.send(83, (e) => {});
+    lobby.gs.send(83, () => {});
     await lobby.gs.recv(15);
     // no rooms left: PutAllSessionInfo's loop writes no 83 packet at all
     await Bun.sleep(150);
-    expect(lobby.gs.pending.find((p) => p.id === 83)).toBeUndefined();
+    expect(lobby.gs.hasPending(83)).toBe(false);
     // the destroyed-room flag turns into an 87 on the next timer tick,
     // fanned out to the lobby-stage sockets (CChatPool::SendAll(a2, 1))
     const p87 = await roomLobby!.recv(87, 3000);
     expect(r2(p87)).toBe(0);
     expect(r4(p87)).toBeGreaterThan(0);
+  });
+
+  test("game win and active-game leave survive actual LS/GS re-login", async () => {
+    // tester03 won round one, then left the active second round. The
+    // socket teardown force-flushes one win and one loss, even at exp=0.
+    const stored = new Database(DB_DIR + "/UserInfo02.db", { readonly: true });
+    try {
+      expect(stored.query("SELECT WIN, DRAW, LOSE, EXP FROM FxUserDynamic WHERE ID='tester03'").get())
+        .toEqual({ Win: 1, Draw: 0, Lose: 1, Exp: 0 });
+    } finally { stored.close(); }
+    const again = await enterGame("tester03", { existingAccount: true });
+    try {
+      again.gs.send(67, (e) => e.str("tester03"));
+      const p = await again.gs.recv(71);
+      expect(r1(p)).toBe(1); expect(rstr(p)).toBe("tester03");
+      rstr(p); rstr(p); r1(p);
+      expect([r4(p), r4(p), r4(p)]).toEqual([1, 0, 1]);
+      expect(r4(p)).toBe(0); expect(r4(p)).toBe(3000); expect(r2(p)).toBe(1);
+    } finally { again.gs.close(); again.ls.close(); }
   });
 });
 
@@ -1498,7 +1637,7 @@ describe("audit regression: 82 auto-join, before-join ring, BomberAttr map", () 
     expect(attr.IsValidSelectIdx(1)).toBe(true); // the random index (== total)
   });
 
-  test("CUser::CheckConnectingToSvr (4151B0): the freed/twice/same/unregistered/shutdown/premium table", () => {
+  test("CUser::CheckConnectingToSvr (4153B0): the freed/twice/same/unregistered/shutdown/premium table", () => {
     // three configured game servers: a normal one, a socket-less one and a
     // type-41 premium one (the center.cfg T41 entry)
     const svrs = [
@@ -1509,14 +1648,14 @@ describe("audit regression: 82 auto-join, before-join ring, BomberAttr map", () 
     const man = {
       GetSvrNo: (t: number) => (t === 10 ? 3 : 1),
       GetSvr: (t: number, i: number) => (t === 10 ? (svrs[i] ?? null) : null),
-    } as unknown as CxCenter;
+    } as unknown as CenterUserContext;
     const mk = () => new CenterCUser("tester", 10, -0x80000000, 1, 1, 0x7f000001); // sentinel = not seated yet
     expect(mk().CheckConnectingToSvr(man, 10, 0)).toBe(1); // the happy move
     const freed = mk();
     freed.fFree = 1;
     expect(freed.CheckConnectingToSvr(man, 10, 0)).toBe(0); // Set-freed
     const twice = mk();
-    twice.nConnectingType = 10;
+    twice.m_fConnecting = 1;
     expect(twice.CheckConnectingToSvr(man, 10, 0)).toBe(0); // still connecting
     const same = mk();
     same.nSvrIdx = 0;
@@ -1534,7 +1673,7 @@ describe("audit regression: 82 auto-join, before-join ring, BomberAttr map", () 
   test("CheckConnectionEstablished (415570): match/mismatch/not-connecting", () => {
     const u = new CenterCUser("tester", 10, -0x80000000, 1, 1, 0x7f000001);
     expect(u.CheckConnectionEstablished(10, 0)).toBe(0); // not connecting → report
-    u.nConnectingType = 10;
+    u.m_fConnecting = 1;
     u.nChannel = 10;
     u.nSvrIdx = 0;
     expect(u.CheckConnectionEstablished(10, 0)).toBe(1); // the match
@@ -1606,7 +1745,9 @@ describe("guild strategy (type 77)", () => {
       main.m_nChannelType = 77;
       const guild = new CGameSession();
       expect(guild.m_pStrategy).toBeInstanceOf(CGuildSessionStrategy);
-      expect(guild.m_pStrategy.GetResultViewType()).toBe(1); // the 163 view byte
+      // The hook exists in the 2005 object layout, although the compatible
+      // 2004 packet-163 serializer does not put that later field on the wire.
+      expect(guild.m_pStrategy.GetResultViewType()).toBe(1);
     } finally {
       main.m_nChannelType = saved;
     }
@@ -1675,8 +1816,8 @@ describe("guild strategy (type 77)", () => {
     expect(r4(tail)).toBe(1); // the colour-3 group
     expect(r4(tail)).toBe(200);
 
-    // OnSelectColor drags the same-guild seatmates, nobody else
-    session.SetColor(1, 5); // the hook fires inside SetColor — slot 0 follows
+    // DoSelectColor drags the same-guild seatmates, nobody else.
+    session.DoSelectColor(1, 5); // slot 0 follows through the strategy hook
     expect(session.GetColor(0)).toBe(5); // userA shares guild 100
     expect(session.GetColor(2)).toBe(3); // userC (guild 200) untouched
 
@@ -1732,7 +1873,7 @@ describe("guild channel end to end (T77, the game3.cfg subprocess)", () => {
 
     // tester78 (guild-less) parks in the T77 lobby to watch the timer's 85
     const { gs: lobby } = await enterGame("tester78", { gsIdx: 3, gsPort: 17888 });
-    lobby.send(83, (e) => {});
+    lobby.send(83, () => {});
     await lobby.recv(15);
 
     // tester77 carries the guild: the account row is stamped between the LS
@@ -1776,7 +1917,7 @@ describe("guild channel end to end (T77, the game3.cfg subprocess)", () => {
     expect(rstr(p105)).toBe("tester77");
     r1(p105); // gender
     r2(p105); // look level
-    r4(p105); // premium svr idx
+    r4(p105); // level-icon SN
     expect(r4(p105)).toBe(7777); // guild sn (prGetUserInfo read the stamped row)
     expect(r2(p105)).toBe(3); // the seeded mark revision
     for (let i = 0; i < 7; i++) await gs.recv(107);
@@ -1810,3 +1951,377 @@ describe("guild channel end to end (T77, the game3.cfg subprocess)", () => {
     lobby.close();
   });
 });
+
+
+// A03: real LS protocol, with a DB fault visible to the server's connection.
+describe("atomic registration over the encrypted LS connection", () => {
+  function sendRegistration(client: TestClient, id: string) {
+    client.send(5, (e) => {
+      e.str(id);
+      e.str("fixture-pw");
+      e.str("question");
+      e.str("answer");
+      e.str("identity");
+      e.str("2000-01-01");
+      e.str("display");
+      e.str("mail");
+      e.u8(1);
+      e.u8(1);
+      e.str("address");
+      e.str("tel");
+      e.str("profile");
+      e.u8(1);
+    });
+  }
+  function sendLogin(client: TestClient, id: string, password = "fixture-pw") {
+    client.send(3, (e) => {
+      e.u8(1);
+      encStrInto(e, id, 0x11223344);
+      encStrInto(e, password, 0x44332211);
+      e.u32be(0);
+    });
+  }
+  function rows(db: Database, id: string) {
+    return ["FxUserAccount", "FxUserDynamic", "TxUserDynamic"].map((table) =>
+      db.query<{ n: number }, [string]>(`SELECT COUNT(*) AS n FROM ${table} WHERE ID=?`).get(id)!.n,
+    );
+  }
+  for (const autoRegister of [false, true]) {
+    test(`creation failure, clean retry and credential preservation; auto=${autoRegister}`, async () => {
+      const id = autoRegister ? "atomiclogin" : "atomicnew";
+      const file = `UserInfo${String(GetUserHashNo(id)).padStart(2, "0")}.db`;
+      const info = new Database(`${DB_DIR}/${file}`);
+      const client = new TestClient();
+      const opcode = autoRegister ? 3 : 5;
+      const send = () => autoRegister ? sendLogin(client, id) : sendRegistration(client, id);
+      try {
+        await client.connect(13838, { sndDeg: CipherDegree.kPacketEncryptedCRC8, rcvDeg: CipherDegree.kPacketEncryptedCRC8 });
+        // Last companion INSERT fails AFTER making its row. All prior writes
+        // must roll back too. This trigger is persistent so LS sees it.
+        info.exec(`CREATE TRIGGER wire_registration_fault AFTER INSERT ON TxUserDynamic
+          WHEN NEW.ID='${id}' BEGIN SELECT RAISE(FAIL,'registration fixture'); END`);
+        send();
+        const failure = await client.recv(opcode);
+        expect(r1(failure)).toBe(1); // registration failure, or invalid-login result
+        if (autoRegister) expect(r1(failure)).toBe(0); // failing user index
+        expect(failure.off).toBe(failure.buf.length);
+        expect(rows(info, id)).toEqual([0, 0, 0]);
+        info.exec("DROP TRIGGER wire_registration_fault");
+
+        send();
+        const success = await client.recv(opcode);
+        expect(r1(success)).toBe(0);
+        expect(rows(info, id)).toEqual([1, 1, 1]);
+        expect(info.query("SELECT Password,TotalConn FROM FxUserAccount WHERE ID=?").get(id))
+          .toEqual({ Password: EncodePassword("fixture-pw"), TotalConn: autoRegister ? 1 : 0 });
+
+        if (autoRegister) {
+          sendLogin(client, id, "wrong-pw");
+          const denied = await client.recv(3);
+          expect([r1(denied), r1(denied)]).toEqual([1, 0]);
+          expect(denied.off).toBe(denied.buf.length);
+        } else {
+          sendRegistration(client, id);
+          const duplicate = await client.recv(5);
+          expect(r1(duplicate)).toBe(1);
+          expect(duplicate.off).toBe(duplicate.buf.length);
+        }
+        expect(rows(info, id)).toEqual([1, 1, 1]);
+        expect(info.query("SELECT Password,TotalConn FROM FxUserAccount WHERE ID=?").get(id))
+          .toEqual({ Password: EncodePassword("fixture-pw"), TotalConn: autoRegister ? 1 : 0 });
+      } finally {
+        info.exec("DROP TRIGGER IF EXISTS wire_registration_fault");
+        client.close();
+        info.close();
+      }
+    });
+  }
+});
+
+
+// A04: real encrypted LS -> Center transfer, then an overdue real GS report.
+// Backdate only this user's deadline; do not wait 18 seconds or change the
+// global clock while the rest of the live suite is running.
+test("expired transfer rejects a late GS establishment without resurrecting the Center user", async () => {
+  const name = "tdeadline";
+  const ls = new TestClient();
+  const gs = new TestClient();
+  try {
+    await ls.connect(13838, { sndDeg: CipherDegree.kPacketEncryptedCRC8, rcvDeg: CipherDegree.kPacketEncryptedCRC8 });
+    ls.send(3, e => {
+      e.u8(1);
+      encStrInto(e, name, 0x11223344);
+      encStrInto(e, name, 0x44332211);
+      e.u32be(0);
+    });
+    const login = await ls.recv(3);
+    expect(r1(login)).toBe(0); // retained auto-registration requirement
+    expect(r2(login)).toBe(1); rstr(login); expect(r1(login)).toBe(1);
+    const serial = r4(login);
+    ls.send(6, e => { e.u8(10); e.u32be(0); e.u16(7); });
+    const transfer = await ls.recv(6);
+    expect([r1(transfer), r1(transfer), r4(transfer), r4(transfer), r2(transfer)])
+      .toEqual([1, 10, 0, 0x7f000001, 14848]);
+    const user = center.globalUserTable.serialTable.get(serial)!;
+    expect(user.m_strName).toBe(name);
+    expect([user.m_fConnecting, user.nChannel, user.nSvrIdx]).toEqual([1, 10, 0]);
+    const target = center.GetSvr(10, 0)!;
+    const before = target.nConnNo;
+    user.nConnectStamp = (GetTickCount() - CONNECTION_TIMEOUT_MS - 1) >>> 0;
+    for (let i = 0; i < CONNECTING_LIST_BUCKET_COUNT; i++) center.globalUserTable.DeleteConnectionTimeoutUser();
+    expect([user.fFree, target.nConnNo]).toEqual([1, before - 1]);
+    expect(center.globalUserTable.serialTable.has(serial)).toBe(false);
+    expect(center.globalUserTable.userTable.has(name)).toBe(false);
+
+    await gs.connect(14848, { sndDeg: CipherDegree.kPacketEncryptedCRC8, rcvDeg: CipherDegree.kPacketEncryptedCRC8 });
+    await gs.recv(0);
+    const admission = gs.recv(210, 3000).then(() => null, (error: unknown) => error);
+    gs.send(7, e => {
+      e.u8(1); e.str(name); e.u32be(serial); e.u32be(0);
+      e.u32be(0x11221122); e.u32be(0); e.u8(1);
+    });
+    const failure = await admission;
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toBe("socket closed by peer");
+    expect(gs.closed).toBe(true);
+    expect(center.globalUserTable.serialTable.has(serial)).toBe(false);
+    expect(center.globalUserTable.userTable.has(name)).toBe(false);
+    expect(target.nConnNo).toBe(before - 1);
+  } finally {
+    ls.close(); gs.close();
+  }
+});
+
+// Unlike shop.test.ts's isolated fixtures, do NOT inject Center users or arm
+// their connecting state here: LS -> GS -> Shop must establish it on the wire.
+test("GS -> Shop -> original CAItem purchases + equipped afro -> GS and fresh relogin", async () => {
+  const billingDB = new CDBMan(DB_DIR);
+  const billingStore = new BillingStore(billingDB);
+  const billingServer = new BillingServer(billingStore);
+  billingServer.listen();
+  registerLocalBilling(billingDB, { enabled: true, host: "127.0.0.1", port: billingServer.port });
+  const ready = Promise.withResolvers<void>();
+  const shopProc = Bun.spawn([
+    process.execPath, "--eval",
+    `await import('./src/main.ts'); process.send?.('ready');`,
+    "--", "--only", "shop", "--cfg", DIR + "/shop-transfer.cfg", "--db", DB_DIR,
+  ], {
+    cwd: DIR + "/..", stdout: "ignore", stderr: "inherit",
+    env: { ...process.env, TC_NOWEB: "1" },
+    ipc: message => { if (message === "ready") ready.resolve(); },
+  });
+  const deadline = setTimeout(() => ready.reject(new Error("Shop startup timeout")), 4000);
+  void shopProc.exited.then(code => ready.reject(new Error(`Shop exited: ${code}`)));
+  const shopClient = new TestClient();
+  const returnedGS = new TestClient();
+  let entered: Awaited<ReturnType<typeof enterGame>> | undefined;
+  try {
+    await ready.promise;
+    // Production main, not this fixture, imported the original CAItem backup.
+    expect(billingDB.item.query("SELECT COUNT(*) AS n FROM FxStock WHERE IsValid>0").get()).toEqual({ n: 549 });
+    expect(billingDB.item.query("SELECT BackupSet FROM CAItemImport").get()).toEqual({ BackupSet: 1 });
+    GSItemMan.ms_pInstance!.Init(billingDB); // existing GS refreshes the shared catalog as on restart/CM14
+    for (let i = 0; i < 100 && !center.GetSvr(11, 0)?.socket; i++) await Bun.sleep(10);
+    expect(center.GetSvr(11, 0)?.socket).toBeTruthy();
+    const name = "shopwalk";
+    entered = await enterGame(name, { mid: () => { billingDB.prResetMoney(name, 200000); } });
+    const { ls, gs, sn } = entered;
+    const user = center.globalUserTable.serialTable.get(sn)!;
+    expect([user.m_fConnecting, user.nChannel, user.nSvrIdx]).toEqual([0, 10, 0]);
+    ls.close(); // leaving LS must not remove the now-established GS user
+    gs.send(6, e => { e.u8(11); e.u32be(0); }); // no version word for Shop
+    const redirect = await gs.recv(6); // literal native id; fails with the old id 2
+    expect(r1(redirect)).toBe(1); expect(r1(redirect)).toBe(11);
+    expect(r4(redirect)).toBe(0); expect(r4(redirect)).toBe(0x7f000001);
+    const shopPort = r2(redirect);
+    expect(shopPort).toBe(19811);
+    expect(redirect.off).toBe(redirect.buf.length);
+    expect(gs.hasPending(2)).toBe(false);
+    expect([user.m_fConnecting, user.nChannel, user.nSvrIdx]).toEqual([1, 11, 0]);
+    gs.close(); // real source disconnect, not just a parallel Shop login
+    await shopClient.connect(shopPort, { sndDeg: 2, rcvDeg: 2 });
+    await shopClient.recv(0);
+    shopClient.send(7, e => {
+      e.u8(1); e.str(name); e.u32be(sn);
+      e.u32be(0xffffffff); e.u32be(0xffffffff); e.u8(0);
+    });
+    const info = await shopClient.recv(18);
+    expect(r1(info)).toBe(0); // initial-info premium flag: ordinary account
+    expect(center.globalUserTable.serialTable.get(sn)).toBe(user);
+    expect([user.m_fConnecting, user.nChannel, user.nSvrIdx]).toEqual([0, 11, 0]);
+    expect(shopClient.closed).toBe(false);
+    for (const [request, response, count] of [[213, 200, 549], [215, 205, 112], [220, 213, 988]]) {
+      shopClient.send(request, () => {});
+      const p = await shopClient.recv(response);
+      const wrapped = rbuf(p, r4(p));
+      expect(wrapped[0]).toBe(0x18);
+      const raw = wrapped[5] === 1 ? inflateSync(wrapped.subarray(10)) : Buffer.from(wrapped.subarray(6));
+      expect(raw.readUInt16LE()).toBe(count);
+      expect(p.off).toBe(p.buf.length);
+    }
+
+    // No fake billing replies: use the actual independently listening service.
+    shopClient.send(224, e => { e.str(name); e.str("wrong-password"); });
+    const denied = await shopClient.recv(209);
+    expect(r1(denied)).toBe(13);
+    billingStore.credit(name, 100, "e2e-starting-credit");
+    shopClient.send(224, e => { e.str(name); e.str(name); });
+    const authorized = await shopClient.recv(209);
+    expect(r1(authorized)).toBe(12); expect(r4(authorized)).toBeGreaterThan(0); expect(r4(authorized)).toBeGreaterThan(0);
+    const initialCash = await shopClient.recv(203);
+    expect([r1(initialCash), r4(initialCash)]).toEqual([1, 100]);
+    shopClient.send(206, e => { e.u16(1102); });
+    const purchase = await shopClient.recv(204);
+    expect(r1(purchase)).toBe(0); expect(purchase.buf.length - purchase.off).toBe(8);
+    shopClient.send(205, () => {});
+    const remaining = await shopClient.recv(203);
+    expect([r1(remaining), r4(remaining)]).toEqual([1, 71]);
+    expect(billingStore.inspect(name).balance).toBe(71);
+    expect(billingDB.inventory[GetUserHashNo(name)].query("SELECT Amount FROM FxUserInventory WHERE UserID=? AND ItemSN=1").get(name))
+      .toEqual({ Amount: 15 });
+
+    // Reported wire 94 b2 fb: E2 0xb2fb ^ 0xa569 = original stock 6034.
+    // Category-12 afro costs GAME Money, not the local billing wallet.
+    shopClient.send(206, e => e.u16(6034));
+    const afro = await shopClient.recv(204);
+    expect(r1(afro)).toBe(0); expect(afro.buf.length - afro.off).toBe(8);
+    expect((billingDB.prGetUserDynamic(name) as { Money: number }).Money).toBe(70000);
+    expect(billingStore.inspect(name).balance).toBe(71);
+    const ownedAfro = billingDB.GetUserInventoryRows(name).find(r => r.ItemSN === 678)!;
+    expect([ownedAfro.Amount, ownedAfro.Slot, ownedAfro.LevelCreated]).toEqual([1, 255, 2000]);
+    expect(Math.round((Date.parse(ownedAfro.DateCreated!) - Date.now()) / 86400000)).toBe(100000);
+    shopClient.send(206, e => e.u16(6034));
+    expect(r1(await shopClient.recv(204))).toBe(4); // already owned, not the bogus "-1" limit
+    expect((billingDB.prGetUserDynamic(name) as { Money: number }).Money).toBe(70000);
+
+    // Persist the real category-12 equipment slot reported by the client
+    // protocol: 210 [E2 count][E1 slot][E2 ItemSN]. The reciprocal transfer
+    // response below is the ordered wire barrier proving this write ran.
+    shopClient.send(210, e => { e.u16(1); e.u8(0xf0); e.u16(678); });
+
+    // Follow the reciprocal redirect instead of leaving a pending transfer.
+    shopClient.send(6, e => { e.u8(10); e.u32be(0); }); // Shop has no version word
+    const back = await shopClient.recv(6);
+    expect([r1(back), r1(back), r4(back), r4(back), r2(back)])
+      .toEqual([1, 10, 0, 0x7f000001, 14848]);
+    expect(back.off).toBe(back.buf.length);
+    expect(billingDB.GetUserInventoryRows(name).find(r => r.ItemSN === 678)?.Slot).toBe(0xf0);
+    expect([user.m_fConnecting, user.nChannel, user.nSvrIdx]).toEqual([1, 10, 0]);
+    shopClient.close();
+    await returnedGS.connect(14848, { sndDeg: 2, rcvDeg: 2 });
+    await returnedGS.recv(0);
+    returnedGS.send(7, e => {
+      e.u8(1); e.str(name); e.u32be(sn); e.u32be(0);
+      e.u32be(0x11221122); e.u32be(0); e.u8(1);
+    });
+    expect(r1(await returnedGS.recv(210))).toBe(1); // CM12 enabled the actual inventory loader
+    await returnedGS.recv(202);
+    const delivered = await returnedGS.recv(201);
+    expect([r1(delivered), r4(delivered)]).toEqual([1, 2]); // needle + original afro
+    expect([r4(delivered), r1(delivered), r4(delivered), rstr(delivered)]).toEqual([1, 255, 15, ""]);
+    rbuf(delivered, 8); // needle's native variant date
+    expect([r4(delivered), r1(delivered), r4(delivered), rstr(delivered)]).toEqual([678, 0xf0, 1, ""]);
+    expect(delivered.buf.length - delivered.off).toBe(8); // afro's native variant date
+    expect(billingDB.GetUserInventoryRows(name).find(r => r.ItemSN === 678)?.Amount).toBe(1);
+    expect(billingDB.inventory[GetUserHashNo(name)].query("SELECT Amount FROM FxUserInventory WHERE UserID=? AND ItemSN=1").get(name))
+      .toEqual({ Amount: 15 }); // GS loading must not expire/delete a newly bought permanent item
+    expect(center.globalUserTable.serialTable.get(sn)).toBe(user);
+    expect([user.m_fConnecting, user.nChannel, user.nSvrIdx]).toEqual([0, 10, 0]);
+
+    // Full fresh login too: no reseeding, price edits, expiry bypass or cached
+    // Shop inventory. Both purchases must survive a second GS DB load.
+    returnedGS.close(); ls.close();
+    for (let i = 0; i < 100 && center.globalUserTable.serialTable.has(sn); i++) await Bun.sleep(10);
+    expect(center.globalUserTable.serialTable.has(sn)).toBe(false);
+    entered = await enterGame(name, { existingAccount: true, onInventory: p => {
+      expect([r1(p), r4(p)]).toEqual([1, 2]);
+      for (const [item, slot, amount] of [[1, 255, 15], [678, 0xf0, 1]]) {
+        expect([r4(p), r1(p), r4(p), rstr(p)]).toEqual([item, slot, amount, ""]);
+        rbuf(p, 8);
+      }
+      expect(p.off).toBe(p.buf.length);
+    } });
+    expect((billingDB.prGetUserDynamic(name) as { Money: number }).Money).toBe(70000);
+    expect(billingStore.inspect(name).balance).toBe(71);
+    expect(billingDB.GetUserInventoryRows(name).map(r => [r.ItemSN, r.Amount])).toEqual([[1, 15], [678, 1]]);
+  } finally {
+    clearTimeout(deadline);
+    entered?.ls.close(); entered?.gs.close(); shopClient.close(); returnedGS.close();
+    shopProc.kill(); await shopProc.exited;
+    billingServer.close(); billingDB.Close();
+  }
+}, 10000);
+
+test("original owned cosmetics survive GS reentry and reach native 201, 71 and room 105 fields", async () => {
+  // The preceding production Shop startup imported the real original catalog.
+  // Seed owned rows only, not fake catalog definitions or a billing purchase.
+  const db = new CDBMan(DB_DIR), name = "decolook";
+  const itemSNs = [3, 16, 95, 169, 549, 20001]; // emotion, icon, fake level, slot deco, char deco, bomb
+  const inventoryDB = db.inventory[GetUserHashNo(name)];
+  const readInventory = (p: CReceived) => {
+    expect([r1(p), r4(p)]).toEqual([1, 6]);
+    for (const item of itemSNs) {
+      expect([r4(p), r1(p), r4(p), rstr(p)]).toEqual([item, item === 3 ? 255 : 0, 1, ""]);
+      expect(rbuf(p, 8).length).toBe(8); // A13 date value/timezone is separate
+    }
+    expect(p.off).toBe(p.buf.length);
+  };
+  const seedInventory = () => {
+    for (const sn of [...itemSNs, 170]) {
+      const stock = db.item.query<{ SN: number }, [number]>(
+        "SELECT SN FROM FxStock WHERE ItemSN=? ORDER BY SN LIMIT 1",
+      ).get(sn);
+      // Original bomb 20001 has a definition but no remaining stock row.
+      // Native GS still accepts already-owned items without a store listing.
+      if (sn === 20001) expect(stock).toBeNull();
+      else expect(stock).not.toBeNull();
+      inventoryDB.query(`INSERT INTO FxUserInventory(UserID,ItemSN,StockSN,Slot,Amount,DateCreated,LevelCreated)
+        VALUES(?,?,?,?,1,?,2000)`).run(
+        name,
+        sn,
+        stock?.SN ?? 0,
+        sn === 3 ? 255 : 0,
+        sn === 170 ? "2000-01-01T00:00:00.000Z" : "2099-01-01T00:00:00.000Z",
+      );
+    }
+    inventoryDB.query(
+      "INSERT INTO FxUserInventory(UserID,ItemSN,Amount,DateCreated,LevelCreated) VALUES(?,999999,1,'2000-01-01',0)",
+    ).run(name);
+  };
+  let entered: Awaited<ReturnType<typeof enterGame>> | undefined;
+  try {
+    for (let round = 0; round < 2; round++) {
+      entered = await enterGame(name, {
+        existingAccount: round > 0,
+        onInventory: readInventory,
+        ...(round === 0 ? { mid: seedInventory } : {}),
+      });
+      const { gs, ls, sn } = entered;
+      gs.send(67, e => e.str(name)); const detail = await gs.recv(71);
+      expect([r1(detail), rstr(detail), rstr(detail), rstr(detail), r1(detail)]).toEqual([1, name, name, "", 1]);
+      expect([r4(detail), r4(detail), r4(detail), r4(detail), r4(detail), r2(detail), r4(detail)])
+        .toEqual([0, 0, round, 0, 3000, 1, 0]); // native phase-0 room exit adds a loss (A21)
+      expect([r1(detail), r4(detail), r2(detail), r1(detail), r4(detail), r1(detail)])
+        .toEqual([10, 0, 65535, 0, 16, 0]);
+      // Literal native SendGameSlotInfo: E1 count, E1 kind, E2 picture, E2 fake level, E2 category-3 count/IDs.
+      expect([r1(detail), r1(detail), r2(detail), r2(detail), r2(detail), r2(detail)]).toEqual([1, 1, 1, 65521, 1, 3]);
+      expect(detail.off).toBe(detail.buf.length);
+
+      gs.send(80, e => { e.str("original decorations"); e.str(""); e.u8(0); e.u8(1); e.u8(0); });
+      const created = await gs.recv(80); expect(r1(created)).toBe(0);
+      const player = await gs.recv(105);
+      expect([r1(player), r4(player), r1(player), r1(player), r1(player)]).toEqual([0, sn, 1, 0, 255]);
+      rbuf(player, 3);
+      expect([rstr(player), r1(player), r2(player), r4(player), r4(player), r2(player)])
+        .toEqual([name, 1, 1, 16, 0, 0]);
+      expect([r1(player), r1(player), r1(player), r2(player)]).toEqual([1, 0, 1, 1]);
+      expect([r1(player), r1(player), r4(player), r4(player), r4(player), r4(player)])
+        .toEqual([1, 0, 0xffffffff, 1, 1, 1]);
+      expect(player.off).toBe(player.buf.length);
+      expect(db.GetUserInventoryRows(name).map(r => r.ItemSN)).toEqual([...itemSNs, 999999]);
+      gs.close(); ls.close();
+      for (let i = 0; i < 100 && center.globalUserTable.serialTable.has(sn); i++) await Bun.sleep(10);
+      expect(center.globalUserTable.serialTable.has(sn)).toBe(false);
+    }
+  } finally { entered?.gs.close(); entered?.ls.close(); db.Close(); }
+}, 10000);

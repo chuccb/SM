@@ -17,14 +17,31 @@
  * CRS*::OnReceiveRow select lists in the decompiled servers.
  */
 import { Database } from "bun:sqlite";
+import { MakeLower } from "../core/MakeLower.ts";
+import { INVENTORY_SLOT_NONE } from "../shared/Item.ts";
+import { SCHEMA_ITEM } from "./CAItemSchema.ts";
 import { mkdirSync, readFileSync } from "node:fs";
 import { LocateCAConfigBak, ParseCAConfigBak, CA_CONFIG_SEED_IP } from "./CAConfigBak.ts";
 import { join } from "node:path";
 
-/** CDBMan::GetUserHashNo — lower(name[0]) % 6. */
+/** _USERDYNINFO — money/exp/win/draw/lose (+ the id). */
+export interface _USERDYNINFO {
+  strID: string;
+  money: number;
+  exp: number;
+  win: number;
+  draw: number;
+  lose: number;
+}
+
+/** Number of UserInfo/UserInventory shards in the original deployment. */
+export const USER_DB_SHARD_COUNT = 6;
+
+/** CDBMan::GetUserHashNo — lower(name[0]) % USER_DB_SHARD_COUNT. */
 export function GetUserHashNo(id: string): number {
-  const c = id.length > 0 ? id.toLowerCase().charCodeAt(0) & 0xff : 0;
-  return c % 6;
+  const lowered = MakeLower(id);
+  const c = lowered.length > 0 ? lowered.charCodeAt(0) & 0xff : 0;
+  return c % USER_DB_SHARD_COUNT;
 }
 
 /**
@@ -47,6 +64,11 @@ export function EncodePassword(pw: string): string {
   }
   return out;
 }
+
+/** Bounded SQLite writer-lock wait on the six UserInfo connections. This
+ * storage policy avoids failing ordinary concurrent registrations immediately;
+ * it is not an emulation of SQL Server's command timeout or thread scheduling. */
+export const USER_DB_BUSY_TIMEOUT_MS = 5_000;
 
 const SCHEMA_USERINFO = `
 CREATE TABLE IF NOT EXISTS FxUserAccount (
@@ -181,65 +203,6 @@ CREATE TABLE IF NOT EXISTS BillingSvr (
 );
 `;
 
-/** FxItem / FxStock — the real column sets (CAItem.bak views + the
- *  UpdateUserItemTable / UpdateShopItemTable select filters). */
-const SCHEMA_ITEM = `
-CREATE TABLE IF NOT EXISTS FxItem (
-  SN       INTEGER PRIMARY KEY,
-  Category INTEGER NOT NULL DEFAULT 0,
-  strAttr  TEXT NOT NULL DEFAULT '',
-  nAttr1   INTEGER NOT NULL DEFAULT 0,
-  nAttr2   INTEGER NOT NULL DEFAULT 0,
-  nAttr3   INTEGER NOT NULL DEFAULT 0,
-  strName  TEXT NOT NULL DEFAULT '',
-  nLevel   INTEGER NOT NULL DEFAULT 0
-);
-CREATE TABLE IF NOT EXISTS FxStock (
-  SN             INTEGER PRIMARY KEY,
-  Category       INTEGER NOT NULL DEFAULT 0,
-  Name           TEXT NOT NULL DEFAULT '',
-  ItemSN         INTEGER NOT NULL DEFAULT 0,
-  Unit           INTEGER NOT NULL DEFAULT 1,
-  DataFile       TEXT NOT NULL DEFAULT '',
-  Price          INTEGER NOT NULL DEFAULT 0,
-  FixedPrice     INTEGER NOT NULL DEFAULT 0,
-  LimitLevel     INTEGER NOT NULL DEFAULT 0,
-  LimitEx        INTEGER NOT NULL DEFAULT 0,
-  ValidityPeriod INTEGER NOT NULL DEFAULT 0,
-  ValidityLevel  INTEGER NOT NULL DEFAULT 0,
-  StringDesc     INTEGER NOT NULL DEFAULT 0,
-  StringUsage    INTEGER NOT NULL DEFAULT 0,
-  CardNo         INTEGER NOT NULL DEFAULT 0,
-  MoneyType      INTEGER NOT NULL DEFAULT 0,
-  zorder         INTEGER NOT NULL DEFAULT 0,
-  IsValid        INTEGER NOT NULL DEFAULT 1,
-  DateCreated    TEXT,
-  Description    TEXT NOT NULL DEFAULT '',
-  Usage          INTEGER NOT NULL DEFAULT 0
-);
-CREATE TABLE IF NOT EXISTS FxString (
-  SN     INTEGER PRIMARY KEY,
-  String TEXT NOT NULL DEFAULT ''
-);
-CREATE TABLE IF NOT EXISTS FxPackageMap (
-  PackageSN     INTEGER NOT NULL,
-  StockSN       INTEGER NOT NULL,
-  Units         INTEGER NOT NULL DEFAULT 1,
-  Validitylevel INTEGER NOT NULL DEFAULT 0
-);
-CREATE TABLE IF NOT EXISTS FxCouponMap (
-  CouponSN       INTEGER NOT NULL,
-  ItemSN         INTEGER NOT NULL,
-  Units          INTEGER NOT NULL DEFAULT 1,
-  ValidityPeriod INTEGER NOT NULL DEFAULT 0,
-  Validitylevel  INTEGER NOT NULL DEFAULT 0
-);
-CREATE TABLE IF NOT EXISTS FxBonusMap (
-  Price   INTEGER NOT NULL,
-  StockSN INTEGER NOT NULL
-);
-`;
-
 const SCHEMA_GUILD = `
 CREATE TABLE IF NOT EXISTS FxGuildAccount (
   sn           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -282,6 +245,8 @@ function sqliteNowPlus(days: number): string {
 }
 
 export class CDBMan {
+  #closed = false;
+
   // The original also runs CDBMan::SyncLocalTimeFromDB (:408CC1, prGetTime →
   // SetLocalTime) — it sets the MACHINE CLOCK from the DB server.  The six TS
   // servers share the host clock, so there is nothing to sync.
@@ -291,10 +256,12 @@ export class CDBMan {
   item!: Database;
   guild!: Database;
 
-  constructor(dbDir: string, nUserDB = 6) {
+  constructor(dbDir: string, nUserDB = USER_DB_SHARD_COUNT) {
     mkdirSync(dbDir, { recursive: true });
     for (let i = 0; i < nUserDB; i++) {
-      this.userInfo.push(this.open(join(dbDir, `UserInfo${String(i).padStart(2, "0")}.db`), SCHEMA_USERINFO));
+      const db = this.open(join(dbDir, `UserInfo${String(i).padStart(2, "0")}.db`), SCHEMA_USERINFO);
+      db.exec(`PRAGMA busy_timeout = ${USER_DB_BUSY_TIMEOUT_MS}`);
+      this.userInfo.push(db);
     }
     for (let i = 0; i < nUserDB; i++) {
       this.inventory.push(this.open(join(dbDir, `UserInventory${String(i).padStart(2, "0")}.db`), SCHEMA_INVENTORY));
@@ -356,6 +323,16 @@ export class CDBMan {
     return GetUserHashNo(id);
   }
 
+  /** Release file handles for standalone billing tools/tests. Servers retain
+   * their DB manager for their whole process lifetime. */
+  Close(): void {
+    if (this.#closed) return;
+    this.#closed = true;
+    for (const db of [...this.userInfo, ...this.inventory, this.config, this.item, this.guild]) {
+      db.close();
+    }
+  }
+
   /** prGetTime */
   prGetTime(): Date {
     return new Date();
@@ -382,6 +359,13 @@ export class CDBMan {
     return this.config
       .query("SELECT sn, type, value, strAttr FROM CAString WHERE type = 0 OR type = 1 ORDER BY sn")
       .all() as { sn: number; type: number; value: string; strAttr: string }[];
+  }
+
+  /** CRSNotice — CConfigDyn::UpdateNotice's `top 1 sn,type,value` type-2 row. */
+  GetNotice(): { sn: number; type: number; value: string } | null {
+    return this.config
+      .query("SELECT sn, type, value FROM CAString WHERE type = 2 ORDER BY sn LIMIT 1")
+      .get() as { sn: number; type: number; value: string } | null;
   }
 
   /** CRSOptions ("FxUserOptions") — CCenterProcess::UpdateLevelLimit. */
@@ -463,22 +447,22 @@ export class CDBMan {
     SID: number;
   } {
     const db = this.userInfo[GetUserHashNo(id)]!;
-    let acc = db
-      .query("SELECT SID, Email, GuildSn, CommunitySvr FROM FxUserAccount WHERE ID = ? AND Password = ?")
-      .get(id, pwd) as
-      | { SID: number; Email: string; GuildSn: number; CommunitySvr: number }
-      | undefined;
+    const accountQuery = db.query<
+      { SID: number; Email: string; GuildSn: number; CommunitySvr: number },
+      [string, string]
+    >("SELECT SID, Email, GuildSn, CommunitySvr FROM FxUserAccount WHERE ID = ? AND Password = ?");
+    let acc = accountQuery.get(id, pwd);
     if (!acc) {
-      // Auto-registration: a login with an ID that was never registered
-      // creates the account with the entered credentials (name = ID).
-      // Intentional deviation from the original, which answers retval -1
-      // for unknown IDs exactly like for a wrong password.
-      const known = db.query("SELECT 1 AS x FROM FxUserAccount WHERE ID = ?").get(id);
-      if (!known && this.prCreateUser(id, id, pwd, "", 0, 0, "", "", 0, "", "", "", "", "") === 0) {
-        acc = db
-          .query("SELECT SID, Email, GuildSn, CommunitySvr FROM FxUserAccount WHERE ID = ? AND Password = ?")
-          .get(id, pwd) as typeof acc;
+      // Required extension: unknown-account login creates an account. Never
+      // replace an existing account or its password, even after a create race.
+      const known = db.query("SELECT 1 FROM FxUserAccount WHERE ID = ?").get(id);
+      if (!known) {
+        this.prCreateUser(id, id, pwd, "", 0, 0, "", "", 0, "", "", "", "", "");
       }
+      // A competing process can win before the existence check OR our INSERT.
+      // Re-authenticate the committed row, including its password; never treat
+      // a failed INSERT or an existing ID by itself as successful authentication.
+      acc = accountQuery.get(id, pwd);
     }
     if (!acc) return { retval: -1, Fxexp: 0, Txexp: 0, FxMoney: 0, Email: "", CommunitySvr: 0, GuildSn: 0, SID: 0 };
     db.query("UPDATE FxUserAccount SET TotalConn = TotalConn + 1, LastConn = ? WHERE ID = ?").run(
@@ -514,10 +498,14 @@ export class CDBMan {
   }
 
   /**
-   * prCreateUser — the account insert (+ the dynamic rows).  The shipped
-   * proc relies on the FxUserAccount.SN identity; SQLite has no per-column
-   * identity beside the rowid, so SN is assigned as MAX(SN)+1 with SID = SN
-   * (matching the original identity semantics).
+   * prCreateUser — all account/dynamic inserts commit together, or none do.
+   * The supplied SQL surrounds its inserts with BEGIN/ROLLBACK/COMMIT TRAN.
+   * BEGIN IMMEDIATE takes SQLite's writer lock BEFORE reading MAX(SN), so
+   * concurrent processes cannot choose the same shard-local serial.
+   *
+   * Keep the existing SQLite SN/SID allocation and TxUserDynamic companion
+   * row. MAX(SN)+1 is NOT proof of SQL Server IDENTITY parity (e.g. deletion
+   * or rollback gaps); the backup fragments do not establish those defaults.
    */
   prCreateUser(
     id: string,
@@ -537,16 +525,19 @@ export class CDBMan {
   ): number {
     const db = this.userInfo[GetUserHashNo(id)]!;
     try {
-      const sn = (db.query("SELECT MAX(SN) AS m FROM FxUserAccount").get() as { m: number | null }).m ?? 0;
-      db.query(
-        `INSERT INTO FxUserAccount
-           (ID, SN, SID, Name, Password, Email, EmailRcv, Gender, Address, Tel, Reveal, Profile,
-            PasswordQ, PasswordA, IdentityNo, Birthday, ShopCardNo)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,? ,1)`,
-      ).run(id, sn + 1, sn + 1, name, password, email, emailRcv, gender, address, tel, reveal, profile, passwordQ, passwordA, identityNo, birthday);
-      db.query("INSERT INTO FxUserDynamic (ID) VALUES (?)").run(id);
-      db.query("INSERT INTO TxUserDynamic (ID) VALUES (?)").run(id);
-      return 0;
+      return db.transaction(() => {
+        const previousSerial = (db.query("SELECT MAX(SN) AS m FROM FxUserAccount").get() as { m: number | null }).m ?? 0;
+        const serial = previousSerial + 1;
+        db.query(
+          `INSERT INTO FxUserAccount
+             (ID, SN, SID, Name, Password, Email, EmailRcv, Gender, Address, Tel, Reveal, Profile,
+              PasswordQ, PasswordA, IdentityNo, Birthday, ShopCardNo)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,? ,1)`,
+        ).run(id, serial, serial, name, password, email, emailRcv, gender, address, tel, reveal, profile, passwordQ, passwordA, identityNo, birthday);
+        db.query("INSERT INTO FxUserDynamic (ID) VALUES (?)").run(id);
+        db.query("INSERT INTO TxUserDynamic (ID) VALUES (?)").run(id);
+        return 0;
+      }).immediate();
     } catch {
       return -1;
     }
@@ -660,6 +651,18 @@ export class CDBMan {
       )
       .run(name, gender, address, reveal, profile, birthday, id);
     return info.changes === 1 ? 0 : -1;
+  }
+
+  /** CDBMan::WriteUserDynInfo (FXGS 00408FD2). The BOOL reports SQL
+   *  execution success, NOT the stored procedure's return value. The native
+   *  caller has already cleared its dirty flags and does not retry failure. */
+  WriteUserDynInfo(info: Readonly<_USERDYNINFO>): boolean {
+    try {
+      this.prUpdateUserDynamic(info.strID, info.money, info.exp, info.win, info.draw, info.lose);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /** prUpdateUserDynamic */
@@ -1208,24 +1211,33 @@ export class CDBMan {
       .all() as never;
   }
 
-  /** CDBMan::AddNewInventory (shop variant) — prAddInventory with the shop arg
-   *  set.  The @UserSN lookup runs on the user shard, the row lands on the
-   *  inventory shard (two separate databases).  Returns 1 on success, 0 on
-   *  failure — CDBMan::AddNewInventory's convention. */
-  prAddInventoryShop(id: string, itemSN: number, stockSN: number, unit: number, validityPeriod: number, userLevel: number): number {
-    const acc = this.userInfo[GetUserHashNo(id)]!
-      .query("SELECT COALESCE(SN, 0) AS UserSN FROM FxUserAccount WHERE ID = ?")
-      .get(id) as { UserSN: number } | undefined;
-    if (!acc) return 0;
-    const r = this.inventory[GetUserHashNo(id)]!
-      .query(
-        `INSERT INTO FxUserInventory (UserSN, UserID, ItemSN, StockSN, Slot, Amount, DateCreated, LevelCreated, Verbose)
-         VALUES (?, ?, ?, ?, 255, ?, datetime('now'), ?, '')
-         ON CONFLICT(UserID, ItemSN) DO UPDATE SET Amount = Amount + excluded.Amount
-         RETURNING ItemSN`,
-      )
-      .get(acc.UserSN, id, itemSN, stockSN, unit, userLevel) as { ItemSN: number } | undefined;
-    return r ? 1 : 0;
+  /** Shop AddNewInventory adapter. Caller resolves stock validity/defaults
+   * and FxItem-derived Addable. Return 1=new row, 2=stack update (native
+   * prAddInventory return 10), 0=failure. This transaction protects ONE
+   * inventory grant, not a cross-shard Money + package settlement.
+   * Existing stacks keep their original stock/slot/expiry metadata. */
+  prAddInventoryShop(id: string, itemSN: number, stockSN: number, unit: number, validityPeriod: number, expiryLevel: number, addable: boolean): number {
+    try {
+      const acc = this.userInfo[GetUserHashNo(id)]!
+        .query<{ UserSN: number }, [string]>("SELECT COALESCE(SN, 0) AS UserSN FROM FxUserAccount WHERE ID = ?").get(id);
+      if (!acc) return 0;
+      const db = this.invDB(id);
+      return db.transaction(() => {
+        if (addable) {
+          const updated = db.query("UPDATE FxUserInventory SET Amount=Amount+? WHERE UserID=? AND ItemSN=?").run(unit, id, itemSN);
+          if (updated.changes) return 2;
+        } else if (db.query("SELECT 1 FROM FxPreInventory WHERE UserID=? AND ItemSN=? LIMIT 1").get(id, itemSN)) {
+          return 0;
+        }
+        const inserted = db.query(`INSERT INTO FxUserInventory
+          (UserSN,UserID,ItemSN,StockSN,Slot,Amount,DateCreated,LevelCreated,Verbose)
+          VALUES(?,?,?,?,?,?,?,?,'')`).run(acc.UserSN, id, itemSN, stockSN, INVENTORY_SLOT_NONE, unit, sqliteNowPlus(validityPeriod), expiryLevel);
+        return inserted.changes === 1 ? 1 : 0;
+      }).immediate();
+    } catch (error) {
+      console.error("[Shop] AddNewInventory failed", error);
+      return 0;
+    }
   }
 
   prGetStringAttr(attrId: string): { retval: number; strVal: string } {

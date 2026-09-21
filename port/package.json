@@ -12,13 +12,28 @@
     "shop": "bun run src/main.ts --only shop",
     "util": "bun run src/main.ts --only util",
     "relay": "bun run src/main.ts --only relay",
-    "test": "bun test"
+    "test": "bun test",
+    "check:toolchain": "bun tools/check-toolchain.ts",
+    "check:imports": "bun tools/import-cycle-audit.ts",
+    "check:boundaries": "bun tools/source-boundary-audit.ts",
+    "typecheck": "tsc --project tsconfig.json",
+    "check": "bun run check:toolchain && bun run check:imports && bun run check:boundaries && bun run typecheck && bun test",
+    "probe": "bun tools/compatibility-probe.ts && bun tools/compatibility-probe-2.ts",
+    "billing": "bun run src/main.ts --only billing",
+    "billing:credit": "bun tools/billing.ts credit",
+    "billing:balance": "bun tools/billing.ts balance",
+    "caitem:inspect": "bun tools/caitem.ts inspect",
+    "caitem:import": "bun tools/caitem.ts import"
   },
   "engines": {
-    "bun": ">=1.4"
+    "bun": "1.4.3"
   },
   "devDependencies": {
-    "bun-types": "^1.4.2",
-    "typescript": "^7.0.2"
-  }
+    "bun": "1.4.2-canary.20260919.1",
+    "bun-types": "1.4.3-canary.20260919T141209",
+    "typescript": "7.1.0-dev.20260920.1"
+  },
+  "trustedDependencies": [
+    "bun"
+  ]
 }

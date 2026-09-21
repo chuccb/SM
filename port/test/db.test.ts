@@ -11,8 +11,8 @@
  *    with the entered password (retval 0), a wrong password still fails
  *    (retval -1)
  */
-import { beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CA_CONFIG_SEED_IP, LocateCAConfigBak, ParseCAConfigBak } from "../src/db/CAConfigBak.ts";
@@ -36,12 +36,24 @@ describe("CAConfigBak", () => {
 
 describe("CDBMan seeding + auto-registration", () => {
   let dir: string;
+  const managers: CDBMan[] = [];
+  const openManager = (): CDBMan => {
+    const manager = new CDBMan(dir);
+    managers.push(manager);
+    return manager;
+  };
+
   beforeAll(() => {
     dir = mkdtempSync(join(tmpdir(), "db-test-"));
   });
 
+  afterAll(() => {
+    for (const manager of managers.toReversed()) manager.Close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
   test("both tables are seeded at construction, IPs bound to the seed address", () => {
-    const db = new CDBMan(dir);
+    const db = openManager();
     expect(db.GetMultiServers()).toEqual([{ SN: 1, Name: "world name", IP: CA_CONFIG_SEED_IP, Param: 0, Current: 1 }]);
     expect(db.GetLoginServers()).toEqual([
       { SN: 1, IP: CA_CONFIG_SEED_IP, Port: 3838, Flag: 1 },
@@ -53,15 +65,15 @@ describe("CDBMan seeding + auto-registration", () => {
   });
 
   test("reseeding is idempotent — operator edits survive a reopen", () => {
-    const db = new CDBMan(dir);
+    const db = openManager();
     db.config.query("UPDATE CAMultiSvr SET Name = 'my server' WHERE SN = 1").run();
-    const again = new CDBMan(dir);
+    const again = openManager();
     expect(again.GetMultiServers().length).toBe(1);
     expect(again.GetMultiServers()[0]!.Name).toBe("my server");
   });
 
   test("a login with an unknown ID registers and succeeds (retval 0)", () => {
-    const db = new CDBMan(dir);
+    const db = openManager();
     const res = db.prCAAuthUser("autoreguser", EncodePassword("pw1234"));
     expect(res.retval).toBe(0);
     // the account is now real: reconnecting with the same password works
@@ -69,7 +81,7 @@ describe("CDBMan seeding + auto-registration", () => {
   });
 
   test("a wrong password for an existing account fails without touching it", () => {
-    const db = new CDBMan(dir);
+    const db = openManager();
     expect(db.prCAAuthUser("autoreguser", EncodePassword("WRONG")).retval).toBe(-1);
     // the stored secret is unchanged — the original password still logs in
     expect(db.prCAAuthUser("autoreguser", EncodePassword("pw1234")).retval).toBe(0);
