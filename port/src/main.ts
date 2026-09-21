@@ -9,6 +9,7 @@
  *   --cfg <file> overrides the per-piece cfg (game/shop default to the
  *        shipped FXGS_00{idx}.cfg / FXSS_00{idx}.cfg, --idx picks the file)
  *   --db <dir>   overrides the SQLite directory (default port/db)
+ *   --tranx-log-dir <dir> overrides FxShop's native cwd/Log directory
  */
 import { CServerConfig, CXCENTER_STR_KEYS } from "./core/ServerConfig.ts";
 import { PacketLog } from "./core/PacketLog.ts";
@@ -153,7 +154,11 @@ if (!only || only === "shop") {
   const idx = process.argv.includes("--idx") ? Number(process.argv[process.argv.indexOf("--idx") + 1]) : 0;
   const cfgFile =
     process.argv.includes("--cfg") ? process.argv[process.argv.indexOf("--cfg") + 1] : `../FXSS/FXSS_00${idx}.cfg`;
-  const shop = await shopMain(resolveCfg(cfgFile), dbDir);
+  const transactionLogIndex = process.argv.indexOf("--tranx-log-dir");
+  const shopOptions = transactionLogIndex < 0
+    ? {}
+    : { transactionLogDirectory: resolveCfg(process.argv[transactionLogIndex + 1]!) };
+  const shop = await shopMain(resolveCfg(cfgFile), dbDir, shopOptions);
   RegisterCleanUp(() => shop.CleanUp());
 }
 

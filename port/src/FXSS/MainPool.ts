@@ -13,14 +13,13 @@ import {
   CHARGE_VERIFY_RESULT,
   SHOP_PERMANENT_EXPIRY_LEVEL,
   SHOP_PERMANENT_VALIDITY_DAYS,
-  TRANSACTION_PAGE_BYTES,
 } from "./Defs.ts";
 import { BILLING_ERROR } from "../LocalBilling/Defs.ts";
 import { CUser } from "./User.ts";
 import type { CClientSocket } from "./ClientSocket.ts";
 import { CLocalUserTable } from "./LocalUserTable.ts";
 import { CUserPool } from "./UserPool.ts";
-import { CTranxCtrl } from "./TranxCtrl.ts";
+import { CTranxCtrl, TRANSACTION_PAGE_BYTES } from "./TranxCtrl.ts";
 import { CBillingProcess } from "./BillingProcess.ts";
 import { CCenterProcess } from "./CenterProcess.ts";
 import { CMainSystem } from "./MainSystem.ts";
@@ -699,21 +698,21 @@ export class CMainPool extends CUserPool {
     CBillingProcess.ms_pInstance?.RequestDigiQAuthorization(account, password, name);
   }
 
-  /** CMainPool::OnRequestTranxData — client 225 [E2][E2][E2][E4] → CTranxCtrl
-   *  GetData → 211 [E2 len][buf][E4 serial]. */
+  /** CMainPool::OnRequestTranxData — client 225 [E2 year][E2 month][E2 day][E4 offset]
+   *  → CTranxCtrl::GetData → 211 [E2 len][bytes][E4 nextOffset]. */
   OnRequestTranxData(n: CReceivedPacket, socket: CClientSocket): void {
-    const a = n.Decode2();
-    const b = n.Decode2();
-    const c = n.Decode2();
-    const serial = n.Decode4();
+    const year = n.Decode2();
+    const month = n.Decode2();
+    const day = n.Decode2();
+    const offset = n.Decode4();
     const user = socket.GetUser(socket.m_nSelectedUserIdx);
     if (!user) return;
     const buf = new Uint8Array(TRANSACTION_PAGE_BYTES);
-    const len = CTranxCtrl.ms_pInstance!.GetData(a, b, c, buf, serial);
+    const page = CTranxCtrl.ms_pInstance!.GetData(year, month, day, buf, offset);
     const p = new CSendPacket(SC_SendPacket.OnTranxData, CipherDegree.kPacketEncryptedCRC8);
-    p.Encode2(len);
-    p.EncodeBuffer(buf.subarray(0, len), len);
-    p.Encode4(serial);
+    p.Encode2(page.length);
+    p.EncodeBuffer(buf.subarray(0, page.length), page.length);
+    p.Encode4(page.nextOffset);
     socket.SendPacket(p);
   }
 

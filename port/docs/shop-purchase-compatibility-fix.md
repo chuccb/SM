@@ -88,7 +88,7 @@ Shop `AddNewInventory` adapter，以及實際購入後回 GS／重新登入的�
 - `bun run check`：**591 pass / 0 fail**（25 files）；包含工具鏈身分檢查與全部 strict typecheck。
 - `bun run probe`：**38 observations / 12 GAP / 26 MATCH**。
   A18三項、A19商城購入三項、A07已建模coupon reset由GAP轉MATCH。
-  當時預庫存領取、其餘交易／日期問題仍開放、待辦分組為14；後續預庫存及A13／A14已修，目前總表為7組，仍不以probe全綠冒稱全部結案。
+  當時預庫存領取、其餘交易／日期問題仍開放、待辦分組為14；後續預庫存、A12及A13／A14已修，目前總表為6組，仍不以probe全綠冒稱全部結案。
 
 沒有執行 Windows 原版 client／server EXE、外部 DigiQ，也不是原版執行結果的動態差分或畫面認證。
 

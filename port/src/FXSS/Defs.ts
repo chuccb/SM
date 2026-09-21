@@ -28,6 +28,3 @@ export const CHARGE_VERIFY_RESULT = {
 /** CMainPool::PurchaseCartList's client-215 two-byte result prefix. */
 export const CART_RECEIPT_CODE = 9;
 export const CART_RECEIPT_RESULT = 0;
-
-/** CTranxCtrl::GetData / client 225 response page capacity. */
-export const TRANSACTION_PAGE_BYTES = 500;

@@ -2105,6 +2105,7 @@ test("GS -> Shop -> original CAItem purchases + equipped afro -> GS and fresh re
     process.execPath, "--eval",
     `await import('./src/main.ts'); process.send?.('ready');`,
     "--", "--only", "shop", "--cfg", DIR + "/shop-transfer.cfg", "--db", DB_DIR,
+    "--tranx-log-dir", DB_DIR + "/Log",
   ], {
     cwd: DIR + "/..", stdout: "ignore", stderr: "inherit",
     env: { ...process.env, TC_NOWEB: "1" },

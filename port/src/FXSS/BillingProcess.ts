@@ -1,6 +1,7 @@
 /** Native source unit: FX/FxShop/BillingProcess.cpp. */
 import { CDBMan } from "../db/DBMan.ts";
 import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
+import { ItemCategory } from "../shared/Item.ts";
 import {
   BILLING_SendPacket,
   COUPON_SendPacket,
@@ -15,7 +16,9 @@ import { usesLocalBilling } from "../LocalBilling/Config.ts";
 import { BillingReader, string8 } from "../LocalBilling/Protocol.ts";
 import { BILLING_GAME, BILLING_ERROR, LOCAL_BILLING_RETRY_MS, RESERVATION_MS } from "../LocalBilling/Defs.ts";
 import { CUser } from "./User.ts";
+import { CItemMan } from "./ItemMan.ts";
 import { CLocalUserTable } from "./LocalUserTable.ts";
+import { CTranxCtrl } from "./TranxCtrl.ts";
 import { CMainSystem } from "./MainSystem.ts";
 import { EncodeVariantTime } from "../core/VariantTime.ts";
 
@@ -402,6 +405,34 @@ export class CBillingProcess {
     }
   }
 
+  /** Native 004048F4..004049CD: successful 322 receipt → durable TranxLog row → reset. */
+  private RecordPurchaseTransaction(user: CUser, stockSN: number): void {
+    const itemMan = CItemMan.ms_pInstance;
+    if (itemMan !== null) {
+      const parent = itemMan.GetShopItem(stockSN);
+      if (parent !== null) {
+        let itemSN = parent.ItemSN;
+        let amount = parent.Unit;
+        if (parent.Category === ItemCategory.Package) {
+          for (const mapping of itemMan.GetPackageMapList(parent.SN)) {
+            const child = itemMan.GetShopItem(mapping.StockSN);
+            if (child === null) continue;
+            itemSN = child.ItemSN;
+            amount = mapping.Units * child.Unit;
+          }
+        }
+        CTranxCtrl.ms_pInstance?.AddTranx({
+          kind: Number(user.m_strTranxInfo.length !== 0),
+          stockSN,
+          itemSN,
+          amount,
+          price: parent.Price,
+        });
+      }
+    }
+    user.ResetTranxInfo();
+  }
+
   /** 004047B0: 322 [E1 len + reference][E4 serial,result][error: string8]. */
   OnPurchaseConfirmTw(n: CReceivedPacket): void {
     const r = new BillingReader(n.m_pBlock.subarray(n.m_uOffset, n.m_uLength));
@@ -415,7 +446,10 @@ export class CBillingProcess {
       else {
         const p = new CSendPacket(SC_SendPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
         p.Encode1(0); p.EncodeBuffer(EncodeVariantTime(new Date()));
-        if (purchase.user.m_fTranxInProgress === 0) purchase.user.m_pSocket?.SendPacket(p);
+        if (purchase.user.m_fTranxInProgress === 0) {
+          purchase.user.m_pSocket?.SendPacket(p);
+          this.RecordPurchaseTransaction(purchase.user, purchase.stock);
+        }
       }
       this.FinishLocalPurchase(serial);
     } catch {

@@ -68,7 +68,7 @@ beforeAll(async () => {
   const scfg = new CServerConfig(FXSHOP_STR_KEYS);
   scfg.Init(DIR + "/shop0.cfg");
   CServerConfig.ms_pInstance = scfg;
-  shop = new CFxShopApp(scfg, DB_DIR);
+  shop = new CFxShopApp(scfg, DB_DIR, { transactionLogDirectory: `${DB_DIR}/Log` });
   await shop.SetUp(); // Bun.listen inside SetUp is synchronous — both ports are live
 
   // the shop's center-link greet is processed asynchronously, and the center

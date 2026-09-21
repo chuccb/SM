@@ -2,13 +2,20 @@
 
 日期：2026-09-21。範圍：目前工作樹及前兩輪相容性清點。
 
-**2026-09-21 最新修復：** [A13 日期時間／A14 Login CRT RNG 修復紀錄](time-and-login-rng-compatibility-fix.md)
+**2026-09-21 最新修復：** [A12 交易紀錄／225→211分頁修復](transaction-log-compatibility-fix.md)
+已依FxShop PE實作日期檔案、MSVC text-mode exact append+flush、500-byte logical cursor、換日／重啟讀取，
+並接到local-billing成功322；第一份probe現為 **19 MATCH／0 GAP**，兩份合計 **43 MATCH／0 GAP**。
+完整`bun run check`為 **693 pass／0 fail／26,693 expect() calls／38 files**，並通過最新preview toolchain identity、
+159-module import-cycle、103-unit／112-class source-boundary及strict typecheck。
+目前 A 類待辦為 **6組**：A07、A08、A15、A17、A18、A23及其列明未完成邊界。
+
+**前一批 A13／A14修復：** [日期時間／Login CRT RNG 修復紀錄](time-and-login-rng-compatibility-fix.md)
 已由 FxShop／CxLogin 原版 PE 固定 local SYSTEMTIME→OLE DATE、SQL local-calendar day addition、
 CxLogin TLS CRT recurrence／seed owner及destroy-service `rand() & 3`。明確TZ、DST、wire、DB callsite、PE bytes與handler draw-count均有回歸；
 第一份probe新增兩項後為 **18 MATCH／0 GAP**。Windows多IOCP worker排程仍明示為架構邊界，不假裝可決定性重播。
 兩份probes合計 **42 observations／0 GAP／42 MATCH**；完整`bun run check`為
 **688 pass／0 fail／26,656 expect() calls／37 files**，並通過toolchain identity、159-module import-cycle、source-boundary及strict typecheck。
-目前 A 類待辦為 **7組**：A07、A08、A12、A15、A17、A18、A23及其列明未完成邊界。
+該批完成時 A 類待辦為 **7組**；A12後續完成後為上述6組。
 
 **前一批五組修復：** [A05／A09／A10／A19／A22 修復紀錄](five-gap-compatibility-fix.md)
 已依 repository 內原版 binary artifacts 修正 charge key／206／重複 verify、cart cursor／count／完成旗標、
@@ -16,7 +23,7 @@ FXGS service-owned config、pre-inventory 期限／premium gate／成功30筆，
 該批兩份 probes 當時為 **40 observations／0 GAP／40 MATCH**（第一份因補 A10 的71／location欄位增至16項）；
 完整 `bun run check` 當時為 **681 pass／0 fail／26,609 expect() calls／35 files**，並通過最新preview工具鏈身分、import-cycle、source-boundary及strict typecheck。
 這只表示固定的 isolated observations 已一致，不取代 Windows differential 或下列仍開放分組。
-該批完成時 A 類待辦由14組降為 **9組**；本輪再關閉A13／A14後為上述7組。
+該批完成時 A 類待辦由14組降為 **9組**；後續關閉A13／A14後為7組，再關閉A12後為6組。
 
 **續輪清點已完成：** [第二輪 A16–A23](remaining-work-audit-2.md) 新增 8 組，
 合計 22 組待辦；A02 自動註冊依使用者要求保留，不列待修。兩份 harness 重跑共
@@ -52,7 +59,7 @@ GitHub 更晚的 Bun canary 下載失敗，未宣稱已升級，詳見 [工具�
 本輪是**清點、查證與重現，不是修復輪次**；沒有把下列業務行為直接改掉。
 不能把「六個服務都有入口」或「178 個測試通過」當成完整官方相容。
 
-- **A：已確認的差異／缺實作**。保留 A01–A15 穩定編號，其中 A02 已依使用者要求改列需求差異；跨兩輪目前剩餘 7 組待辦。
+- **A：已確認的差異／缺實作**。保留 A01–A15 穩定編號，其中 A02 已依使用者要求改列需求差異；跨兩輪目前剩餘 6 組待辦。
   一組可能包含數個相關錯誤；下文未加更新註記的發現文字是清點時歷史紀錄。
   A01–A11 原有共 14 個隔離 probe；A02 現為需求驗證，其餘 13 個重現差異；A12–A14 為靜態對照，A15 為資料部署缺口。
 - **B：仍需核實**。只有風險或尚未完成的核對，不計入已確認錯誤數量。
@@ -243,7 +250,13 @@ A08 prefix probe 已 MATCH（成功 fixture 移除多餘 tail；strict parser �
   `GameSession.ts` 的經驗百分比也會用此 getter，不能只修封包一行。
 - 驗收：所有等級、最高／越界、零及負經驗、71 的本地／跨服務回覆、結算百分比。
 
-### A12 · P1 · 交易紀錄目前不是原生的日期檔案與分頁協定
+### A12 · 已修復（原 P1）· 交易紀錄目前不是原生的日期檔案與分頁協定
+
+> 以下為修復前證據。現已實作`Log/TranxLog_YYYYMMDD.txt`、MSVC text-mode ASCII append+flush、
+> logical CRLF／physical CRCRLF、500-byte offset分頁、EOF cursor 0、missing file、換日／重啟及225→211更新cursor；
+> local-billing成功322也會寫入原版parent／last-child欄位並reset。
+> PE bytes與完整回歸見[交易紀錄修復](transaction-log-compatibility-fix.md)。
+> 尚未支援的外部billing／gift／coupon業務仍歸A08／A17，不因本項關閉而虛構完成。
 
 - TS：`FXSS/TranxCtrl.ts::CTranxCtrl.CreateNewLog` 空實作；AddTranx 只 push 記憶體陣列，
   production source 沒有呼叫它的地方。GetData 把三個參數當相等鍵，忽略 `_serial`；
@@ -358,7 +371,7 @@ bun tools/compatibility-probe.ts
   不加入 `bun test`。輸出 GAP 表示觀察到差異，MATCH 僅表示該 fixture 已一致。
   **exit 0 只表示 probe 執行成功，不表示相容性通過。**
 - 第一輪歷史結果：**14 probes，14 GAP**；A02 需求確認後為 **14 probes，13 GAP、1 MATCH**。
-  後續逐組修復，為 A10 的71／location及A13／A14各增加一項觀察；目前第一份為 **18／18 MATCH**。
+  後續逐組修復，為 A10 的71／location、A12 cursor及A13／A14各增加觀察；目前第一份為 **19／19 MATCH**。
 - 歷史差異包括 partial-write `0 vs 3`、charge reply `9000 vs 321`、cart `[10,10] vs [20,10]`、channel type `0 vs 77` 等；
   現在這些固定 fixture 均 MATCH。`shop.test.ts` 的錯誤 cash oracle亦已改為核對 user charge key。
 - `db.test.ts` 的未知帳號自動註冊符合已確認需求並持續保留；probe 全 MATCH 不會取消下列未覆蓋工作。
@@ -378,7 +391,7 @@ bun tools/compatibility-probe.ts
 1. **共用基礎層**：A01 發送佇列／backpressure → A10 service-owned config →
    A04 時鐘／wrap。先確保後續 wire 測試不被資料遺失或串 config 汙染。
 2. **帳號與持久層**：A03、有效 SQL 還原與 oracle 調整；保留 A02 自動註冊需求，一起補資料失敗測試。
-3. **完整商城垂直流程**：A05–A09 ＋ A12／A13，串起 user 初始化→儲值驗證→
+3. **完整商城垂直流程**：以已完成的A05／A09／A12／A13作護欄，繼續A07／A08／A17／A18，串起 user 初始化→儲值驗證→
    gift／coupon／單品／cart→billing 回覆→庫存→receipt／Reset。
    不把它拆成幾個空 handler 填完就宣稱商城完成。
 4. **等級／結算鏈**：A11，補所有 caller 與本地／遠端 user-info 差分。

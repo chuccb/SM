@@ -30,6 +30,7 @@ import { CGuildTable } from "../src/FXGS/Guild.ts";
 import { CLocalUserTable as GameLocalUserTable } from "../src/FXGS/LocalUserTable.ts";
 import { CLoginPool } from "../src/LS/LoginPool.ts";
 import type { CClientSocket as LoginSocket } from "../src/LS/ClientSocket.ts";
+import { CTranxCtrl, TRANSACTION_PAGE_BYTES } from "../src/FXSS/TranxCtrl.ts";
 import { CDynInfoCalculator_GetMaxExpInLevel, kLevelTableSize } from "../src/shared/LevelTable.ts";
 
 function body(write: (p: CSendPacket) => void): CReceivedPacket {
@@ -210,6 +211,19 @@ function main(): void {
     location.Decode1(); location.DecodeStr(); location.Decode1();
     report("A10.location-service-index", location.Decode4(), 1);
     report("A11.out-of-range-max-exp", CDynInfoCalculator_GetMaxExpInLevel(kLevelTableSize), 0x7fffffff);
+
+    const tranx = new CTranxCtrl(join(dir, "TranxLog"), () => new Date(2026, 8, 21, 1, 2, 3));
+    tranx.Init();
+    for (let i = 0; i < 23; i++) {
+      tranx.AddTranx({ kind: 0, stockSN: 5000, itemSN: 300, amount: 2, price: 100 });
+    }
+    const tranxPage = new Uint8Array(TRANSACTION_PAGE_BYTES);
+    const firstTranxPage = tranx.GetData(2026, 9, 21, tranxPage, 0);
+    const finalTranxPage = tranx.GetData(2026, 9, 21, tranxPage, firstTranxPage.nextOffset);
+    report("A12.transaction-log-cursor", [firstTranxPage, finalTranxPage], [
+      { length: 500, nextOffset: 500 },
+      { length: 52, nextOffset: 0 },
+    ]);
 
     const priorTimeZone = process.env.TZ;
     try {

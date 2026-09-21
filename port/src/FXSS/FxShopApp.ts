@@ -14,6 +14,10 @@ import { CTimerThread } from "./TimerThread.ts";
 import { CListenThread } from "./ListenThread.ts";
 import { CListenExThread } from "./ListenExThread.ts";
 
+export interface FxShopAppOptions {
+  readonly transactionLogDirectory?: string;
+}
+
 /** CFxShopApp — native owner of the FxShop setup sequence. */
 export class CFxShopApp {
   static ms_pInstance: CFxShopApp | null = null;
@@ -24,15 +28,22 @@ export class CFxShopApp {
   readonly userTable = new CLocalUserTable();
   readonly center: CCenterProcess;
   readonly billing: CBillingProcess;
-  readonly tranxCtrl = new CTranxCtrl();
+  readonly tranxCtrl: CTranxCtrl;
   readonly mainSystem = new CMainSystem();
   readonly timerThread: CTimerThread;
   listenThread: CListenThread | null = null;
   listenExThread: CListenExThread | null = null;
 
-  constructor(public readonly cfg: CServerConfig, dbDir: string) {
+  constructor(
+    public readonly cfg: CServerConfig,
+    dbDir: string,
+    { transactionLogDirectory }: FxShopAppOptions = {},
+  ) {
     CFxShopApp.ms_pInstance = this;
     this.db = new CDBMan(dbDir);
+    this.tranxCtrl = transactionLogDirectory === undefined
+      ? new CTranxCtrl()
+      : new CTranxCtrl(transactionLogDirectory);
     this.mainPool = new CMainPool(this.db);
     this.center = new CCenterProcess(this.db);
     this.billing = new CBillingProcess(this.db);
@@ -89,7 +100,11 @@ export class CFxShopApp {
 }
 
 /** Port entry: Bun's event loop replaces the native blocking CApp::Run. */
-export async function main(cfgPath: string, dbDir: string): Promise<CFxShopApp> {
+export async function main(
+  cfgPath: string,
+  dbDir: string,
+  options: FxShopAppOptions = {},
+): Promise<CFxShopApp> {
   const cfg = new CServerConfig(FXSHOP_STR_KEYS);
   cfg.Init(cfgPath);
   CServerConfig.ms_pInstance = cfg;
@@ -102,7 +117,7 @@ export async function main(cfgPath: string, dbDir: string): Promise<CFxShopApp> 
   PacketLog.Register(BILLING_PACKET_LOG_CONTEXT.Billing, "send", ...PACKET_NAME_TABLES.BILLING.send);
   PacketLog.Register(BILLING_PACKET_LOG_CONTEXT.Coupon, "send", ...PACKET_NAME_TABLES.COUPON.send);
 
-  const shop = new CFxShopApp(cfg, dbDir);
+  const shop = new CFxShopApp(cfg, dbDir, options);
   try {
     await shop.SetUp();
     return shop;

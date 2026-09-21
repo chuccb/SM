@@ -2,11 +2,18 @@
 
 日期：2026-09-21。接續 [第一輪 A01–A15](remaining-work-audit.md)。
 
-**2026-09-21 最新修復：** [A13 日期時間／A14 Login CRT RNG 修復紀錄](time-and-login-rng-compatibility-fix.md)
+**2026-09-21 最新修復：** [A12 交易紀錄／225→211分頁修復](transaction-log-compatibility-fix.md)
+已依FxShop PE實作日期檔、MSVC text-mode append+flush、500-byte logical cursor、換日／重啟及local-billing成功322整合。
+第一份probe現為19 MATCH、兩份合計 **43 MATCH／0 GAP**；完整`bun run check`為
+**693 pass／0 fail／26,693 expect() calls／38 files**，並通過toolchain／159-module import／boundary／strict typecheck。
+A類待辦降為 **6組**：A07、A08、A15、A17、A18、A23。
+外部billing／gift／coupon仍屬A08／A17，不因交易檔本身完成而宣稱可用。
+
+**前一批 A13／A14修復：** [日期時間／Login CRT RNG 修復紀錄](time-and-login-rng-compatibility-fix.md)
 已固定local SYSTEMTIME OLE wire、DST calendar-day持久期限及CxLogin自己的TLS CRT stream／handler消耗。
 第一份probe新增兩項後為18 MATCH；兩份probes合計 **42 MATCH／0 GAP**。完整`bun run check`為
 **688 pass／0 fail／26,656 expect() calls／37 files**，並通過toolchain／159-module import／boundary／strict typecheck。
-A類待辦再降為 **7組**：A07、A08、A12、A15、A17、A18、A23。
+該批完成時A類待辦為 **7組**；A12後續完成後為上述6組。
 Windows多worker排程仍是明示架構界線，固定probes全MATCH也不代表B類或完整商城結案。
 
 **前一批五組修復：** [A05／A09／A10／A19／A22 修復紀錄](five-gap-compatibility-fix.md)
@@ -264,7 +271,7 @@ bun test
 - 全新臨時SQLite、capture sockets與明確的fixture/failure injection；沒有listener／外網連線。
   DB在finally關閉及刪除；不讀寫正式使用者資料。單例只在該standalone process中使用。
 - probe的GAP是差異報告，不是刻意把錯誤當正解的測試；exit0只表示harness完成。
-- 清點時第二輪為 **24 probes / 23 GAP / 1 MATCH**、第一輪為 **14 / 13 / 1**；逐組修復後目前為第二輪 **24/24 MATCH**、第一輪（增補A10兩項及A13／A14）**18/18 MATCH**。
+- 清點時第二輪為 **24 probes / 23 GAP / 1 MATCH**、第一輪為 **14 / 13 / 1**；逐組修復後目前為第二輪 **24/24 MATCH**、第一輪（增補A10兩項、A12及A13／A14）**19/19 MATCH**。
 - Bun **1.4.3-canary.1 (26e7a4b36)**：**178 pass / 0 fail，1583 expect() calls，11 files，17.50s**。
 - TypeScript **7.0.2**與preview **7.1.0-dev.20260920.1**的`tsc --noEmit`通過；
   兩個probe另以`--ignoreConfig --strict --target ESNext --module ESNext --moduleResolution Bundler
