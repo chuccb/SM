@@ -57,7 +57,7 @@ import {
  */
 
 // ═══════════════════════════════ 1. LOGIN SERVER ═══════════════════════════════
-// CLoginPool::OnPacket (CxLogin.exe.c:15254)
+// Client → Login Server packets (CLoginPool::OnPacket, CxLogin.exe.c:15254)
 export const LS_ReceivedPacket = {
   OnAskMultiServer: 1,
   OnAskFirstInfo: 2,
@@ -74,9 +74,8 @@ export const LS_ReceivedPacket = {
 } as const;
 
 /**
- * LS → client responses (one per matching request id).
- * The channel-info family (10/11/13/14) is NOT here — the client never sends
- * a matching request id for those; they live in LS_ClientSend below.
+ * Login Server → Client responses (one per matching request id).
+ * The channel-info family (10/11/13/14) and unsolicited notifications are in LS_ClientSend below.
  */
 export const LS_SendPacket = {
   OnAskMultiServerRes: 1,
@@ -89,7 +88,10 @@ export const LS_SendPacket = {
   OnRequestDestoryServiceRes: 60,
 } as const;
 
-/** LS → client ids with no matching request id (CxLogin.exe.c send sites). */
+/**
+ * Login Server → Client packets (unsolicited or notifications without matching request id).
+ * Combined with LS_SendPacket, these form the entire server-to-client transmission set.
+ */
 export const LS_ClientSend = {
   OnConnect: 0, // CMainSystem::OnConnEstablished [E2 CENTER_VERSION][E2 CONN_HELLO_VERSION][E4 headerType][EStr url]
   OnNotice: 7, // CConfigDyn::GetNoticePacket [COSmartStream containing one EStr]
@@ -101,6 +103,14 @@ export const LS_ClientSend = {
   OnAdminNotifyMsg: 26,
   OnWhisper: 27, // CCenterProcess::OnWhisper (CxLogin.exe.c:5058) — relay to the target's socket [EStr]×5[E4]×3; no caller in CxCenter.exe.c (arrives via the S2S vtbl)
   OnSystemMsg: 30,
+} as const;
+
+/**
+ * All Login Server → Client packets (union of response packets and unsolicited notifications).
+ */
+export const LS_ServerSendPacket = {
+  ...LS_SendPacket,
+  ...LS_ClientSend,
 } as const;
 
 // ═══════════════════════════ 2. GAME SERVER (lobby) ═══════════════════════════
@@ -232,7 +242,7 @@ export const GS_ClientSend = {
   OnUserInventory: 201, // [E1 users][users×(E4 itemCount + inventory rows)]
   OnUserItemList: 202, // the whole FxItem table
   OnPreInventory: 207, // [E1 n][per-user pre-inventory]
-  OnEnterGame: 210, // [E1 attr] — the entry-accepted packet
+  OnEnterGame: 210, // [E1 attr] — entry accepted; attr flag enables Client's Shop button (bit 0 / m_fInventoryDB; default closed without packet)
 } as const;
 
 // ═══════════════════════ 3. GAME SERVER (in-room session) ═══════════════════════
@@ -443,7 +453,7 @@ export const LS_CLIENT_RECEIVED_NAMES = DefinePacketNameTable(
   { credentials: ["OnLogin", "OnNewUserConfirmId", "OnNewUser"] },
 );
 export const LS_CLIENT_SEND_NAMES = DefinePacketNameTable(
-  "enGeneralServerPacket", "CxLogin", "server-to-client", { ...LS_SendPacket, ...LS_ClientSend },
+  "enGeneralServerPacket", "CxLogin", "server-to-client", LS_ServerSendPacket,
 );
 export const GS_CLIENT_RECEIVED_NAMES = DefinePacketNameTable(
   "enGameServerPacket", "FxServer::CChannelPool", "client-to-server", GS_ReceivedPacket,
