@@ -4,7 +4,7 @@ import {
   type HOSTHANDLE,
   MTUDP_TYPE_PEER_INFO,
   MTUDP_TYPE_READY_FOR_IMMEDIATE_START,
-} from "../shared/MTUDP.ts";
+} from "../common/MTUDP.ts";
 import { CGameSessionTable } from "./GameSessionTable.ts";
 import { CLocalUserTable } from "./LocalUserTable.ts";
 

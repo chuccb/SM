@@ -2,7 +2,7 @@
 import type { CClientSocket } from "./ClientSocket.ts";
 import type { CReceivedPacket, CSendPacket } from "../core/Packet.ts";
 import type { CUser } from "./User.ts";
-import type { HOSTHANDLE } from "../shared/MTUDP.ts";
+import type { HOSTHANDLE } from "../common/MTUDP.ts";
 
 /** Native polymorphic base for the game/practice session table. */
 export class CBaseSessionTable {

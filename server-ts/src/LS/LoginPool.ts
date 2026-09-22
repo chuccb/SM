@@ -6,7 +6,7 @@ import { CDBMan, EncodePassword } from "../db/DBMan.ts";
 import { CMultiServer } from "./MultiServer.ts";
 import { CChannelCache } from "./ChannelCache.ts";
 import { CConfigDyn } from "./ConfigDyn.ts";
-import { CDynInfoCalculator_GetLevel } from "../shared/LevelTable.ts";
+import { CDynInfoCalculator_GetLevel } from "../common/LevelTable.ts";
 import { MC_LoginServerSendPacket, SVRCLASS_GAME } from "../core/protocol/CenterProtocol.ts";
 import { C2S_LoginPacket, S2C_LoginNoticePacket, S2C_LoginResponsePacket } from "../core/protocol/PacketIDs.ts";
 import type { CUser } from "./User.ts";

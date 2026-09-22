@@ -4,7 +4,7 @@ import { CData, CIDFMan } from "./IDFMan.ts";
 import { CMainSystem } from "./MainSystem.ts";
 import { CGameMapTmpl } from "./GameMapTmpl.ts";
 import { RegisterGameMapGroupLookup } from "./runtime/GameMapTmplListRuntime.ts";
-import { MapDataReader } from "../shared/MapDataReader.ts";
+import { MapDataReader } from "../common/MapDataReader.ts";
 
 /** CGameMapTmplList — the "Map/…" templates plus the theme groups. */
 export class CGameMapTmplList {

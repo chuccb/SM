@@ -1,6 +1,6 @@
 /** Native source unit: FX/FxServer/ConnectPool.cpp. */
 import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
-import { INVENTORY_SLOT_NONE, ItemCategory, USER_INVENTORY_LOAD_LIMIT } from "../shared/Item.ts";
+import { INVENTORY_SLOT_NONE, ItemCategory, USER_INVENTORY_LOAD_LIMIT } from "../common/Item.ts";
 import { CDBMan } from "../db/DBMan.ts";
 import { S2C_GamePacket, C2S_GameLobbyPacket } from "../core/protocol/PacketIDs.ts";
 import { MC_GameServerSendPacket } from "../core/protocol/CenterProtocol.ts";

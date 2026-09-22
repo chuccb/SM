@@ -1,7 +1,7 @@
 /** Native source unit: FX/FxShop/BillingProcess.cpp. */
 import { CDBMan } from "../db/DBMan.ts";
 import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
-import { ItemCategory } from "../shared/Item.ts";
+import { ItemCategory } from "../common/Item.ts";
 import {
   Shop2Billing_LegacyPacket,
   Shop2Billing_CouponPacket,

@@ -1,5 +1,5 @@
 /** Port-only declaration module for Relay MTUDP constants recovered from CXRELAY.EXE. */
-import { MTUDP_CRC_BYTES, MTUDP_LENGTH_BYTES, MTUDP_MAX_TOTAL_LENGTH } from "../shared/MTUDP.ts";
+import { MTUDP_CRC_BYTES, MTUDP_LENGTH_BYTES, MTUDP_MAX_TOTAL_LENGTH } from "../common/MTUDP.ts";
 
 export const RELAY_SERIAL_BYTES = 4;
 export const RELAY_ADDRESSING_BYTES = RELAY_SERIAL_BYTES * 2;

@@ -2,7 +2,7 @@
 import { CRand } from "../core/CRand.ts";
 import { CSendPacket } from "../core/Packet.ts";
 import { EncodeVariantTime } from "../core/VariantTime.ts";
-import { CDynInfoCalculator_GetLevel } from "../shared/LevelTable.ts";
+import { CDynInfoCalculator_GetLevel } from "../common/LevelTable.ts";
 import { CHARGE_KEY_MIN, CHARGE_KEY_MODULUS, NEXONCLUB_EMAIL_DOMAIN } from "./Defs.ts";
 import type { CClientSocket } from "./ClientSocket.ts";
 import { CMainSystem } from "./MainSystem.ts";

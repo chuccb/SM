@@ -1,6 +1,6 @@
 /** Native source unit: common/cUnreliableQueueIn.cpp (CxLogin.pdb: cUnreliableQueueIn.obj). */
 import { timeGetTime } from "../core/timeGetTime.ts";
-import { MTUDP_MAX_TOTAL_LENGTH } from "../shared/MTUDP.ts";
+import { MTUDP_MAX_TOTAL_LENGTH } from "../common/MTUDP.ts";
 
 /** cUnreliableQueueIn (CxLogin.exe.c:26148) — a growable record chain of
  *  [E4 len][payload] entries.  AddPacket drops with a report at the 0x3000

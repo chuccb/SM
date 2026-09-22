@@ -1,7 +1,7 @@
 /** Native source unit: CX/CxRelay/MTUDPBase.cpp. */
 import { CServerConfig } from "../core/ServerConfig.ts";
 import { PacketLog } from "../core/PacketLog.ts";
-import { BuildFrame } from "../shared/MTUDP.ts";
+import { BuildFrame } from "../common/MTUDP.ts";
 import { MAX_FRAME_SIZE } from "./Defs.ts";
 import { Report, ReportError } from "./Report.ts";
 import { dwordToIp } from "./Utils.ts";

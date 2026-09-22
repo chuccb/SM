@@ -16,7 +16,7 @@ import {
   MTUDP_LENGTH_BYTES,
   MTUDP_MAX_PAYLOAD_LENGTH,
   UpdateCRC8,
-} from "../src/shared/MTUDP.ts";
+} from "../src/common/MTUDP.ts";
 import { PacketLog } from "../src/core/PacketLog.ts";
 import {
   main as relayMain,

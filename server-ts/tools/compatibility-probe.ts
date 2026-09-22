@@ -31,7 +31,7 @@ import { CLocalUserTable as GameLocalUserTable } from "../src/FXGS/LocalUserTabl
 import { CLoginPool } from "../src/LS/LoginPool.ts";
 import type { CClientSocket as LoginSocket } from "../src/LS/ClientSocket.ts";
 import { CTranxCtrl, TRANSACTION_PAGE_BYTES } from "../src/FXSS/TranxCtrl.ts";
-import { CDynInfoCalculator_GetMaxExpInLevel, kLevelTableSize } from "../src/shared/LevelTable.ts";
+import { CDynInfoCalculator_GetMaxExpInLevel, kLevelTableSize } from "../src/common/LevelTable.ts";
 
 function body(write: (p: CSendPacket) => void): CReceivedPacket {
   const p = new CSendPacket(0, CipherDegree.kPacketRaw);

@@ -3,7 +3,7 @@ import { GetTickCount } from "../core/GetTickCount.ts";
 import { PacketLog } from "../core/PacketLog.ts";
 import { CServerConfig } from "../core/ServerConfig.ts";
 import { timeGetTime } from "../core/timeGetTime.ts";
-import { MTUDP_CRC_BYTES, MTUDP_FRAME_OVERHEAD, UpdateCRC8 } from "../shared/MTUDP.ts";
+import { MTUDP_CRC_BYTES, MTUDP_FRAME_OVERHEAD, UpdateCRC8 } from "../common/MTUDP.ts";
 import {
   HOST_IDLE,
   HOST_SWEEP_PERIOD,

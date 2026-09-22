@@ -23,7 +23,7 @@ import { CGameSession } from "../src/FXGS/GameSession.ts";
 import { CGameSessionTable } from "../src/FXGS/GameSessionTable.ts";
 import { LoadCAItemBak } from "../src/db/CAItemBak.ts";
 import { SESSION_IDX_MAX } from "../src/FXGS/Defs.ts";
-import { ItemCategory, USER_INVENTORY_LOAD_LIMIT } from "../src/shared/Item.ts";
+import { ItemCategory, USER_INVENTORY_LOAD_LIMIT } from "../src/common/Item.ts";
 import { MAX_LOCAL_INVENTORY_ROWS } from "../src/services/LocalBilling/Defs.ts";
 
 function snapshot() {

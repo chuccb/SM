@@ -2,10 +2,10 @@
 import type { CServerConfig } from "../core/ServerConfig.ts";
 import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
 import { CDBMan } from "../db/DBMan.ts";
-import { CLocalSocket } from "../shared/LocalSocket.ts";
+import { CLocalSocket } from "../common/LocalSocket.ts";
 import { S2C_GamePacket } from "../core/protocol/PacketIDs.ts";
 import { CM_GameServerPacket, MC_GameServerSendPacket, SVRCLASS_GAME } from "../core/protocol/CenterProtocol.ts";
-import { CDynInfoCalculator_GetLevel, CDynInfoCalculator_GetMaxExpInLevel } from "../shared/LevelTable.ts";
+import { CDynInfoCalculator_GetLevel, CDynInfoCalculator_GetMaxExpInLevel } from "../common/LevelTable.ts";
 import { SESSION_LOC_OTHER_SERVER } from "./Defs.ts";
 import { CUserItemMan } from "./ItemMan.ts";
 import { CGuildTable } from "./Guild.ts";

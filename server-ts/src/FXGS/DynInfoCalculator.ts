@@ -1,5 +1,5 @@
 /** Native source unit: FX/FxServer/DynInfoCalculator.cpp. */
-import { CDynInfoCalculator_GetLevel, CDynInfoCalculator_GetMaxExpInLevel, LEVEL_EXP_SENTINEL } from "../shared/LevelTable.ts";
+import { CDynInfoCalculator_GetLevel, CDynInfoCalculator_GetMaxExpInLevel, LEVEL_EXP_SENTINEL } from "../common/LevelTable.ts";
 import { MAX_SESSION_SLOTS, SLOTSTATE_COLOR_MASK } from "./Defs.ts";
 import { CMainSystem } from "./MainSystem.ts";
 import type { CClientSocket } from "./ClientSocket.ts";

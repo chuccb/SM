@@ -1,7 +1,7 @@
 /** Native source unit: CX/CxUtil/CenterProcess.cpp. */
 import { CServerConfig } from "../core/ServerConfig.ts";
 import { CReceivedPacket, CSendPacket } from "../core/Packet.ts";
-import { CLocalSocket } from "../shared/LocalSocket.ts";
+import { CLocalSocket } from "../common/LocalSocket.ts";
 import { CM_UtilServerPacket, SVRCLASS_UTIL } from "../core/protocol/CenterProtocol.ts";
 import { S2C_UtilPacket } from "../core/protocol/PacketIDs.ts";
 import { CLocalUserTable } from "./LocalUserTable.ts";

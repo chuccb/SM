@@ -3,7 +3,7 @@ import { MAP_VERSION_MIN, MAX_SESSION_SLOTS } from "./Defs.ts";
 import { UpdateCRC32 } from "../core/CRC.ts";
 import { CData } from "./IDFMan.ts";
 import { IsMapInRegisteredGroup } from "./runtime/GameMapTmplListRuntime.ts";
-import { MapDataReader } from "../shared/MapDataReader.ts";
+import { MapDataReader } from "../common/MapDataReader.ts";
 
 /** CGameMapTmpl — one entry of CGameMapTmplList (LoadMap, FxServer.exe.c:13640). */
 export class CGameMapTmpl {

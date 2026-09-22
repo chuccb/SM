@@ -2,7 +2,7 @@
 import { expect, spyOn, test } from "bun:test";
 import { CServerConfig } from "../src/core/ServerConfig.ts";
 import { MTUDPServer } from "../src/FXGS/MTUDPServer.ts";
-import { MTUDP_UDP_PORT_OFFSET } from "../src/shared/MTUDP.ts";
+import { MTUDP_UDP_PORT_OFFSET } from "../src/common/MTUDP.ts";
 
 test("StartupBase retains FXGS ServerPort after the process-wide singleton changes", async () => {
   const game = new CServerConfig([["ServerPort", ""]]);

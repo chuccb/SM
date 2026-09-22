@@ -20,7 +20,7 @@ import { Database } from "bun:sqlite";
 import { MakeLowerAscii } from "../core/MakeLower.ts";
 import { EncodeCP950 } from "../core/Encoding.ts";
 import { AddLocalCalendarDays } from "../core/LocalTime.ts";
-import { INVENTORY_SLOT_NONE } from "../shared/Item.ts";
+import { INVENTORY_SLOT_NONE } from "../common/Item.ts";
 import { SCHEMA_ITEM } from "./CAItemSchema.ts";
 import { mkdirSync, readFileSync } from "node:fs";
 import { LocateCAConfigBak, ParseCAConfigBak, CA_CONFIG_SEED_IP } from "./CAConfigBak.ts";

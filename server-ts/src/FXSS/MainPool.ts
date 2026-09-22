@@ -6,7 +6,7 @@ import { C2S_ShopPacket, S2C_ShopPacket } from "../core/protocol/PacketIDs.ts";
 import { MC_ShopServerSendPacket } from "../core/protocol/CenterProtocol.ts";
 import { CItemMan } from "./ItemMan.ts";
 import type { _USERACCOUNT, _USERDYNINFO } from "./Recordsets.ts";
-import { ItemCategory, IsInventoryAddable } from "../shared/Item.ts";
+import { ItemCategory, IsInventoryAddable } from "../common/Item.ts";
 import {
   CART_RECEIPT_CODE,
   CART_RECEIPT_RESULT,

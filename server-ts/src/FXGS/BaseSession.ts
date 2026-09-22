@@ -1,7 +1,7 @@
 /** Native source unit: FX/FxServer/BaseSession.cpp. */
 import { CReceivedPacket, CSendPacket, CipherDegree, PACKET_TYPE_PLACEHOLDER } from "../core/Packet.ts";
 import { S2C_GamePacket } from "../core/protocol/PacketIDs.ts";
-import { CHAR_DECO_COUNT, ItemCategory, SLOT_DECORATION_COUNT } from "../shared/Item.ts";
+import { CHAR_DECO_COUNT, ItemCategory, SLOT_DECORATION_COUNT } from "../common/Item.ts";
 import {
   CHANNEL_TYPE_GUILD,
   MAX_SESSION_SLOTS,

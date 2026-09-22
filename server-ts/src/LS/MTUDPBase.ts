@@ -4,7 +4,7 @@ import {
   type HOSTHANDLE,
   MTUDP_MAX_PAYLOAD_LENGTH,
   SplitDatagram,
-} from "../shared/MTUDP.ts";
+} from "../common/MTUDP.ts";
 import { GetTickCount } from "../core/GetTickCount.ts";
 import { PacketLog } from "../core/PacketLog.ts";
 import { cHost } from "./cHost.ts";

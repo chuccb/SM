@@ -1,5 +1,5 @@
 /** Native source unit: CX/CxLogin/UDPPacketDispatcher.cpp. */
-import type { HOSTHANDLE } from "../shared/MTUDP.ts";
+import type { HOSTHANDLE } from "../common/MTUDP.ts";
 import type { CUser } from "./User.ts";
 import type { MTUDPServer } from "./MTUDPServer.ts";
 

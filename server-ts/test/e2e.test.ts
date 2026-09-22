@@ -23,7 +23,7 @@ import {
 } from "../src/FXGS/FxServer.ts";
 import { UpdateCRC32 } from "../src/core/CRC.ts";
 import { RAND_MAX } from "../src/core/CRand.ts";
-import { CLocalSocket } from "../src/shared/LocalSocket.ts";
+import { CLocalSocket } from "../src/common/LocalSocket.ts";
 import { SVRCLASS_UTIL, MC_ReceivedPacket } from "../src/core/protocol/CenterProtocol.ts";
 import { CReceivedPacket, CSendPacket, CipherDegree } from "../src/core/Packet.ts";
 import { S2C_GamePacket } from "../src/core/protocol/PacketIDs.ts";
@@ -142,8 +142,8 @@ import {
   type CReceived,
   type Encoder,
 } from "./TestClient.ts";
-import { BuildFrame } from "../src/shared/MTUDP.ts";
-import { UpdateCRC8 } from "../src/shared/MTUDP.ts";
+import { BuildFrame } from "../src/common/MTUDP.ts";
+import { UpdateCRC8 } from "../src/common/MTUDP.ts";
 
 let centerApp: CCxCenterApp;
 let center: CLocalServerMan;

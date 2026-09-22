@@ -2,8 +2,8 @@
 import { CSendPacket } from "../core/Packet.ts";
 import type { CClientSocket } from "./ClientSocket.ts";
 import { CDBMan, type _USERDYNINFO } from "../db/DBMan.ts";
-import { CDynInfoCalculator_GetLevel, kLevelTableSize } from "../shared/LevelTable.ts";
-import { INVENTORY_SLOT_NONE, ItemCategory } from "../shared/Item.ts";
+import { CDynInfoCalculator_GetLevel, kLevelTableSize } from "../common/LevelTable.ts";
+import { INVENTORY_SLOT_NONE, ItemCategory } from "../common/Item.ts";
 import {
   CHANNEL_TYPE_GUILD,
   DYN_FLUSH_BURST,

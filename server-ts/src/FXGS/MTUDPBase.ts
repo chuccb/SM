@@ -5,7 +5,7 @@
  * dispatcher callback synchronously because Bun already serializes one UDP
  * socket's data callbacks.
  */
-import { SplitDatagram, type HOSTHANDLE } from "../shared/MTUDP.ts";
+import { SplitDatagram, type HOSTHANDLE } from "../common/MTUDP.ts";
 
 export type MTUDPFrameHandler = (payload: Uint8Array, host: HOSTHANDLE) => void;
 

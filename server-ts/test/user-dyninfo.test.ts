@@ -10,7 +10,7 @@ import { CDBMan } from "../src/db/DBMan.ts";
 import { CServerConfig } from "../src/core/ServerConfig.ts";
 import { CReceivedPacket, CSendPacket, enSocket } from "../src/core/Packet.ts";
 import { CDynInfoCalculator_GetLevel as GetLevel, CDynInfoCalculator_GetMaxExpInLevel as GetMaxExpInLevel,
-  g_nLevel2ExpTable, kLevelTableSize, LEVEL_EXP_SENTINEL } from "../src/shared/LevelTable.ts";
+  g_nLevel2ExpTable, kLevelTableSize, LEVEL_EXP_SENTINEL } from "../src/common/LevelTable.ts";
 import { CClientSocket } from "../src/FXGS/ClientSocket.ts";
 import { CChannelPool } from "../src/FXGS/ChannelPool.ts";
 import { CConnectPool } from "../src/FXGS/ConnectPool.ts";

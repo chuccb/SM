@@ -4,7 +4,7 @@ import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
 import { CDBMan } from "../db/DBMan.ts";
 import { CMultiServer, inet_addr } from "./MultiServer.ts";
 import { CChannelCache } from "./ChannelCache.ts";
-import { CLocalSocket } from "../shared/LocalSocket.ts";
+import { CLocalSocket } from "../common/LocalSocket.ts";
 import { CM_LoginServerPacket, MC_LoginServerSendPacket, SVRCLASS_LOGIN } from "../core/protocol/CenterProtocol.ts";
 import { S2C_LoginNoticePacket } from "../core/protocol/PacketIDs.ts";
 import { MACHINE_ID_BYTES, PeerAddressDword, type CClientSocket } from "./ClientSocket.ts";

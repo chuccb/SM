@@ -4,7 +4,7 @@
  * by FxServer.map's Recordsets.obj. _USERACCOUNT is the shared prGetUserInfo
  * row block consumed by RSUserAccount.cpp and remains a declaration here.
  */
-import { INVENTORY_SLOT_NONE } from "../shared/Item.ts";
+import { INVENTORY_SLOT_NONE } from "../common/Item.ts";
 
 /** UserItem — the value of CUserItemMan's map (the SN lives in the key). */
 export interface UserItem {

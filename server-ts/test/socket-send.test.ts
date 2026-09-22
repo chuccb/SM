@@ -13,7 +13,7 @@ import {
   CPacketSocket,
 } from "../src/core/PacketSocket.ts";
 import { CReceivedPacket, CSendPacket, CipherDegree, enSocket } from "../src/core/Packet.ts";
-import { CLocalSocket } from "../src/shared/LocalSocket.ts";
+import { CLocalSocket } from "../src/common/LocalSocket.ts";
 import { CLocalSocket as CCenterLocalSocket, type LocalSocketHost } from "../src/Center/CxCenter.ts";
 import { CBillingProcess, CWebSocket } from "../src/FXSS/FxShop.ts";
 import type { CDBMan } from "../src/db/DBMan.ts";

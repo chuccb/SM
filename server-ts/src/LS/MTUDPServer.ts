@@ -1,6 +1,6 @@
 /** Native source unit: common/MTUDPServer.cpp (CxLogin.pdb: MTUDPServer.obj). */
 import { CServerConfig } from "../core/ServerConfig.ts";
-import { type HOSTHANDLE, MTUDP_UDP_PORT_OFFSET } from "../shared/MTUDP.ts";
+import { type HOSTHANDLE, MTUDP_UDP_PORT_OFFSET } from "../common/MTUDP.ts";
 import { MTUDPBase } from "./MTUDPBase.ts";
 import { CUDPPacketDispatcher } from "./UDPPacketDispatcher.ts";
 

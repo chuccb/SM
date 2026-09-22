@@ -1,5 +1,5 @@
 /** Port-only local replacement policy, NOT recovered DigiQ server internals. */
-import { USER_INVENTORY_LOAD_LIMIT } from "../../shared/Item.ts";
+import { USER_INVENTORY_LOAD_LIMIT } from "../../common/Item.ts";
 
 export const LOCAL_BILLING_MODE_KEY = "LocalBillingMode";
 export const LOCAL_BILLING_MODE = "inventory-v1";

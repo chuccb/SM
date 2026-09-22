@@ -21,7 +21,7 @@ import { CCxCenterApp, CLocalServerMan, CUser } from "../src/Center/CxCenter.ts"
 import { CServerConfig, CXCENTER_STR_KEYS, CXLOGIN_STR_KEYS } from "../src/core/ServerConfig.ts";
 import { CSendPacket } from "../src/core/Packet.ts";
 import { CDBMan } from "../src/db/DBMan.ts";
-import { CLocalSocket } from "../src/shared/LocalSocket.ts";
+import { CLocalSocket } from "../src/common/LocalSocket.ts";
 import { SVRCLASS_GAME, SVRCLASS_UTIL } from "../src/core/protocol/CenterProtocol.ts";
 import {
   CCenterProcess,

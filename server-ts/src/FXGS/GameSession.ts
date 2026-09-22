@@ -6,7 +6,7 @@
 import { readFileSync } from "node:fs";
 import { CReceivedPacket, CSendPacket, CipherDegree, PACKET_TYPE_PLACEHOLDER } from "../core/Packet.ts";
 import { S2C_GamePacket, C2S_GameSessionPacket } from "../core/protocol/PacketIDs.ts";
-import { FunctionalItem } from "../shared/Item.ts";
+import { FunctionalItem } from "../common/Item.ts";
 import { timeGetTime } from "../core/timeGetTime.ts";
 import {
   ACCOUNTING_LOG_CHANNEL_TYPE,
@@ -49,7 +49,7 @@ import { UpdateChannelRankList } from "./runtime/ClientSocketRuntime.ts";
 import type { CUser } from "./User.ts";
 import { SendCenterPacket } from "./runtime/CenterProcessRuntime.ts";
 import { CGuildDynInfoCalculator } from "./GuildDynInfoCalculator.ts";
-import type { HOSTHANDLE } from "../shared/MTUDP.ts";
+import type { HOSTHANDLE } from "../common/MTUDP.ts";
 import { MC_GameServerSendPacket } from "../core/protocol/CenterProtocol.ts";
 
 const RANDOM_BOMBER_RARE_ROLL_DIVISOR = 30;

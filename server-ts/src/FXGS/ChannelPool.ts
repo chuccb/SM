@@ -3,7 +3,7 @@ import type { CServerConfig } from "../core/ServerConfig.ts";
 import { CReceivedPacket, CSendPacket, CipherDegree, PACKET_TYPE_PLACEHOLDER } from "../core/Packet.ts";
 import { CDBMan } from "../db/DBMan.ts";
 import { S2C_GamePacket, C2S_GameLobbyPacket } from "../core/protocol/PacketIDs.ts";
-import { CDynInfoCalculator_GetMaxExpInLevel } from "../shared/LevelTable.ts";
+import { CDynInfoCalculator_GetMaxExpInLevel } from "../common/LevelTable.ts";
 import { MC_GameServerSendPacket, SVRCLASS_GAME, SVRCLASS_SHOP } from "../core/protocol/CenterProtocol.ts";
 import { CChatPool } from "./ChatPool.ts";
 import { CUserItemMan } from "./ItemMan.ts";
@@ -15,7 +15,7 @@ import { CGuildTable } from "./Guild.ts";
 import { CLocalUserTable } from "./LocalUserTable.ts";
 import type { CClientSocket } from "./ClientSocket.ts";
 import { CUser } from "./User.ts";
-import { ItemCategory, SLOT_DECORATION_COUNT } from "../shared/Item.ts";
+import { ItemCategory, SLOT_DECORATION_COUNT } from "../common/Item.ts";
 import { RegisterChannelPool } from "./runtime/ClientSocketRuntime.ts";
 import { SESSION_IDX_NONE } from "./Defs.ts";
 

@@ -10,7 +10,7 @@ import { CGameSessionTable } from "../src/FXGS/GameSessionTable.ts";
 import { CMainSystem } from "../src/FXGS/MainSystem.ts";
 import { CClientSocket } from "../src/FXGS/ClientSocket.ts";
 import { CUser } from "../src/FXGS/User.ts";
-import { FunctionalItem, ItemCategory } from "../src/shared/Item.ts";
+import { FunctionalItem, ItemCategory } from "../src/common/Item.ts";
 
 let now: number;
 let session: CGameSession;

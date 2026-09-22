@@ -26,7 +26,7 @@
 | `src/<service>/` | 該 binary 的原生 class／source unit；`*Runtime.ts` 是為解除 ESM 初始化循環而明示的 port-only dependency adapter。 |
 | `src/core/` | 多個 binary 各自編入、但 TS 集中維護的 packet、cipher、clock、config 等共用實作。不是聲稱原版有單一共享 binary。 |
 | `src/core/protocol/` | 由各 binary wire table／dispatch 還原的 typed protocol metadata。 |
-| `src/shared/` | 原版在多個 binary 重複、由 port 明確合併的 transport／常數；檔頭均標示 port-only。 |
+| `src/common/` | 原版跨服務共用模組與常數（1:1 對齊官方 `taiwan/src/common/`）。 |
 | `src/db/` | 原生 recordset 行為的 Bun SQLite adapter，以及受限且有來源校驗的備份匯入工具。 |
 | `src/services/LocalBilling/` | 明確的本機替代服務，原版不存在，不冒充 DigiQ backend。 |
 

@@ -1,7 +1,7 @@
 /** Native source unit: common/MTUDPServer.cpp (FxServer.map: MTUDPServer.obj). */
 import type { CServerConfig } from "../core/ServerConfig.ts";
 import { PacketLog } from "../core/PacketLog.ts";
-import { MTUDP_UDP_PORT_OFFSET, type HOSTHANDLE } from "../shared/MTUDP.ts";
+import { MTUDP_UDP_PORT_OFFSET, type HOSTHANDLE } from "../common/MTUDP.ts";
 import { MTUDPBase, type MTUDPFrameHandler } from "./MTUDPBase.ts";
 
 function ParseIPv4(address: string): number {
