@@ -1,6 +1,6 @@
 /** Native source unit: FX/FxShop/BillingProcess.cpp. */
 import { CDBMan } from "../db/DBMan.ts";
-import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
+import { CReceivedPacket, CSendPacket } from "../core/Packet.ts";
 import { ItemCategory, IsInventoryAddable } from "../common/Item.ts";
 import {
   Shop2Billing_LegacyPacket,
@@ -242,7 +242,7 @@ export class CBillingProcess {
     n.Decode4(); // extra dword ignored
     const user = CLocalUserTable.ms_pInstance!.FindUserFromGlobalSerialNo(serial);
     if (!user || user.m_fTranxInProgress !== 0) return;
-    const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes);
     p.Encode1(PURCHASE_RESULT.GiftLimitOver);
     p.Encode1(0);
     user.m_pSocket?.SendPacket(p);
@@ -258,7 +258,7 @@ export class CBillingProcess {
     if (n.m_uLength - n.m_uOffset >= 4) n.Decode4();
     const user = CLocalUserTable.ms_pInstance!.FindUserFromGlobalSerialNo(serial);
     if (!user || user.m_fTranxInProgress !== 0) return;
-    const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes);
     p.Encode1(PURCHASE_RESULT.GiftUnderAge);
     user.m_pSocket?.SendPacket(p);
     user.ResetTranxInfo();
@@ -271,7 +271,7 @@ export class CBillingProcess {
     if (n.m_uLength - n.m_uOffset >= 4) n.Decode4();
     const user = CLocalUserTable.ms_pInstance!.FindUserFromGlobalSerialNo(serial);
     if (!user || user.m_fTranxInProgress !== 0) return;
-    const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes);
     p.Encode1(PURCHASE_RESULT.NotReady);
     user.m_pSocket?.SendPacket(p);
     user.ResetTranxInfo();
@@ -294,7 +294,7 @@ export class CBillingProcess {
     // The second part is evaluated before GetCouponMapList; in our port the
     // coupon map list is global, so we check emptiness after lookup.
     if (result !== 0 && result !== 3) {
-      const p = new CSendPacket(S2C_ShopPacket.OnUseCouponRes, CipherDegree.kPacketEncryptedCRC8);
+      const p = new CSendPacket(S2C_ShopPacket.OnUseCouponRes);
       p.Encode1(result);
       user.m_pSocket?.SendPacket(p);
       user.ResetTranxInfo();
@@ -304,7 +304,7 @@ export class CBillingProcess {
     user.m_nCouponID = couponSN | 0;
     const itemMan = CItemMan.ms_pInstance;
     if (!itemMan) {
-      const p = new CSendPacket(S2C_ShopPacket.OnUseCouponRes, CipherDegree.kPacketEncryptedCRC8);
+      const p = new CSendPacket(S2C_ShopPacket.OnUseCouponRes);
       p.Encode1(COUPON_RESULT.BillingFailure);
       user.m_pSocket?.SendPacket(p);
       user.ResetTranxInfo();
@@ -312,7 +312,7 @@ export class CBillingProcess {
     }
     const couponList = itemMan.GetCouponMapList(couponSN);
     if (couponList.length === 0) {
-      const p = new CSendPacket(S2C_ShopPacket.OnUseCouponRes, CipherDegree.kPacketEncryptedCRC8);
+      const p = new CSendPacket(S2C_ShopPacket.OnUseCouponRes);
       p.Encode1(COUPON_RESULT.BillingFailure);
       user.m_pSocket?.SendPacket(p);
       user.ResetTranxInfo();
@@ -367,7 +367,7 @@ export class CBillingProcess {
       this.RequestUseCoupon(user);
       return;
     }
-    const p = new CSendPacket(S2C_ShopPacket.OnUseCouponRes, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_ShopPacket.OnUseCouponRes);
     p.Encode1(COUPON_RESULT.BillingFailure);
     user.m_pSocket?.SendPacket(p);
     user.ResetTranxInfo();
@@ -385,7 +385,7 @@ export class CBillingProcess {
     if (!user || user.m_fTranxInProgress !== 0) return;
 
     if ((result !== 0 && result !== 3) || user.m_nCouponID <= 0) {
-      const p = new CSendPacket(S2C_ShopPacket.OnUseCouponRes, CipherDegree.kPacketEncryptedCRC8);
+      const p = new CSendPacket(S2C_ShopPacket.OnUseCouponRes);
       p.Encode1(result);
       user.m_pSocket?.SendPacket(p);
       user.ResetTranxInfo();
@@ -395,7 +395,7 @@ export class CBillingProcess {
     const itemMan = CItemMan.ms_pInstance;
     const list = itemMan ? itemMan.GetCouponMapList(user.m_nCouponID) : user.m_listCouponMap;
     const valid = list.filter((c) => itemMan?.GetUserItem(c.ItemSN) != null);
-    const p = new CSendPacket(S2C_ShopPacket.OnUseCouponRes, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_ShopPacket.OnUseCouponRes);
     p.Encode1(COUPON_RESULT.Success);
     p.Encode4(valid.length);
     for (const entry of valid) {
@@ -518,7 +518,7 @@ export class CBillingProcess {
     if (user.m_fTranxInProgress !== 0) return;
     const isGift = user.m_strTranxInfo.length > 0;
     const errCode = isGift ? PURCHASE_RESULT.GiftFailure : PURCHASE_RESULT.GenericFailure;
-    const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes);
     p.Encode1(errCode);
     p.EncodeStr(message);
     user.m_pSocket?.SendPacket(p);
@@ -565,7 +565,7 @@ export class CBillingProcess {
     const result = n.Decode4();
     const user = CLocalUserTable.ms_pInstance!.FindUserFromGlobalSerialNo(serial);
     if (!user || user.m_fTranxInProgress !== 0) return;
-    const p = new CSendPacket(S2C_ShopPacket.OnRemainCashTw, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_ShopPacket.OnRemainCashTw);
     if (result === 1) {
       const message = DecodeBillingString(n);
       if (message === null) return;
@@ -621,7 +621,7 @@ export class CBillingProcess {
       }
       if (result !== 0) {
         const isGift = user.m_strTranxInfo.length > 0;
-        const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
+        const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes);
         p.Encode1(isGift ? PURCHASE_RESULT.GiftFailure : PURCHASE_RESULT.GenericFailure);
         p.EncodeStr(message);
         user.m_pSocket?.SendPacket(p);
@@ -645,7 +645,7 @@ export class CBillingProcess {
           // but for Tw path we surface it directly as 204 6 to match legacy handler.
           const isGift = user.m_strTranxInfo.length > 0;
           if (isGift) {
-            const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
+            const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes);
             p.Encode1(PURCHASE_RESULT.GiftLimitOver);
             p.Encode1(0);
             user.m_pSocket?.SendPacket(p);
@@ -783,7 +783,7 @@ export class CBillingProcess {
         if (!purchase || purchase.reference !== reference) return;
         if (result !== 0) this.LocalPurchaseError(purchase.user, message);
         else {
-          const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
+          const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes);
           p.Encode1(PURCHASE_RESULT.Success); p.EncodeBuffer(EncodeVariantTime(new Date()));
           if (purchase.user.m_fTranxInProgress === 0) {
             purchase.user.m_pSocket?.SendPacket(p);
@@ -799,7 +799,7 @@ export class CBillingProcess {
       if (result !== 0) {
         if (user.m_nTranxStockSN !== 0) this.RollbackExternalGrant(user);
         const isGift = user.m_strTranxInfo.length > 0;
-        const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
+        const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes);
         p.Encode1(isGift ? PURCHASE_RESULT.GiftFailure : PURCHASE_RESULT.GenericFailure);
         p.EncodeStr(message);
         user.m_pSocket?.SendPacket(p);
@@ -809,7 +809,7 @@ export class CBillingProcess {
 
       const isCart = user.m_fCartProcessing !== 0;
       if (!isCart) {
-        const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
+        const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes);
         p.Encode1(PURCHASE_RESULT.Success);
         p.EncodeBuffer(EncodeVariantTime(new Date()));
         user.m_pSocket?.SendPacket(p);
@@ -850,7 +850,7 @@ export class CBillingProcess {
             if (user.m_nCartCount < 0) {
               user.m_fCartProcessing = 0;
               if (user.m_pSocket) {
-                const p215 = new CSendPacket(S2C_ShopPacket.OnPurchaseCartListRes, CipherDegree.kPacketEncryptedCRC8);
+                const p215 = new CSendPacket(S2C_ShopPacket.OnPurchaseCartListRes);
                 p215.Encode1(CART_RECEIPT_CODE);
                 p215.Encode1(CART_RECEIPT_RESULT);
                 p215.EncodeBuffer(EncodeVariantTime(new Date()));
@@ -883,7 +883,7 @@ export class CBillingProcess {
     const result = n.Decode4();
     const user = CLocalUserTable.ms_pInstance!.FindUser(name);
     if (!user || user.m_fTranxInProgress !== 0) return;
-    const p = new CSendPacket(S2C_ShopPacket.OnDigiQAuthenRes, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_ShopPacket.OnDigiQAuthenRes);
     if (result !== 0) {
       const message = DecodeBillingString(n);
       if (message === null) return;

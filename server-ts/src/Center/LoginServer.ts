@@ -1,5 +1,5 @@
 /** Native source unit: CX/CxCenter/LoginServer.cpp. */
-import { CReceivedPacket, CSendPacket } from "../core/Packet.ts";
+import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
 import { CM_ReceivedPacket, MC_ReceivedPacket, SVRCLASS_LOGIN } from "../core/protocol/CenterProtocol.ts";
 import { CLocalServer, type LocalServerHost } from "./LocalServer.ts";
 import { CUser } from "./User.ts";
@@ -57,7 +57,7 @@ export class CLoginServer extends CLocalServer {
     }
     const nb = n.Decode4();
     for (const u of users) u.nLocalSerialNo = nb;
-    const packet = new CSendPacket(CM_ReceivedPacket.OnCenterResAddNewUser);
+    const packet = new CSendPacket(CM_ReceivedPacket.OnCenterResAddNewUser, CipherDegree.kPacketRaw);
     packet.Encode4(nb);
     packet.Encode4(fAllAdded);
     packet.Encode1(users.length);

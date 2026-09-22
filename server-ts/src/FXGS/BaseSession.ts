@@ -1,5 +1,5 @@
 /** Native source unit: FX/FxServer/BaseSession.cpp. */
-import { CReceivedPacket, CSendPacket, CipherDegree, PACKET_TYPE_PLACEHOLDER } from "../core/Packet.ts";
+import { CReceivedPacket, CSendPacket, PACKET_TYPE_PLACEHOLDER } from "../core/Packet.ts";
 import { S2C_GamePacket } from "../core/protocol/PacketIDs.ts";
 import { CHAR_DECO_COUNT, ItemCategory, SLOT_DECORATION_COUNT } from "../common/Item.ts";
 import {
@@ -95,7 +95,7 @@ export class CBaseSession {
   /** CBaseSession::DoChangeTitle. */
   DoChangeTitle(title: string): void {
     this.m_strName = title;
-    const packet = new CSendPacket(S2C_GamePacket.OnChangeTitle, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnChangeTitle);
     packet.EncodeStr(title);
     this.SendPacket(packet);
   }
@@ -367,7 +367,7 @@ export class CBaseSession {
 
   /** CBaseSession::MakeSessionInfoPacket — 105/107 for every slot. */
   MakeSessionInfoPacket(socket: CClientSocket): void {
-    const packet = new CSendPacket(PACKET_TYPE_PLACEHOLDER, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(PACKET_TYPE_PLACEHOLDER);
     for (let slot = 0; slot < this.m_nMaxSlot; slot++) {
       if (this.m_rgPlayer[slot]) this.MakeSetPlayerPacket(slot, socket === this.m_rgPlayer[slot]!.m_pSocket ? 1 : 0, packet);
       else this.MakeSetSlotStatePacket(slot, packet);
@@ -383,7 +383,7 @@ export class CBaseSession {
 
   /** CBaseSession::SendJoinPacket — announce the new users to prior sockets. */
   SendJoinPacket(socket: CClientSocket): void {
-    const packet = new CSendPacket(PACKET_TYPE_PLACEHOLDER, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(PACKET_TYPE_PLACEHOLDER);
     const userCount = socket.GetUserCount();
     if (userCount <= 0) {
       this.FlushPacket();
@@ -419,7 +419,7 @@ export class CBaseSession {
 
   /** CBaseSession::SendResetPlayer — 106 for the leaver's users. */
   SendResetPlayer(socket: CClientSocket, fSendReset: number): void {
-    const packet = new CSendPacket(PACKET_TYPE_PLACEHOLDER, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(PACKET_TYPE_PLACEHOLDER);
     const n = socket.GetUserCount();
     for (let i = 0; i < n; i++) {
       const user = socket.GetUser(i);
@@ -480,7 +480,7 @@ export class CBaseSession {
     }
     if (slot >= 0 && slot < this.m_nMaxSlot) {
       this.DoSelectColor(slot, colorIdx);
-      const packet = new CSendPacket(S2C_GamePacket.OnSelectColorRes, CipherDegree.kPacketEncryptedCRC8);
+      const packet = new CSendPacket(S2C_GamePacket.OnSelectColorRes);
       packet.Encode1(((slot << 4) | (colorIdx & 0xf)) & 0xff);
       this.SendPacket(packet);
       return;
@@ -510,7 +510,7 @@ export class CBaseSession {
     const c = n.Decode2();
     const user = this.m_rgPlayer[slot];
     if (user && user.m_pSocket === socket) {
-      const packet = new CSendPacket(S2C_GamePacket.OnPlayEmotion, CipherDegree.kPacketEncryptedCRC8);
+      const packet = new CSendPacket(S2C_GamePacket.OnPlayEmotion);
       packet.Encode1(slot);
       packet.Encode1(a);
       packet.Encode1(b);
@@ -545,7 +545,7 @@ export class CBaseSession {
       if (slot >= 0 && slot < this.m_nMaxSlot) {
         const p = slot * 3 + 1;
         this.m_rgSlotState[p] = (this.m_rgSlotState[p]! ^ ((bomberIdx ^ this.m_rgSlotState[p]!) & SLOTSTATE_BOMBER_MASK));
-        const packet = new CSendPacket(S2C_GamePacket.OnSelectBomberRes, CipherDegree.kPacketEncryptedCRC8);
+        const packet = new CSendPacket(S2C_GamePacket.OnSelectBomberRes);
         packet.Encode1(((slot << 4) | (bomberIdx & 0xf)) & 0xff);
         this.SendPacket(packet);
         return;

@@ -62,7 +62,7 @@ export class CCenterProcess {
 
   /** CCenterProcess::SendAuthenCode — center MC 9 [E4 serial][E1 code]. */
   SendAuthenCode(serial: number, code: number): void {
-    const p = new CSendPacket(MC_ShopServerSendPacket.SendAuthenCode);
+    const p = new CSendPacket(MC_ShopServerSendPacket.SendAuthenCode, CipherDegree.kPacketRaw);
     p.Encode4(serial);
     p.Encode1(code);
     this.SendPacket(p);
@@ -114,7 +114,7 @@ export class CCenterProcess {
   /** CCenterProcess::OnAdminNotifyMsg — CM 8 [EStr] → broadcast client 26. */
   OnAdminNotifyMsg(n: CReceivedPacket): void {
     const str = n.DecodeStr();
-    const p = new CSendPacket(S2C_ShopPacket.OnAdminNotifyMsg, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_ShopPacket.OnAdminNotifyMsg);
     p.EncodeStr(str);
     const pool = GetShopMainPool();
     if (pool) CUserPool.SendAll(CUserPool.CreateSocketList(pool), p);

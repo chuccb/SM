@@ -1,6 +1,6 @@
 /** Native source unit: CX/CxCenter/MonitorSocket.cpp. */
 import { CPacketSocket } from "../core/PacketSocket.ts";
-import { CReceivedPacket, CSendPacket, enSocket, type enSocket as EnSocket } from "../core/Packet.ts";
+import { CReceivedPacket, CSendPacket, enSocket, type enSocket as EnSocket, CipherDegree } from "../core/Packet.ts";
 import { MONITOR_HEADER_CODE_RCV, MONITOR_HEADER_CODE_SND, MONITOR_HEADER_CODE_MODIFIER, MONITOR_SEQ, MONITOR_SEQ_DELTA } from "../core/protocol/CenterProtocol.ts";
 import { Center2Monitor_Packet, Monitor2Center_Packet } from "../core/protocol/PacketIDs.ts";
 import type { CLocalServer } from "./LocalServer.ts";
@@ -74,14 +74,14 @@ export class CMonitorSocket extends CPacketSocket {
   }
 
   OnRequestCurrentUserStat(): void {
-    const packet = new CSendPacket(Center2Monitor_Packet.OnRequestCurrentUserStat);
+    const packet = new CSendPacket(Center2Monitor_Packet.OnRequestCurrentUserStat, CipherDegree.kPacketRaw);
     packet.Encode4(this.center.globalUserTable.userTable.size);
     packet.Encode4(this.center.globalUserTable.m_nDailyPeakUsers);
     this.SendPacket(packet);
   }
 
   OnRequestSvrState(): void {
-    const packet = new CSendPacket(Center2Monitor_Packet.OnRequestSvrState);
+    const packet = new CSendPacket(Center2Monitor_Packet.OnRequestSvrState, CipherDegree.kPacketRaw);
     const all = this.center.servers;
     packet.Encode4(all.length);
     for (const s of all) {

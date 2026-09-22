@@ -1,6 +1,6 @@
 /** Native source unit: CX/CxLogin/ConfigDyn.cpp.
  * CConfigDyn — the login server's periodically refreshed dynamic notice. */
-import { CipherDegree, CSendPacket } from "../core/Packet.ts";
+import { CSendPacket } from "../core/Packet.ts";
 import { COSmartStream } from "../core/SmartStream.ts";
 import type { CDBMan } from "../db/DBMan.ts";
 import { S2C_LoginNoticePacket } from "../core/protocol/PacketIDs.ts";
@@ -33,7 +33,7 @@ export class CConfigDyn {
     const stream = new COSmartStream();
     stream.EncodeStr(row.value);
     const hash = stream.GetHashValue();
-    const packet = new CSendPacket(S2C_LoginNoticePacket.OnNotice, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_LoginNoticePacket.OnNotice);
     packet.EncodeOSStream(stream);
 
     this.m_strNotice = row.value;

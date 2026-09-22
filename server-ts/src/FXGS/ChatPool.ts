@@ -80,7 +80,7 @@ export class CChatPool extends CUserPool {
       return;
     }
     if (msg.length === 0) {
-      const p = new CSendPacket(S2C_GamePacket.OnSystemMsg, CipherDegree.kPacketEncryptedCRC8);
+      const p = new CSendPacket(S2C_GamePacket.OnSystemMsg);
       p.EncodeStr(" ");
       socket.SendPacket(p);
       return;
@@ -92,7 +92,7 @@ export class CChatPool extends CUserPool {
       return;
     }
     const text = `${senders.join(", ")} : ${msg}`;
-    const p = new CSendPacket(S2C_GamePacket.OnChatMsg, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_GamePacket.OnChatMsg);
     if (socket.GetUser(0)!.GetSessionIdx() === SESSION_IDX_NONE) p.EncodeStr("//");
     p.EncodeStr(text);
     const idx = socket.GetUser(0)!.GetSessionIdx();
@@ -109,7 +109,7 @@ export class CChatPool extends CUserPool {
     const msg = n.DecodeStr();
     const target = CLocalUserTable.ms_pInstance!.FindUserFromId(to);
     if (!target) {
-      const p = new CSendPacket(S2C_GamePacket.OnWhisperFail, CipherDegree.kPacketEncryptedCRC8);
+      const p = new CSendPacket(S2C_GamePacket.OnWhisperFail);
       p.Encode1(0);
       p.EncodeStr(to);
       socket.SendPacket(p);
@@ -121,7 +121,7 @@ export class CChatPool extends CUserPool {
       socket.PostClosePacket();
       return;
     }
-    const p = new CSendPacket(S2C_GamePacket.OnWhisperRes, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_GamePacket.OnWhisperRes);
     p.EncodeStr(`${senders.join(", ")} : ${msg}`);
     target.m_pSocket?.SendPacket(p);
   }
@@ -140,7 +140,7 @@ export class CChatPool extends CUserPool {
       socket.PostClosePacket();
       return;
     }
-    const p = new CSendPacket(S2C_GamePacket.OnItemMsg, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_GamePacket.OnItemMsg);
     p.EncodeStr(`${user.GetName()} : ${msg}`);
     const idx = socket.GetUser(0)!.GetSessionIdx();
     if (idx === SESSION_IDX_NONE) {
@@ -153,7 +153,7 @@ export class CChatPool extends CUserPool {
   /** CChatPool::OnSystemMsg — packet 31 to the session or the lobby. */
   OnSystemMsg(n: CReceivedPacket, socket: CClientSocket): void {
     const msg = n.DecodeStr();
-    const p = new CSendPacket(S2C_GamePacket.OnSystemMsg, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_GamePacket.OnSystemMsg);
     p.EncodeStr(msg);
     const idx = socket.GetUser(0)?.GetSessionIdx() ?? SESSION_IDX_NONE;
     if (idx === SESSION_IDX_NONE) this.SendAll(p, 1);
@@ -176,14 +176,14 @@ export class CChatPool extends CUserPool {
 
   /** CChatPool::SendAdminMsg — to the center (MC 4). */
   SendAdminMsg(msg: string): void {
-    const p = new CSendPacket(MC_GameServerSendPacket.OnAdminNotifyMsg);
+    const p = new CSendPacket(MC_GameServerSendPacket.OnAdminNotifyMsg, CipherDegree.kPacketRaw);
     p.EncodeStr(msg);
     CCenterProcess.ms_pInstance?.SendPacket(p);
   }
 
   /** CChatPool::SendSystemCmd — to the center (MC 11). */
   SendSystemCmd(msg: string): void {
-    const p = new CSendPacket(MC_GameServerSendPacket.OnSystemCmd);
+    const p = new CSendPacket(MC_GameServerSendPacket.OnSystemCmd, CipherDegree.kPacketRaw);
     p.EncodeStr(msg);
     CCenterProcess.ms_pInstance?.SendPacket(p);
   }
@@ -219,7 +219,7 @@ export class CChatPool extends CUserPool {
       socket.PostClosePacket();
       return;
     }
-    const p = new CSendPacket(S2C_GamePacket.OnShoutMsg, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_GamePacket.OnShoutMsg);
     p.EncodeStr(`${user.GetName()} : ${msg}`);
     this.SendAll(p, 0);
   }

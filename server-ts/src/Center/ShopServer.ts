@@ -1,11 +1,11 @@
 /** Native source unit: CX/CxCenter/ShopServer.cpp. */
-import { CReceivedPacket, CSendPacket } from "../core/Packet.ts";
+import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
 import { CM_ReceivedPacket, MC_ReceivedPacket } from "../core/protocol/CenterProtocol.ts";
 import { CLocalServer, type LocalServerHost } from "./LocalServer.ts";
 
 export class CShopServer extends CLocalServer {
   override SendInitialAttr(center: LocalServerHost): void {
-    const packet = new CSendPacket(CM_ReceivedPacket.OnInitialSvrAttr);
+    const packet = new CSendPacket(CM_ReceivedPacket.OnInitialSvrAttr, CipherDegree.kPacketRaw);
     packet.Encode1(center.GetGameDomain());
     packet.Encode1(0);
     this.socket?.SendPacket(packet);
@@ -37,7 +37,7 @@ export class CShopServer extends CLocalServer {
     const gSN = n.Decode4();
     const name = n.DecodeStr();
     const user = center.globalUserTable.userTable.get(name);
-    const packet = new CSendPacket(CM_ReceivedPacket.OnUserChannelResult);
+    const packet = new CSendPacket(CM_ReceivedPacket.OnUserChannelResult, CipherDegree.kPacketRaw);
     packet.Encode1(type);
     packet.Encode4(gSN);
     packet.EncodeStr(name);

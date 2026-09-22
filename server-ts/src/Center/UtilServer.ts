@@ -1,13 +1,13 @@
 /** Native source unit: CX/CxCenter/UtilServer.cpp.
  * CxCenter.pdb contains UtilServer.obj record; CUtilServer is the native class.
  */
-import { CReceivedPacket, CSendPacket } from "../core/Packet.ts";
+import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
 import { CM_ReceivedPacket, MC_ReceivedPacket } from "../core/protocol/CenterProtocol.ts";
 import { CLocalServer, type LocalServerHost } from "./LocalServer.ts";
 
 export class CUtilServer extends CLocalServer {
   override SendInitialAttr(center: LocalServerHost): void {
-    const packet = new CSendPacket(CM_ReceivedPacket.OnInitialSvrAttr);
+    const packet = new CSendPacket(CM_ReceivedPacket.OnInitialSvrAttr, CipherDegree.kPacketRaw);
     packet.Encode1(center.GetGameDomain());
     packet.Encode1(0);
     this.socket?.SendPacket(packet);
@@ -47,7 +47,7 @@ export class CUtilServer extends CLocalServer {
     const serial = n.Decode4();
     const account = n.DecodeStr();
     const user = center.globalUserTable.userTable.get(account);
-    const packet = new CSendPacket(CM_ReceivedPacket.OnUserChannelResult);
+    const packet = new CSendPacket(CM_ReceivedPacket.OnUserChannelResult, CipherDegree.kPacketRaw);
     packet.Encode4(serial);
     packet.EncodeStr(account);
     if (user) {
@@ -72,7 +72,7 @@ export class CUtilServer extends CLocalServer {
       return;
     }
     const target = center.GetSvr(u.nChannel, u.nSvrIdx);
-    const packet = new CSendPacket(CM_ReceivedPacket.OnDeleteUser);
+    const packet = new CSendPacket(CM_ReceivedPacket.OnDeleteUser, CipherDegree.kPacketRaw);
     packet.Encode4(u.m_nGlobalSerial);
     target?.socket?.SendPacket(packet);
     // no residency check here (unlike the serial-keyed base handler) — the
@@ -90,7 +90,7 @@ export class CUtilServer extends CLocalServer {
   OnAdminNotifyGameServerMsg(n: CReceivedPacket, center: LocalServerHost): void {
     const type = n.Decode1();
     const str = n.DecodeStr();
-    const packet = new CSendPacket(CM_ReceivedPacket.OnAdminNotifyMsg);
+    const packet = new CSendPacket(CM_ReceivedPacket.OnAdminNotifyMsg, CipherDegree.kPacketRaw);
     packet.EncodeStr(str);
     center.SendPacketServerType(type, packet);
   }

@@ -1,5 +1,5 @@
 /** Native source unit: CX/CxUtil/MainPool.cpp. */
-import { CReceivedPacket, CSendPacket } from "../core/Packet.ts";
+import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
 import { MC_UtilServerSendPacket } from "../core/protocol/CenterProtocol.ts";
 import { C2S_UtilPacket, S2C_UtilPacket } from "../core/protocol/PacketIDs.ts";
 import { CUserPool } from "./UserPool.ts";
@@ -82,7 +82,7 @@ export class CMainPool extends CUserPool {
   /** CMainPool::OnAdminNotifyMsg (25) — CSendPacket(4) [EStr] to the center. */
   OnAdminNotifyMsg(n: CReceivedPacket, _a3: CClientSocket): void {
     const str = n.DecodeStr();
-    const packet = new CSendPacket(MC_UtilServerSendPacket.OnAdminNotifyMsg);
+    const packet = new CSendPacket(MC_UtilServerSendPacket.OnAdminNotifyMsg, CipherDegree.kPacketRaw);
     packet.EncodeStr(str);
     CCenterProcess.ms_pInstance?.SendPacket(packet);
   }
@@ -91,7 +91,7 @@ export class CMainPool extends CUserPool {
   OnAdminNotifyGameServerMsg(n: CReceivedPacket, _a3: CClientSocket): void {
     const b = n.Decode1();
     const str = n.DecodeStr();
-    const packet = new CSendPacket(MC_UtilServerSendPacket.OnAdminNotifyGameServerMsg);
+    const packet = new CSendPacket(MC_UtilServerSendPacket.OnAdminNotifyGameServerMsg, CipherDegree.kPacketRaw);
     packet.Encode1(b);
     packet.EncodeStr(str);
     CCenterProcess.ms_pInstance?.SendPacket(packet);
@@ -100,7 +100,7 @@ export class CMainPool extends CUserPool {
   /** CMainPool::OnSystemMsg (31) — CSendPacket(10) [EStr] to the center. */
   OnSystemMsg(n: CReceivedPacket, _a3: CClientSocket): void {
     const str = n.DecodeStr();
-    const packet = new CSendPacket(MC_UtilServerSendPacket.OnSystemMsg);
+    const packet = new CSendPacket(MC_UtilServerSendPacket.OnSystemMsg, CipherDegree.kPacketRaw);
     packet.EncodeStr(str);
     CCenterProcess.ms_pInstance?.SendPacket(packet);
   }
@@ -108,7 +108,7 @@ export class CMainPool extends CUserPool {
   /** CMainPool::OnKickoffUser (32) — CSendPacket(1) [EStr name] to the center. */
   OnKickoffUser(n: CReceivedPacket, _a3: CClientSocket): void {
     const str = n.DecodeStr();
-    const packet = new CSendPacket(MC_UtilServerSendPacket.OnDeleteUser);
+    const packet = new CSendPacket(MC_UtilServerSendPacket.OnDeleteUser, CipherDegree.kPacketRaw);
     packet.EncodeStr(str);
     CCenterProcess.ms_pInstance?.SendPacket(packet);
   }
@@ -116,7 +116,7 @@ export class CMainPool extends CUserPool {
   /** CMainPool::OnReqUserInfo (64) — CSendPacket(7) [E4 serial][EStr account]. */
   OnReqUserInfo(n: CReceivedPacket, socket: CClientSocket): void {
     const str = n.DecodeStr();
-    const packet = new CSendPacket(MC_UtilServerSendPacket.OnRequestUserChannel);
+    const packet = new CSendPacket(MC_UtilServerSendPacket.OnRequestUserChannel, CipherDegree.kPacketRaw);
     const User = socket.GetUser(0);
     console.error("OnReqUserInfo called");
     packet.Encode4(User ? User.m_dwGlobalSerialNo : 0);
@@ -126,7 +126,7 @@ export class CMainPool extends CUserPool {
 
   /** CMainPool::OnUpdateItem (66) — CSendPacket(11) [EStr] ("UpdateFxItem"). */
   OnUpdateItem(n: CReceivedPacket, _a3: CClientSocket): void {
-    const packet = new CSendPacket(MC_UtilServerSendPacket.OnSystemCmd);
+    const packet = new CSendPacket(MC_UtilServerSendPacket.OnSystemCmd, CipherDegree.kPacketRaw);
     let str = "";
     if (n.Decode1() === MC_UtilServerSendPacket.OnSystemCmd) str = "UpdateFxItem";
     packet.EncodeStr(str);

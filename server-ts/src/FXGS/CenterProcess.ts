@@ -96,14 +96,14 @@ export class CCenterProcess {
 
   /** CCenterProcess::UnregisterConnection — MC 1 [E4 serial]. */
   UnregisterConnection(n: number): void {
-    const p = new CSendPacket(MC_GameServerSendPacket.OnDeleteUser);
+    const p = new CSendPacket(MC_GameServerSendPacket.OnDeleteUser, CipherDegree.kPacketRaw);
     p.Encode4(n);
     this.SendPacket(p);
   }
 
   /** CCenterProcess::SendAuthenCode — MC 9 [E4 serial][E1 code]. */
   SendAuthenCode(n: number, code: number): void {
-    const p = new CSendPacket(MC_GameServerSendPacket.SendAuthenCode);
+    const p = new CSendPacket(MC_GameServerSendPacket.SendAuthenCode, CipherDegree.kPacketRaw);
     p.Encode4(n);
     p.Encode1(code);
     this.SendPacket(p);
@@ -237,7 +237,7 @@ export class CCenterProcess {
     const user = CLocalUserTable.ms_pInstance!.FindUserFromId(name);
     if (!user) return;
     const code = n.Decode1();
-    const p = new CSendPacket(S2C_GamePacket.OnSvrReservedMsg, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_GamePacket.OnSvrReservedMsg);
     p.Encode1(code);
     if (code === 1) p.EncodeStr(n.DecodeStr());
     user.m_pSocket?.SendPacket(p);
@@ -246,7 +246,7 @@ export class CCenterProcess {
   /** CCenterProcess::OnAdminNotifyMsg — CM 8 → client 26 to everyone. */
   OnAdminNotifyMsg(n: CReceivedPacket): void {
     const msg = n.DecodeStr();
-    const p = new CSendPacket(S2C_GamePacket.OnAdminNotifyMsg, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_GamePacket.OnAdminNotifyMsg);
     p.EncodeStr(msg);
     SendChannelPacket(p, 0);
   }
@@ -254,7 +254,7 @@ export class CCenterProcess {
   /** CCenterProcess::OnSystemMsg — CM 13 → client 30 to everyone. */
   OnSystemMsg(n: CReceivedPacket): void {
     const msg = n.DecodeStr();
-    const p = new CSendPacket(S2C_GamePacket.OnSystemMsg, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_GamePacket.OnSystemMsg);
     p.EncodeStr(msg);
     SendChannelPacket(p, 0);
   }
@@ -282,7 +282,7 @@ export class CCenterProcess {
     if (!asker || !asker.m_pSocket) return;
     if (r === 1) {
       // SendUserLocation → 72
-      const p = new CSendPacket(S2C_GamePacket.OnRequestUserLocationRes, CipherDegree.kPacketEncryptedCRC8);
+      const p = new CSendPacket(S2C_GamePacket.OnRequestUserLocationRes);
       p.Encode1(1);
       p.EncodeStr(name);
       p.Encode1(type);
@@ -292,7 +292,7 @@ export class CCenterProcess {
     } else {
       // SendUserDetailInfo → 71 (DB-backed)
       const info = this.db.prGetUserInfo(name);
-      const p = new CSendPacket(S2C_GamePacket.OnRequestUserInfoDetailRes, CipherDegree.kPacketEncryptedCRC8);
+      const p = new CSendPacket(S2C_GamePacket.OnRequestUserInfoDetailRes);
       if (info.retval === 0) {
         p.Encode1(1);
         p.EncodeStr(name);

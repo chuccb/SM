@@ -1,6 +1,6 @@
 /** Native source unit: FX/FxShop/UserPool.cpp. */
 import { timeGetTime } from "../core/timeGetTime.ts";
-import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
+import { CReceivedPacket, CSendPacket } from "../core/Packet.ts";
 import { S2C_ShopPacket, C2S_ShopPacket } from "../core/protocol/PacketIDs.ts";
 import type { CUser } from "./User.ts";
 import type { CClientSocket } from "./ClientSocket.ts";
@@ -64,7 +64,7 @@ export class CUserPool {
    *  [E4 t] → client 20 [E4 t][E4 now]. */
   OnPacket(n: CReceivedPacket, socket: CClientSocket): void {
     if (n.Decode1() !== C2S_ShopPacket.OnEstimateRTT) return;
-    const packet = new CSendPacket(S2C_ShopPacket.OnEstimateRTTRes, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_ShopPacket.OnEstimateRTTRes);
     const t = n.Decode4();
     const now = timeGetTime();
     packet.Encode4(t);

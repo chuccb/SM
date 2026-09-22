@@ -1,7 +1,7 @@
 /** Native source unit: FX/FxServer/PracticeSession.cpp.
  * CPracticeSession — the solo practice rooms with their AI seats. */
 
-import { CReceivedPacket, CSendPacket, CipherDegree, PACKET_TYPE_PLACEHOLDER } from "../core/Packet.ts";
+import { CReceivedPacket, CSendPacket, PACKET_TYPE_PLACEHOLDER } from "../core/Packet.ts";
 import { S2C_GamePacket, C2S_GameSessionPacket } from "../core/protocol/PacketIDs.ts";
 import { timeGetTime } from "../core/timeGetTime.ts";
 import {
@@ -193,7 +193,7 @@ export class CPracticeSession extends CGameSession {
     socket.m_nPoolType = 1; // back to the lobby
     this.FlushPacket();
     this.DeleteAllSlotidx(socket);
-    this.m_pStrategy.SendSessionInfo(new CSendPacket(PACKET_TYPE_PLACEHOLDER, CipherDegree.kPacketEncryptedCRC8)); // vtbl+32 (:42035)
+    this.m_pStrategy.SendSessionInfo(new CSendPacket(PACKET_TYPE_PLACEHOLDER)); // vtbl+32 (:42035)
     return 1;
   }
 
@@ -242,7 +242,7 @@ export class CPracticeSession extends CGameSession {
     const state = this.m_rgSlotState[p]!;
     if (((state & SLOTSTATE_CLOSED) === 0 || open === 0) && ((state & SLOTSTATE_CLOSED) !== 0 || open !== 0)) {
       this.m_rgSlotState[p] = state ^ ((open ^ state) & SLOTSTATE_CLOSED);
-      const packet = new CSendPacket(S2C_GamePacket.OnOpenCloseSlotRes, CipherDegree.kPacketEncryptedCRC8);
+      const packet = new CSendPacket(S2C_GamePacket.OnOpenCloseSlotRes);
       packet.Encode1(((slot << 4) | (open & 0xf)) & 0xff);
       if (open === 0) packet.Encode2(this.m_anAILevel[slot] & 0xffff);
       this.m_argpAISocket[slot] = open === 0 ? socket : null;
@@ -320,7 +320,7 @@ export class CPracticeSession extends CGameSession {
     }
     if (this.m_fPlaying !== 0) color = this.m_rgSlotState[slot * 3 + 2]! & SLOTSTATE_COLOR_MASK;
     this.DoSelectColor(slot, color); // vtbl+116 (no-ops while playing)
-    const packet = new CSendPacket(S2C_GamePacket.OnSelectColorRes, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnSelectColorRes);
     packet.Encode1(((slot << 4) | (color & 0xf)) & 0xff);
     this.SendPacket(packet);
   }
@@ -352,7 +352,7 @@ export class CPracticeSession extends CGameSession {
     if (this.m_fPlaying !== 0) bomber = this.m_rgSlotState[slot * 3 + 1]! & SLOTSTATE_BOMBER_MASK;
     const p = slot * 3 + 1;
     this.m_rgSlotState[p] = this.m_rgSlotState[p]! ^ ((bomber ^ this.m_rgSlotState[p]!) & SLOTSTATE_BOMBER_MASK);
-    const packet = new CSendPacket(S2C_GamePacket.OnSelectBomberRes, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnSelectBomberRes);
     packet.Encode1(((slot << 4) | (bomber & 0xf)) & 0xff);
     this.SendPacket(packet);
   }
@@ -386,7 +386,7 @@ export class CPracticeSession extends CGameSession {
       for (let i = 0; i < this.m_nMaxSlot; i++) {
         this.m_anAILevel[i] = level;
         if (this.m_argpAISocket[i] !== null) {
-          const packet = new CSendPacket(S2C_GamePacket.OnChangeAILevel, CipherDegree.kPacketEncryptedCRC8);
+          const packet = new CSendPacket(S2C_GamePacket.OnChangeAILevel);
           packet.Encode1(i);
           packet.Encode2(level & 0xffff);
           socket.PutPacketQueued(packet);
@@ -394,7 +394,7 @@ export class CPracticeSession extends CGameSession {
       }
     } else {
       this.m_anAILevel[slot] = level;
-      const packet = new CSendPacket(S2C_GamePacket.OnChangeAILevel, CipherDegree.kPacketEncryptedCRC8);
+      const packet = new CSendPacket(S2C_GamePacket.OnChangeAILevel);
       packet.Encode1(slot);
       packet.Encode2(level & 0xffff);
       socket.PutPacketQueued(packet);
@@ -415,7 +415,7 @@ export class CPracticeSession extends CGameSession {
   /** CPracticeSession::MakeSessionInfoPacket (FxServer.exe.c:4258CE) — the
    *  owner socket gets one 105 (fSelf forced) or 107 per slot. */
   override MakeSessionInfoPacket(socket: CClientSocket): void {
-    const packet = new CSendPacket(PACKET_TYPE_PLACEHOLDER, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(PACKET_TYPE_PLACEHOLDER);
     for (let slot = 0; slot < this.m_nMaxSlot; slot++) {
       if (this.m_rgPlayer[slot]) this.MakeSetPlayerPacket(slot, 1, packet);
       else this.MakeSetSlotStatePacket(slot, packet);
@@ -562,7 +562,7 @@ export class CPracticeSession extends CGameSession {
    *  [E1 0]; one trailing [E1 0] per human.  No rewards: dyn rows and
    *  counters stay untouched. */
   override SendGameResult(winTeam: number): void {
-    const packet = new CSendPacket(S2C_GamePacket.OnGameResult, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnGameResult);
     packet.Encode1(0); // result flag
     packet.Encode1(winTeam);
     // The matching client predates the later strategy result-view byte.
@@ -602,7 +602,7 @@ export class CPracticeSession extends CGameSession {
   /** CPracticeSession::DoReturnPrepareStage (FxServer.exe.c:425DC4) — the
    *  practice room re-enters with code 3 (the game room sends 0). */
   override DoReturnPrepareStage(): void {
-    const packet = new CSendPacket(S2C_GamePacket.OnReturnPrepareStage, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnReturnPrepareStage);
     packet.Encode1(3);
     this.SendPacket(packet);
     this.m_nGamePhase = 0;
@@ -617,7 +617,7 @@ export class CPracticeSession extends CGameSession {
       if (host.some((b) => b !== 0)) host.fill(0); // HOSTHANDLE::operator!= invalidHost
     }
     // vtbl+32 with a fresh CSendPacket, just like the normal return path.
-    this.m_pStrategy.SendSessionInfo(new CSendPacket(PACKET_TYPE_PLACEHOLDER, CipherDegree.kPacketEncryptedCRC8));
+    this.m_pStrategy.SendSessionInfo(new CSendPacket(PACKET_TYPE_PLACEHOLDER));
   }
 
   /** CPracticeSession::OnPacket (FxServer.exe.c:42790) — the practice room

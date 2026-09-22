@@ -118,12 +118,14 @@ export class CSendPacket extends CMemBlock {
   m_nPacketType = 0;
   m_uOffset = 0;
   // Keep the mutable native field wide; TS next otherwise narrows the const member to literal 0.
-  m_nCipherDegree: number = CipherDegree.kPacketRaw;
+  // Native single-arg ctor defaults to degree 2 (kPacketEncryptedCRC8) — FxServer.exe.c:00411DDE / FxShop.exe.c:00418FE0.
+  // Raw (center/local/OnConnect) packets pass degree 0 explicitly.
+  m_nCipherDegree: number = CipherDegree.kPacketEncryptedCRC8;
 
-  constructor(nPacketType?: number, nCipherDegree: number = CipherDegree.kPacketRaw) {
+  constructor(nPacketType?: number, nCipherDegree: number = CipherDegree.kPacketEncryptedCRC8) {
     super();
     this.Alloc(0x40);
-    this.m_nCipherDegree = IsValidCipherDegree(nCipherDegree) ? nCipherDegree : CipherDegree.kPacketRaw;
+    this.m_nCipherDegree = IsValidCipherDegree(nCipherDegree) ? nCipherDegree : CipherDegree.kPacketEncryptedCRC8;
     if (nPacketType !== undefined) {
       this.m_nPacketType = nPacketType;
       this.Encode1(nPacketType);

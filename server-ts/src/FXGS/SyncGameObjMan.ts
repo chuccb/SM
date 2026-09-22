@@ -1,5 +1,5 @@
 /** Native source unit: FX/FxServer/SyncGameObjMan.cpp. */
-import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
+import { CReceivedPacket, CSendPacket } from "../core/Packet.ts";
 import { S2C_GamePacket } from "../core/protocol/PacketIDs.ts";
 import { MAX_SESSION_SLOTS, SYNC_BEST_LOAD_INIT } from "./Defs.ts";
 import type { CGameSession } from "./GameSession.ts";
@@ -72,7 +72,7 @@ export class CSyncGameObjMan {
         continue;
       }
       this.Delegate(id, slot);
-      const packet = new CSendPacket(S2C_GamePacket.OnObjInitial, CipherDegree.kPacketEncryptedCRC8);
+      const packet = new CSendPacket(S2C_GamePacket.OnObjInitial);
       packet.Encode2(id);
       packet.Encode1(slot);
       this.m_pGameSession.SendPacket(packet);
@@ -102,7 +102,7 @@ export class CSyncGameObjMan {
       return;
     }
     this.Delegate(objId, slot);
-    const packet = new CSendPacket(S2C_GamePacket.OnObjCreate, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnObjCreate);
     packet.Encode2(objId);
     packet.Encode1(slot);
     packet.Encode2(objType);
@@ -122,7 +122,7 @@ export class CSyncGameObjMan {
     const crc = n.Decode4();
     for (const set of this.m_rgSetObj) set.delete(objId);
     this.m_mapObj.delete(objId);
-    const packet = new CSendPacket(S2C_GamePacket.OnObjDestroy, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnObjDestroy);
     packet.Encode2(objId);
     packet.Encode4(crc);
     session.SendPacket(packet);
@@ -147,7 +147,7 @@ export class CSyncGameObjMan {
         } else {
           this.m_mapObj.delete(objId);
         }
-        const packet = new CSendPacket(S2C_GamePacket.OnObjDestroy, CipherDegree.kPacketEncryptedCRC8);
+        const packet = new CSendPacket(S2C_GamePacket.OnObjDestroy);
         packet.Encode2(objId);
         packet.Encode4(0);
         session.SendPacket(packet);

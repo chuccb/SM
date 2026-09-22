@@ -1,5 +1,5 @@
 /** Native source unit: CX/CxLogin/UserPool.cpp. */
-import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
+import { CReceivedPacket, CSendPacket } from "../core/Packet.ts";
 import { timeGetTime } from "../core/timeGetTime.ts";
 import { C2S_LoginPacket, S2C_LoginResponsePacket } from "../core/protocol/PacketIDs.ts";
 import type { CClientSocket } from "./ClientSocket.ts";
@@ -82,7 +82,7 @@ export class CUserPool {
 
   /** CUserPool::OnEstimateRTT. */
   protected OnEstimateRTT(packet: CReceivedPacket, socket: CClientSocket): void {
-    const response = new CSendPacket(S2C_LoginResponsePacket.OnEstimateRTTRes, CipherDegree.kPacketEncryptedCRC8);
+    const response = new CSendPacket(S2C_LoginResponsePacket.OnEstimateRTTRes);
     const clientStamp = packet.Decode4();
     const now = timeGetTime();
     response.Encode4(clientStamp);

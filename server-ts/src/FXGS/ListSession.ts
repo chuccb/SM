@@ -1,5 +1,5 @@
 /** Native source unit: FX/FxServer/ListSession.cpp. */
-import { CReceivedPacket, CSendPacket, CipherDegree, PACKET_TYPE_PLACEHOLDER } from "../core/Packet.ts";
+import { CReceivedPacket, CSendPacket, PACKET_TYPE_PLACEHOLDER } from "../core/Packet.ts";
 import { S2C_GamePacket } from "../core/protocol/PacketIDs.ts";
 import { FunctionalItem } from "../common/Item.ts";
 import { timeGetTime } from "../core/timeGetTime.ts";
@@ -183,19 +183,19 @@ export class CListSession extends CBaseSession {
       for (let slot = 0; slot < this.m_nMaxSlot; slot++) {
         const user = this.m_rgPlayer[slot];
         if (user && slot !== this.m_nChiefSlotidx && this.IsChief(user.m_pSocket!)) {
-          const packet = new CSendPacket(PACKET_TYPE_PLACEHOLDER, CipherDegree.kPacketEncryptedCRC8);
+          const packet = new CSendPacket(PACKET_TYPE_PLACEHOLDER);
           this.MakeSetSlotStatePacket(slot, packet);
           this.PutPacket(packet);
         }
       }
     }
     if (old >= 0) {
-      const packet = new CSendPacket(PACKET_TYPE_PLACEHOLDER, CipherDegree.kPacketEncryptedCRC8);
+      const packet = new CSendPacket(PACKET_TYPE_PLACEHOLDER);
       this.MakeSetSlotStatePacket(old, packet);
       this.PutPacket(packet);
     }
     if (this.m_nChiefSlotidx >= 0) {
-      const packet = new CSendPacket(PACKET_TYPE_PLACEHOLDER, CipherDegree.kPacketEncryptedCRC8);
+      const packet = new CSendPacket(PACKET_TYPE_PLACEHOLDER);
       this.MakeSetSlotStatePacket(this.m_nChiefSlotidx, packet);
       this.PutPacket(packet);
     }
@@ -235,7 +235,7 @@ export class CListSession extends CBaseSession {
   /** CListSession::DoBangPok — 122 to everyone, then out to the lobby. */
   DoBangPok(): void {
     for (const socket of [...this.m_setSocket]) {
-      const p = new CSendPacket(S2C_GamePacket.OnBangPok, CipherDegree.kPacketEncryptedCRC8);
+      const p = new CSendPacket(S2C_GamePacket.OnBangPok);
       socket.SendPacket(p);
       socket.m_nPoolType = 4; // CClientSocket+468 = 4 (MoveToExchangeSession)
       MoveToExchangeSession(socket, 0);
@@ -253,7 +253,7 @@ export class CListSession extends CBaseSession {
   DoOpenCloseSlot(slot: number, close: number): void {
     if (slot < 0 || slot >= this.m_nMaxSlot) return;
     if (this.m_rgPlayer[slot]) close = 0;
-    const packet = new CSendPacket(S2C_GamePacket.OnOpenCloseSlotRes, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnOpenCloseSlotRes);
     packet.Encode1(((slot << 4) | (close & 0xf)) & 0xff);
     this.SendPacket(packet);
     const p = slot * 3;
@@ -390,7 +390,7 @@ export class CListSession extends CBaseSession {
       return;
     }
     if (this.m_nBanSerial !== 0) {
-      const p = new CSendPacket(S2C_GamePacket.OnBanPlayerRes, CipherDegree.kPacketEncryptedCRC8);
+      const p = new CSendPacket(S2C_GamePacket.OnBanPlayerRes);
       p.Encode1(1);
       socket.SendPacket(p);
       return;
@@ -431,7 +431,7 @@ export class CListSession extends CBaseSession {
         this.m_nBanSerial = 0;
         const targetSocket = targetUser.m_pSocket!;
         this.MoveSocketToExchange(targetSocket);
-        const p = new CSendPacket(S2C_GamePacket.OnBanPlayerRes, CipherDegree.kPacketEncryptedCRC8);
+        const p = new CSendPacket(S2C_GamePacket.OnBanPlayerRes);
         p.Encode1(4);
         this.SendPacket(p);
         return;
@@ -450,7 +450,7 @@ export class CListSession extends CBaseSession {
       const chief = this.m_rgPlayer[this.m_nChiefSlotidx]!;
       const chiefSocket = chief.m_pSocket!;
       this.MoveSocketToExchange(chiefSocket);
-      const p = new CSendPacket(S2C_GamePacket.OnBanPlayerRes, CipherDegree.kPacketEncryptedCRC8);
+      const p = new CSendPacket(S2C_GamePacket.OnBanPlayerRes);
       p.Encode1(5);
       p.EncodeStr(chief.GetName());
       this.SendPacket(p);
@@ -468,7 +468,7 @@ export class CListSession extends CBaseSession {
     }
     this.DeferBanPlayer();
     if (this.m_nBanSerial !== 0) {
-      const ask = new CSendPacket(S2C_GamePacket.OnBanVoteRequest, CipherDegree.kPacketEncryptedCRC8);
+      const ask = new CSendPacket(S2C_GamePacket.OnBanVoteRequest);
       ask.Encode4(serial);
       ask.EncodeStr(targetUser.GetName());
       const chiefSocket = chiefUser.m_pSocket!;
@@ -483,7 +483,7 @@ export class CListSession extends CBaseSession {
         sent.add(member);
         member.SendPacket(ask);
       }
-      const res = new CSendPacket(S2C_GamePacket.OnBanPlayerRes, CipherDegree.kPacketEncryptedCRC8);
+      const res = new CSendPacket(S2C_GamePacket.OnBanPlayerRes);
       res.Encode1(0);
       socket.SendPacket(res);
     }
@@ -526,7 +526,7 @@ export class CListSession extends CBaseSession {
     }
     if (targetSlot === -1) {
       this.m_nBanSerial = 0;
-      const p = new CSendPacket(S2C_GamePacket.OnBanPlayerRes, CipherDegree.kPacketEncryptedCRC8);
+      const p = new CSendPacket(S2C_GamePacket.OnBanPlayerRes);
       p.Encode1(4);
       this.SendPacket(p);
       return;
@@ -538,7 +538,7 @@ export class CListSession extends CBaseSession {
       const targetSocket = target.m_pSocket!;
       this.MoveSocketToExchange(targetSocket);
       targetSocket.m_nPoolType = 4;
-      const p = new CSendPacket(S2C_GamePacket.OnBanPlayerRes, CipherDegree.kPacketEncryptedCRC8);
+      const p = new CSendPacket(S2C_GamePacket.OnBanPlayerRes);
       p.Encode1(2);
       p.EncodeStr(target.GetName());
       this.SendPacket(p);
@@ -547,7 +547,7 @@ export class CListSession extends CBaseSession {
     if (2 * no >= total || yes + no >= total) {
       this.m_nBanSerial = 0;
       const target = this.m_rgPlayer[targetSlot]!;
-      const p = new CSendPacket(S2C_GamePacket.OnBanPlayerRes, CipherDegree.kPacketEncryptedCRC8);
+      const p = new CSendPacket(S2C_GamePacket.OnBanPlayerRes);
       p.Encode1(3);
       p.EncodeStr(target.GetName());
       this.SendPacket(p);
@@ -573,7 +573,7 @@ export class CListSession extends CBaseSession {
       return;
     }
     const text = `${user0.GetName()} : ${msg}`;
-    const packet = new CSendPacket(S2C_GamePacket.OnWhisperRes, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnWhisperRes);
     packet.EncodeStr(text);
     const slot = this.GetSlotidx(user0);
     const color = this.GetColor(slot);

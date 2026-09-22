@@ -1,5 +1,5 @@
 /** Native source unit: FX/FxServer/UserPool.cpp. */
-import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
+import { CReceivedPacket, CSendPacket } from "../core/Packet.ts";
 import { S2C_GamePacket, C2S_GameLobbyPacket } from "../core/protocol/PacketIDs.ts";
 import { timeGetTime } from "../core/timeGetTime.ts";
 import { RTT_HASH, RTT_HASH_INV, RTT_MIN_INTERVAL, SOCKET_TIMEOUT } from "./Defs.ts";
@@ -67,7 +67,7 @@ export class CUserPool {
   /** CUserPool::OnPacket — the 20 RTT fallback with the GS anti-cheat checks. */
   OnPacket(n: CReceivedPacket, socket: CClientSocket): void {
     if (n.Decode1() !== C2S_GameLobbyPacket.OnEstimateRTT) return;
-    const packet = new CSendPacket(S2C_GamePacket.OnEstimateRTTRes, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnEstimateRTTRes);
     const rttValue = n.Decode4(); // the client's stamp, echoed verbatim
     const hash = n.Decode4();
     const now = timeGetTime();

@@ -163,7 +163,7 @@ export class CCenterProcess {
 
   /** CCenterProcess::RegisterConnection (CxLogin.exe.c:4942) — center packet 0. */
   RegisterConnection(socket: CClientSocket): void {
-    const packet = new CSendPacket(MC_LoginServerSendPacket.OnAddNewUser); // MC
+    const packet = new CSendPacket(MC_LoginServerSendPacket.OnAddNewUser, CipherDegree.kPacketRaw); // MC
     packet.Encode4(PeerAddressDword(socket)); // the client's in_addr (the D4 the center stores as CUser::GetIP)
     packet.EncodeBuffer(socket.GetMachineId(), MACHINE_ID_BYTES);
     packet.Encode4(socket.GetGameRoomCode());
@@ -183,14 +183,14 @@ export class CCenterProcess {
   /** CCenterProcess::UnregisterConnection (CxLogin.exe.c:1380) — center packet 1. */
   UnregisterConnection(sn: number): void {
     if (sn === 0) return;
-    const packet = new CSendPacket(MC_LoginServerSendPacket.OnDeleteUser); // MC
+    const packet = new CSendPacket(MC_LoginServerSendPacket.OnDeleteUser, CipherDegree.kPacketRaw); // MC
     packet.Encode4(sn);
     this.SendFrPacketToCenter(packet);
   }
 
   /** CCenterProcess::DestructCenterSvr (CxLogin.exe.c:1406) — center packet 100. */
   DestructCenterSvr(): void {
-    const packet = new CSendPacket(MC_LoginServerSendPacket.OnDestructCenterSvr);
+    const packet = new CSendPacket(MC_LoginServerSendPacket.OnDestructCenterSvr, CipherDegree.kPacketRaw);
     this.SendFrPacketToCenter(packet);
   }
 
@@ -411,7 +411,7 @@ export class CCenterProcess {
     const name = n.DecodeStr();
     const user = this.m_pLoginPool.m_localUserTable.FindUserFromId(name);
     if (user !== null) {
-      const packet = new CSendPacket(S2C_LoginNoticePacket.OnSvrReservedMsg, CipherDegree.kPacketEncryptedCRC8);
+      const packet = new CSendPacket(S2C_LoginNoticePacket.OnSvrReservedMsg);
       const count = n.Decode1();
       packet.Encode1(count);
       if (count === 1) {
@@ -425,7 +425,7 @@ export class CCenterProcess {
   /** CCenterProcess::OnAdminNotifyMsg (CxLogin.exe.c:5153) — client p26 broadcast. */
   OnAdminNotifyMsg(n: CReceivedPacket): void {
     const str = n.DecodeStr();
-    const packet = new CSendPacket(S2C_LoginNoticePacket.OnAdminNotifyMsg, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_LoginNoticePacket.OnAdminNotifyMsg);
     packet.EncodeStr(str);
     this.SendToAll(packet);
   }
@@ -433,7 +433,7 @@ export class CCenterProcess {
   /** CCenterProcess::OnSystemMsg (CxLogin.exe.c:5189) — client p30 broadcast. */
   OnSystemMsg(n: CReceivedPacket): void {
     const str = n.DecodeStr();
-    const packet = new CSendPacket(S2C_LoginNoticePacket.OnSystemMsg, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_LoginNoticePacket.OnSystemMsg);
     packet.EncodeStr(str);
     this.SendToAll(packet);
   }

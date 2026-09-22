@@ -88,7 +88,7 @@ export class CConnectPool extends CUserPool {
     socket.GetUser(0)!.SetClientInitialized(n.Decode1() === 0 ? 1 : 0);
 
     // → center p3 OnConnEstablished [E1 n][n×(EStr, E4 gSN)]
-    const p = new CSendPacket(MC_GameServerSendPacket.OnConnEstablished);
+    const p = new CSendPacket(MC_GameServerSendPacket.OnConnEstablished, CipherDegree.kPacketRaw);
     p.Encode1(count);
     for (let j = 0; j < count; j++) {
       const u = socket.GetUser(j)!;
@@ -171,7 +171,7 @@ export class CConnectPool extends CUserPool {
           const inserted = CGuildTable.ms_pInstance!.Insert(u.GetGuildSerialNo());
           if (inserted === 0 && CMainSystem.ms_pInstance!.m_nChannelType === CHANNEL_TYPE_GUILD) {
             console.error("[GS] Fatal error: Insert to GuildTable Failed"); // :10610
-            const p = new CSendPacket(S2C_GamePacket.OnGuildBanRes, CipherDegree.kPacketEncryptedCRC8);
+            const p = new CSendPacket(S2C_GamePacket.OnGuildBanRes);
             users[0]!.m_pSocket?.SendPacket(p);
             return;
           }
@@ -193,27 +193,27 @@ export class CConnectPool extends CUserPool {
     }
 
     // → client 210 [E1 attr]; move the socket into the channel pool.
-    const p210 = new CSendPacket(S2C_GamePacket.OnEnableShop, CipherDegree.kPacketEncryptedCRC8);
+    const p210 = new CSendPacket(S2C_GamePacket.OnEnableShop);
     p210.Encode1(CMainSystem.ms_pInstance!.m_fInventoryDB);
     const socket = users[0]!.m_pSocket!;
     socket.SendPacket(p210);
     if (this.DeleteSocket(socket) !== 0 && CChannelPool.ms_pInstance!.AddNewSocket(socket) !== 0) {
       let sent = false;
       if (users[0]!.IsClientInitialized() === 0) {
-        const p202 = new CSendPacket(S2C_GamePacket.OnUserItemList, CipherDegree.kPacketEncryptedCRC8);
+        const p202 = new CSendPacket(S2C_GamePacket.OnUserItemList);
         CUserItemMan.ms_pInstance!.PutUserItemList(p202);
         socket.SendPacket(p202);
         sent = true;
       }
       if (users.some((u) => u && u.m_nPreInventoryCount > 0)) {
-        const p207 = new CSendPacket(S2C_GamePacket.OnPreInventory, CipherDegree.kPacketEncryptedCRC8);
+        const p207 = new CSendPacket(S2C_GamePacket.OnPreInventory);
         p207.Encode1(count);
         for (const u of users) u!.MakePreInventoryPacket(p207);
         socket.SendPacket(p207);
         sent = true;
       }
       if (sent) {
-        const p201 = new CSendPacket(S2C_GamePacket.OnUserInventory, CipherDegree.kPacketEncryptedCRC8);
+        const p201 = new CSendPacket(S2C_GamePacket.OnUserInventory);
         p201.Encode1(count);
         for (const u of users) u!.MakeUserInventoryPacket(p201);
         socket.SendPacket(p201);

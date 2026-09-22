@@ -2,7 +2,7 @@
 import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { CServerConfig } from "../core/ServerConfig.ts";
-import { CReceivedPacket, CSendPacket } from "../core/Packet.ts";
+import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
 import {
   CM_ReceivedPacket,
   SVRCLASS_GAME,
@@ -190,7 +190,7 @@ export class CLocalServerMan {
    *  server class (10); the connection-count/version maps are class keyed too. */
   SendLocalSvrGameStatePacket(sock: CLocalSocket | null): void {
     const gsServers = this.servers.filter((s) => s.nServerClass === SVRCLASS_GAME);
-    const packet = new CSendPacket(CM_ReceivedPacket.OnLocalGameState);
+    const packet = new CSendPacket(CM_ReceivedPacket.OnLocalGameState, CipherDegree.kPacketRaw);
     packet.Encode1(gsServers.length);
     for (const _gs of gsServers) {
       const cls = SVRCLASS_GAME;
@@ -205,7 +205,7 @@ export class CLocalServerMan {
 
   /** CLocalServerMan::SendLocalSvrInfoPacket — packet 3 (CxCenter.exe.c:13249). */
   SendLocalSvrInfoPacket(nServerClass: number, nSvrIdx: number): void {
-    const packet = new CSendPacket(CM_ReceivedPacket.OnLocalServerInfo);
+    const packet = new CSendPacket(CM_ReceivedPacket.OnLocalServerInfo, CipherDegree.kPacketRaw);
     const gsServers = this.servers.filter((s) => s.nServerClass === SVRCLASS_GAME);
     packet.Encode4(gsServers.length);
     for (const gs of gsServers) {
@@ -231,7 +231,7 @@ export class CLocalServerMan {
     // table only (count = FXSSNumber; entries stride 96: +56 ip E4, +60 port
     // E2) - the login/game/util servers are NOT in this list.
     const shopServers = this.servers.filter((s) => s.nServerClass === SVRCLASS_SHOP);
-    const packet = new CSendPacket(CM_ReceivedPacket.OnShopServerInfo);
+    const packet = new CSendPacket(CM_ReceivedPacket.OnShopServerInfo, CipherDegree.kPacketRaw);
     packet.Encode4(shopServers.length);
     for (const svr of shopServers) {
       packet.Encode4(IpToU32(svr.strIP));
@@ -250,7 +250,7 @@ export class CLocalServerMan {
   m_nStateRotate = 0;
 
   SendLocalSvrStatePacket(fRegister: number): void {
-    const packet = new CSendPacket(CM_ReceivedPacket.OnLocalServerState);
+    const packet = new CSendPacket(CM_ReceivedPacket.OnLocalServerState, CipherDegree.kPacketRaw);
     const gsServers = this.servers.filter((s) => s.nServerClass === SVRCLASS_GAME);
     packet.Encode4(gsServers.length);
     for (const gs of gsServers) packet.Encode4(gs.socket ? gs.nConnNo : -1);
@@ -333,7 +333,7 @@ export class CLocalServerMan {
    */
   OnAdminNotifyMsg(n: CReceivedPacket): void {
     const str = n.DecodeStr();
-    const packet = new CSendPacket(CM_ReceivedPacket.OnAdminNotifyMsg);
+    const packet = new CSendPacket(CM_ReceivedPacket.OnAdminNotifyMsg, CipherDegree.kPacketRaw);
     packet.EncodeStr(str);
     const families: [number, string][] = [
       [SVRCLASS_LOGIN, "LoginServers"],
@@ -358,7 +358,7 @@ export class CLocalServerMan {
    */
   OnSystemMsg(n: CReceivedPacket): void {
     const str = n.DecodeStr();
-    const packet = new CSendPacket(CM_ReceivedPacket.OnSystemMsg);
+    const packet = new CSendPacket(CM_ReceivedPacket.OnSystemMsg, CipherDegree.kPacketRaw);
     packet.EncodeStr(str);
     this.SendPacketToLoginGameShop(packet);
   }
@@ -371,7 +371,7 @@ export class CLocalServerMan {
   OnSystemCmd(n: CReceivedPacket): void {
     const str = n.DecodeStr();
     if (!str.toLowerCase().startsWith("updatefxitem")) return;
-    const packet = new CSendPacket(CM_ReceivedPacket.OnItemDBInit);
+    const packet = new CSendPacket(CM_ReceivedPacket.OnItemDBInit, CipherDegree.kPacketRaw);
     this.SendPacketGameShop(packet);
   }
 

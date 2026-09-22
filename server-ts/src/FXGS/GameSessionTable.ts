@@ -2,7 +2,7 @@
  * CGameSessionTable — the two 255-slot table halves (rooms and practice)
  *  and the create/join/UDP dispatch. */
 
-import { CReceivedPacket, CSendPacket, CipherDegree, PACKET_TYPE_PLACEHOLDER } from "../core/Packet.ts";
+import { CReceivedPacket, CSendPacket, PACKET_TYPE_PLACEHOLDER } from "../core/Packet.ts";
 import type { HOSTHANDLE } from "../common/MTUDP.ts";
 import { S2C_GamePacket, C2S_GameSessionPacket } from "../core/protocol/PacketIDs.ts";
 import { timeGetTime } from "../core/timeGetTime.ts";
@@ -70,7 +70,7 @@ export class CGameSessionTable extends CBaseSessionTable {
 
   /** CGameSessionTable::PutAllSessionInfo — packet 83 per valid room. */
   PutAllSessionInfo(socket: CClientSocket): void {
-    const packet = new CSendPacket(S2C_GamePacket.OnSessionSimpleInfo, CipherDegree.kPacketEncryptedCRC8);
+    const packet = new CSendPacket(S2C_GamePacket.OnSessionSimpleInfo);
     for (const session of this.m_apGameSession) {
       if (!session || session.fValid === 0) continue;
       session.MakeSimpleInfoPacket(packet);
@@ -149,7 +149,7 @@ export class CGameSessionTable extends CBaseSessionTable {
     if (session && session.fValid !== 0 && session.m_nSerialNo === serial) {
       session.OnRequestSessionInfoDetail(socket);
     } else {
-      const packet = new CSendPacket(S2C_GamePacket.OnSessionInfoDetailRes, CipherDegree.kPacketEncryptedCRC8);
+      const packet = new CSendPacket(S2C_GamePacket.OnSessionInfoDetailRes);
       packet.Encode1(SESSION_INFO_DETAIL_RESULT.NotFound);
       socket.SendPacket(packet);
     }
@@ -249,7 +249,7 @@ export class CGameSessionTable extends CBaseSessionTable {
   KickImp(socket: CClientSocket): number {
     if (socket.m_fImpPoint === 0) return 0;
     console.error(`[GS] Fatal Revenge: Kick imp's ass [${socket.GetUser(0)?.GetName() ?? "NULL"}] !`);
-    const p = new CSendPacket(S2C_GamePacket.OnKickoffUser, CipherDegree.kPacketEncryptedCRC8);
+    const p = new CSendPacket(S2C_GamePacket.OnKickoffUser);
     p.EncodeStr("abnormal state, disconnect user.");
     socket.ForceSendAndClose(p);
     return 1;
@@ -300,7 +300,7 @@ export class CGameSessionTable extends CBaseSessionTable {
   /** CGameSessionTable::DoCreateSession (FxServer.exe.c:38917). */
   DoCreateSession(socket: CClientSocket, title: string, password: string, selects: number[], gameType: number): void {
     if (this.KickImp(socket) !== 0) return;
-    const res = new CSendPacket(S2C_GamePacket.OnCreateSessionRes, CipherDegree.kPacketEncryptedCRC8);
+    const res = new CSendPacket(S2C_GamePacket.OnCreateSessionRes);
     const na = socket.GetUserCount();
     if (na <= 0) return;
     for (let i = 0; i < na; i++) {
@@ -356,7 +356,7 @@ export class CGameSessionTable extends CBaseSessionTable {
    *  already seated somewhere. */
   DoCreatePracticeSession(socket: CClientSocket, selects: number[]): void {
     if (this.KickImp(socket) !== 0) return;
-    const res = new CSendPacket(S2C_GamePacket.OnPracticeSessionCreated, CipherDegree.kPacketEncryptedCRC8);
+    const res = new CSendPacket(S2C_GamePacket.OnPracticeSessionCreated);
     const na = socket.GetUserCount();
     if (na > 0) {
       for (let i = 0; i < na; i++) {
@@ -406,7 +406,7 @@ export class CGameSessionTable extends CBaseSessionTable {
   DoJoinSession(socket: CClientSocket, idx: number, serial: number, password: string, selects: number[]): void {
     if (this.KickImp(socket) !== 0) return;
     const na = socket.GetUserCount();
-    const res = new CSendPacket(S2C_GamePacket.OnJoinSessionRes, CipherDegree.kPacketEncryptedCRC8);
+    const res = new CSendPacket(S2C_GamePacket.OnJoinSessionRes);
     if (idx >= SESSION_IDX_MAX) {
       console.error("[GS] Invalid game session slot index (DoJoinSession)");
       return;
@@ -465,7 +465,7 @@ export class CGameSessionTable extends CBaseSessionTable {
       // every user must still be outside a session (GetSessionIdx == 0xFFFF)
       if (socket.GetUser(i)!.GetSessionIdx() !== SESSION_IDX_NONE) return;
     }
-    const res = new CSendPacket(S2C_GamePacket.OnJoinFreeSessionRes, CipherDegree.kPacketEncryptedCRC8);
+    const res = new CSendPacket(S2C_GamePacket.OnJoinFreeSessionRes);
     res.Encode1(SESSION_RESULT.Failure);
     socket.SendPacket(res);
   }
@@ -528,7 +528,7 @@ export class CGameSessionTable extends CBaseSessionTable {
     if (!list) return;
     for (const session of this.m_apGameSession) {
       if (!session || session.fValid === 0) continue;
-      const packet = new CSendPacket(PACKET_TYPE_PLACEHOLDER, CipherDegree.kPacketEncryptedCRC8);
+      const packet = new CSendPacket(PACKET_TYPE_PLACEHOLDER);
       if (session.MakeModifiedPacket(packet) !== 0) {
         CUserPool.SendAll(packet, list);
       }
@@ -577,13 +577,13 @@ export class CGameSessionTable extends CBaseSessionTable {
       if (!session) continue;
       const flags = this.m_acTableFlags[n]!;
       if ((flags & SESSION_TABLE_FLAG_CREATED) !== 0) {
-        const packet = new CSendPacket(PACKET_TYPE_PLACEHOLDER, CipherDegree.kPacketEncryptedCRC8);
+        const packet = new CSendPacket(PACKET_TYPE_PLACEHOLDER);
         session.MakeCreatedPacket(packet);
         this.m_acTableFlags[n] = 0;
         this.m_acTableFlags[n]! |= SESSION_TABLE_FLAG_EXISTING;
         SendChannelPacket(packet, 1);
       } else if ((flags & SESSION_TABLE_FLAG_DESTROYED) !== 0) {
-        const packet = new CSendPacket(PACKET_TYPE_PLACEHOLDER, CipherDegree.kPacketEncryptedCRC8);
+        const packet = new CSendPacket(PACKET_TYPE_PLACEHOLDER);
         session.MakeDestroyedPacket(packet);
         this.m_acTableFlags[n] = 0;
         SendChannelPacket(packet, 1);

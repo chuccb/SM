@@ -1,7 +1,7 @@
 /** Native source unit: CX/CxCenter/LocalServer.cpp. */
 import type { CLocalSocket } from "./LocalSocket.ts";
 import { MakeLower } from "../core/MakeLower.ts";
-import { CReceivedPacket, CSendPacket } from "../core/Packet.ts";
+import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
 import { CM_ReceivedPacket, MC_ReceivedPacket, SVRCLASS_SHOP } from "../core/protocol/CenterProtocol.ts";
 import { IpToU32 } from "./NetworkAddress.ts";
 import { CUser, type CenterUserContext } from "./User.ts";
@@ -98,7 +98,7 @@ export class CLocalServer {
       }
       if (result === 1) for (const user of users) user.SetConnectingToSvr(serverType, smallLoadedSvrIdx, center);
     }
-    const packet = new CSendPacket(CM_ReceivedPacket.OnCenterResConnectToSvr);
+    const packet = new CSendPacket(CM_ReceivedPacket.OnCenterResConnectToSvr, CipherDegree.kPacketRaw);
     packet.Encode1(count);
     for (const s of serials) packet.Encode4(s);
     packet.Encode1(result);
@@ -172,7 +172,7 @@ export class CLocalServer {
     }
     // CxCenter.exe.c:10454 / CShopServer::OnConnEstablished —
     // [E1 n][n×(E4 serial, E1 authencode(, E1 inbound flag))][E1 flag]
-    const packet = new CSendPacket(CM_ReceivedPacket.OnCenterResConnEstablished);
+    const packet = new CSendPacket(CM_ReceivedPacket.OnCenterResConnEstablished, CipherDegree.kPacketRaw);
     packet.Encode1(count);
     for (let i = 0; i < count; i++) {
       packet.Encode4(serials[i]!);
