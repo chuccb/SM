@@ -73,12 +73,12 @@ export class CUtilServer extends CLocalServer {
     }
     const target = center.GetSvr(u.nChannel, u.nSvrIdx);
     const packet = new CSendPacket(CM_ReceivedPacket.OnDeleteUser);
-    packet.Encode4(u.nSID);
+    packet.Encode4(u.m_nGlobalSerial);
     target?.socket?.SendPacket(packet);
     // no residency check here (unlike the serial-keyed base handler) — the
     // util's delete means "kick the user from the world"
     u.SetFree(center);
-    center.globalUserTable.ExtractUser(u.nSID);
+    center.globalUserTable.ExtractUser(u.m_nGlobalSerial);
     console.log(`[Center] Delete user by utilserver\`s rerquest[${name}].`);
   }
 

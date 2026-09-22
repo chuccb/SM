@@ -203,6 +203,7 @@ describe("CLocalServerMan class-aware dispatch and monitor wire", () => {
   test("MC 9 from GS is ignored while the Shop-class packet updates auth code", () => {
     const center = fakeCenter();
     const user = new CenterUser("alice", SVRCLASS_GAME, 0, 0x1234, 1, 0);
+    (user as any).m_nGlobalSerial = 0x1234;
     center.globalUserTable.serialTable.set(0x1234, user);
 
     const game = new CGameServer("GS", SVRCLASS_GAME, 0, "127.0.0.1", 0);

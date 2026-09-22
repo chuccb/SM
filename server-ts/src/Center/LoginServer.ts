@@ -63,7 +63,7 @@ export class CLoginServer extends CLocalServer {
     packet.Encode1(users.length);
     for (const u of users) {
       if (fAllAdded) {
-        packet.Encode4(u.nSID);
+        packet.Encode4(u.m_nGlobalSerial);
         packet.Encode1(u.GetAuthencode());
       } else {
         packet.Encode4(0);
@@ -73,10 +73,9 @@ export class CLoginServer extends CLocalServer {
     if (!fAllAdded) {
       for (const user of users) {
         // Native calls ExtractUser(newGlobalSerial) and SetFree for every
-        // constructed row. This port still aliases global serial to account
-        // SID, so a duplicate login can reuse the resident's serial; retain
-        // native object identity and never extract that older resident.
-        if (center.globalUserTable.serialTable.get(user.nSID) === user) center.globalUserTable.ExtractUser(user.nSID);
+        // constructed row. Even when AddNewUser refused due to duplicate name,
+        // the newly constructed rows still need cleanup.
+        if (center.globalUserTable.serialTable.get(user.m_nGlobalSerial) === user) center.globalUserTable.ExtractUser(user.m_nGlobalSerial);
         else if (center.globalUserTable.userTable.get(user.m_strName) === user) center.globalUserTable.userTable.delete(user.m_strName);
         user.SetFree(center);
       }

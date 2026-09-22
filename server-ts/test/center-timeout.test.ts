@@ -47,6 +47,10 @@ function fixture() {
   const shop = server(SVRCLASS_SHOP, 0);
   function user(serial = 1, name = `user${serial}`, owner = ls) {
     const u = new CUser(name, owner.nServerClass, owner.nSvrIdx, serial, 1, 0, center);
+    // Test fixtures historically aliased SID and global serial; override the
+    // auto-allocated global serial so the serialTable key matches the fixture serial.
+    (u as any).m_nGlobalSerial = serial;
+    u.nSID = serial;
     center.globalUserTable.userTable.set(name, u); center.globalUserTable.serialTable.set(serial, u);
     return u;
   }

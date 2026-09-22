@@ -80,6 +80,7 @@ beforeAll(async () => {
   // pending shop connection; inject it directly (the LS's ReqConnectToSvr
   // would have left the user in the "connecting to shop idx 0" state)
   const cu = new CUser("tester", SVRCLASS_SHOP, 0, 7, 0, 0, center);
+  (cu as any).m_nGlobalSerial = 7;
   center.globalUserTable.userTable.set("tester", cu);
   center.globalUserTable.serialTable.set(7, cu);
   cu.m_fConnecting = 1; // fixture: the successful check already ran

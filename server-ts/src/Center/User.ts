@@ -16,9 +16,12 @@ export interface CenterUserContext {
 export class CUser {
   m_strName: string;
   nSvrIdx: number;
-  // Legacy port key also used by serialTable. Native global serial (+28) and
-  // account SID (+80) are distinct; their allocation/protocol chain needs its
-  // own audit, not an allocator change hidden inside timeout handling.
+  /** CSerialObject::m_nSerialNo (+28) — the global serial auto-incremented by
+   *  CSerialObject::CSerialObject (InterlockedIncrement). Distinct from SID
+   *  (+80) which is the account SN from LS MC0. */
+  m_nGlobalSerial: number;
+  private static ms_nGlobalSerialCounter = 0;
+  /** +80 — account SID (SN) from DB, used for shop SID verification (CShopServer). */
   nSID: number;
   nAuthencode = 0; // CUser::GetAuthencode / SetAuthenCode
   nLocalSerialNo: number; // the LS socket's local serial (p0 tail)
@@ -41,6 +44,8 @@ export class CUser {
   ) {
     this.m_strName = strName;
     this.nSvrIdx = SERVER_IDX_NONE; // +64 sentinel before the ctor's SetSvrIdx
+    this.m_nGlobalSerial = ++CUser.ms_nGlobalSerialCounter >>> 0;
+    if (this.m_nGlobalSerial === 0) this.m_nGlobalSerial = ++CUser.ms_nGlobalSerialCounter >>> 0; // avoid 0
     this.nSID = nSN;
     this.nLocalSerialNo = nLocalSerialNo;
     this.nIP = nIP;
@@ -123,7 +128,7 @@ export class CUser {
    * The preceding successful check, NOT this method, sets flag/time. */
   SetConnectingToSvr(nServerType: number, SmallLoadedSvrIdx: number, man: CenterUserContext): void {
     this.SetSvrIdx(nServerType, SmallLoadedSvrIdx, man);
-    man.globalUserTable.InsertConnectingList(this.nSID);
+    man.globalUserTable.InsertConnectingList(this.m_nGlobalSerial);
   }
 
   /**

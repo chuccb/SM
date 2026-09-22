@@ -41,7 +41,7 @@ export class CGlobalUserTable {
     let added = 0;
     if (!this.userTable.has(user.m_strName)) {
       this.userTable.set(user.m_strName, user);
-      if (!this.serialTable.has(user.nSID)) this.serialTable.set(user.nSID, user);
+      if (!this.serialTable.has(user.m_nGlobalSerial)) this.serialTable.set(user.m_nGlobalSerial, user);
       added = 1;
     }
     this.UpdateDailyPeak(now);
@@ -75,7 +75,7 @@ export class CGlobalUserTable {
     for (const u of [...this.userTable.values()]) {
       if (u.nChannel === nServerClass && u.nSvrIdx === nSvrIdx) {
         u.SetFree(this.host);
-        this.ExtractUser(u.nSID);
+        this.ExtractUser(u.m_nGlobalSerial);
       }
     }
   }
