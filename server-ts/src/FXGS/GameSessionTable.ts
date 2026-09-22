@@ -13,6 +13,7 @@ import {
   SESSION_IDX_MAX,
   SESSION_IDX_NONE,
   SESSION_SERIAL_NONE,
+  SESSION_RESULT,
 } from "./Defs.ts";
 import { CBomberAttr } from "./BomberAttr.ts";
 import { CPracticeSession } from "./PracticeSession.ts";
@@ -302,7 +303,7 @@ export class CGameSessionTable extends CBaseSessionTable {
       if (user.GetSessionIdx() !== SESSION_IDX_NONE) {
         console.error(`[GS] User joined a session already request for creating session. Disconnect[${user.GetName()}]`);
         socket.PostClosePacket();
-        res.Encode1(3);
+        res.Encode1(SESSION_RESULT.AlreadySeated);
         socket.SendPacket(res);
         return;
       }
@@ -310,7 +311,7 @@ export class CGameSessionTable extends CBaseSessionTable {
     let nb = 0;
     while (nb < SESSION_IDX_MAX && this.m_apGameSession[nb] && this.m_apGameSession[nb]!.fValid !== 0) nb++;
     if (nb >= SESSION_IDX_MAX) {
-      res.Encode1(2);
+      res.Encode1(SESSION_RESULT.Failure);
       socket.SendPacket(res);
       return;
     }
@@ -318,7 +319,7 @@ export class CGameSessionTable extends CBaseSessionTable {
     const session = this.m_apGameSession[nb]!;
     session.Create(socket, title, password, selects, gameType);
     this.m_acTableFlags[nb]! |= 1;
-    res.Encode1(0);
+    res.Encode1(SESSION_RESULT.Success);
     res.Encode2(nb);
     res.Encode4(session.m_nSerialNo);
     res.Encode1(gameType);
@@ -357,7 +358,7 @@ export class CGameSessionTable extends CBaseSessionTable {
         const user = socket.GetUser(i)!;
         if (user.GetSessionIdx() !== SESSION_IDX_NONE) {
           console.error(`[GS] User joined a session already request for creating practicesession. Disconnect[${user.GetName()}]`);
-          res.Encode1(3);
+          res.Encode1(SESSION_RESULT.AlreadySeated);
           socket.SendPacket(res);
           socket.PostClosePacket();
           return;
@@ -367,14 +368,14 @@ export class CGameSessionTable extends CBaseSessionTable {
     let nb = 0;
     while (nb < SESSION_IDX_MAX && this.m_apPracticeSession[nb]!.fValid !== 0) nb++;
     if (nb >= SESSION_IDX_MAX) {
-      res.Encode1(2);
+      res.Encode1(SESSION_RESULT.Failure);
       socket.SendPacket(res);
       return;
     }
     // CPracticeSession::LockPracticeSessions(idx % 8) — the 8 lock groups
     const session = this.m_apPracticeSession[nb]!;
     session.CreatePractice(socket, selects);
-    res.Encode1(0);
+    res.Encode1(SESSION_RESULT.Success);
     res.Encode2(nb);
     res.Encode4(session.m_nSerialNo);
     socket.SendPacket(res);
@@ -417,13 +418,13 @@ export class CGameSessionTable extends CBaseSessionTable {
       }
       if (!seated) {
         if (socket.HasAuthority(1) === 0 && session.m_szPassword.length > 0 && session.m_szPassword !== password) {
-          res.Encode1(1);
+          res.Encode1(SESSION_RESULT.PasswordMismatch);
           socket.SendPacket(res);
           CBaseSession.UnlockBaseSessions(idx);
           return;
         }
         if (session.AddPlayer(socket, selects) !== 0) {
-          res.Encode1(0);
+          res.Encode1(SESSION_RESULT.Success);
           socket.SendPacket(res);
           session.SendSessionInfoPacket(socket); // vtbl+80
           session.SendJoinPacket(socket); // vtbl+84
@@ -433,7 +434,7 @@ export class CGameSessionTable extends CBaseSessionTable {
         }
       }
     }
-    res.Encode1(2);
+    res.Encode1(SESSION_RESULT.Failure);
     socket.SendPacket(res);
     CBaseSession.UnlockBaseSessions(idx);
   }
@@ -460,7 +461,7 @@ export class CGameSessionTable extends CBaseSessionTable {
       if (socket.GetUser(i)!.GetSessionIdx() !== SESSION_IDX_NONE) return;
     }
     const res = new CSendPacket(S2C_GamePacket.OnJoinFreeSessionRes, CipherDegree.kPacketEncryptedCRC8);
-    res.Encode1(2);
+    res.Encode1(SESSION_RESULT.Failure);
     socket.SendPacket(res);
   }
 

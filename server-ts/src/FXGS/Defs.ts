@@ -114,6 +114,15 @@ export const CONNECT_GATE_RESULT = {
   ServerTypeUnavailable: 5,
 } as const;
 
+/** Session create/join result codes — client 85/81/89 etc.
+ *  0 success, 1 password mismatch, 2 failure (full/not found), 3 already seated. */
+export const SESSION_RESULT = {
+  Success: 0,
+  PasswordMismatch: 1,
+  Failure: 2,
+  AlreadySeated: 3,
+} as const;
+
 /** The session dimension everywhere: 8 slots / 8 colours / 8 loss-matrix rows
  *  (the original loops the same 8-slot tables with plain do/while). */
 export const MAX_SESSION_SLOTS = 8;
