@@ -1,5 +1,20 @@
 # CrazyArcade server port
 
+## 獨立運行架構（Self-Contained in `server-ts`）
+
+`server-ts/` 目錄現已完全自包含（Self-contained），不再依賴專案根目錄或其他 C++ 反編譯目錄的資源即可獨立啟動與測試：
+
+- **組態檔目錄 (`server-ts/config/`)**：
+  - 收錄全服務運行組態（`Center_000.cfg`、`FXGS_*.cfg`、`FXSS_*.cfg`、`LS_000.cfg`、`Relay_000.cfg`、`FXUS_000.cfg`、`Shop.cfg`、`SVR*.cfg`、`local-billing.json`）。
+  - `src/main.ts` 啟動預設直接從 `server-ts/config/` 載入各服務組態。
+- **資料封包與種子庫 (`server-ts/data/`)**：
+  - **地圖與遊戲封包**：存放 `FxServer.idd` 與 `FxServer.idx`，`CFastFile` 載入時優先尋找指定路徑，並以 `server-ts/data/FxServer` 作為可靠本機備援。
+  - **機率掉落檔**：`server-ts/data/iteminfo.txt` 支援飛機/道具掉落概率解析。
+  - **SQL Server 備份資料 (`server-ts/data/db/`)**：完整收錄 `CAItem.bak`、`CAConfig.bak`、`Guild.bak`、`UserInfo*.bak`、`UserInventory*.bak` 與 `TB031117.DAT`，供資料庫初始化與自動種子導入使用。
+- **執行時期輸出定位**：
+  - Center 統計暫存與日誌預設輸出於 `server-ts/Log/`（或自訂 `WebLogDir`）。
+  - Shop 交易日誌（`TranxLog_YYYYMMDD.txt`）預設錨定於 `server-ts/Log/`，杜絕任何暫存檔散落至 `src`。
+
 ## 原版 source unit 與 port 邊界
 
 `src/Center`、`LS`、`FXGS`、`FXSS`、`FXUS`、`Relay` 分別對應六個原版 binary。服務目錄內的實作檔名以隨附 `.pdb`／`.map`／反編譯結果可證實的 `.cpp` source unit 為準；檔頭保留實際來源根目錄 `CX/CxCenter`、`CX/CxLogin`、`FX/FxServer`、`FX/FxShop`、`CX/CxUtil`、`CX/CxRelay` 或 `common`。例如 app、listener、timer、pool、recordset 各自保留原生 owner。`CxCenter.ts`、`CxLogin.ts`、`FxServer.ts`、`FxShop.ts`、`CxUtil.ts`、`CxRelay.ts` 只是每個 binary 的公開 façade，不重新宣稱 class ownership。

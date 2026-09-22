@@ -5,11 +5,16 @@
  * ANSI strings are Latin-1 byte carriers, as required by the packet writers.
  */
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DecodeCP950 } from "../core/Encoding.ts";
 
-export const CAITEM_BAK_PATH = join(import.meta.dir, "../../../DB/CAItem.bak");
+const LOCAL_CAITEM_BAK_PATH = join(import.meta.dir, "../../data/db/CAItem.bak");
+const REPO_CAITEM_BAK_PATH = join(import.meta.dir, "../../../DB/CAItem.bak");
+
+export const CAITEM_BAK_PATH = existsSync(LOCAL_CAITEM_BAK_PATH)
+  ? LOCAL_CAITEM_BAK_PATH
+  : REPO_CAITEM_BAK_PATH;
 export const CAITEM_BAK_SHA256 = "28eb28c71bc6ccde2f01c0c7d4b98242a526453a95b1fe2f3362a15b59b10420";
 export const CAITEM_TABLES = ["FxItem", "FxStock", "FxString", "FxPackageMap", "FxCouponMap", "FxBonusMap"] as const;
 export type CAItemTable = typeof CAITEM_TABLES[number];

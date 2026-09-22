@@ -193,11 +193,13 @@ export function ParseCAConfigBak(buf: Uint8Array): ICAConfigBakRows {
 }
 
 /** LocateCAConfigBak — the original backup shipped in the repository's DB/
- *  directory (server-ts/src/db → ../../../DB/CAConfig.bak), overridable with
- *  CA_CONFIG_BAK. Resolved from this module so the deployment layout (the
- *  db directory, the cwd) never matters. */
+ *  directory or server-ts/data/db/CAConfig.bak, overridable with CA_CONFIG_BAK.
+ *  Resolved from this module so the deployment layout (the db directory,
+ *  the cwd) never matters. */
 export function LocateCAConfigBak(): string | null {
   if (process.env.CA_CONFIG_BAK) return Path.resolve(process.env.CA_CONFIG_BAK);
+  const localCandidate = Path.resolve(import.meta.dir, "..", "..", "data", "db", "CAConfig.bak");
+  if (FS.existsSync(localCandidate)) return localCandidate;
   const candidate = Path.resolve(import.meta.dir, "..", "..", "..", "DB", "CAConfig.bak");
   return FS.existsSync(candidate) ? candidate : null;
 }

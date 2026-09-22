@@ -117,8 +117,11 @@ if (!only || only === "billing") {
 }
 
 if (!only || only === "center") {
+  const cfgFile = process.argv.includes("--cfg")
+    ? process.argv[process.argv.indexOf("--cfg") + 1]!
+    : join(import.meta.dir, "..", "config", "Center_000.cfg");
   const cfg = new CServerConfig(CXCENTER_STR_KEYS, true);
-  cfg.Init(join(import.meta.dir, "..", "..", "Center", "Center_000.cfg"));
+  cfg.Init(resolveCfg(cfgFile));
   CServerConfig.ms_pInstance = cfg;
   const center = new CCxCenterApp(cfg);
   try {
@@ -133,7 +136,7 @@ if (!only || only === "center") {
 if (!only || only === "relay") {
   const cfgFile = process.argv.includes("--cfg")
     ? process.argv[process.argv.indexOf("--cfg") + 1]!
-    : join(import.meta.dir, "..", "..", "Relay", "Relay_000.cfg");
+    : join(import.meta.dir, "..", "config", "Relay_000.cfg");
   const relay = await relayMain(resolveCfg(cfgFile));
   RegisterCleanUp(() => relay.CleanUp());
 }
@@ -143,7 +146,7 @@ if (!only || only === "game") {
   // topology; the test topology runs five game servers (test/game0.cfg …).
   const idx = process.argv.includes("--idx") ? Number(process.argv[process.argv.indexOf("--idx") + 1]) : 1;
   const cfgFile =
-    process.argv.includes("--cfg") ? process.argv[process.argv.indexOf("--cfg") + 1] : `../FXGS/FXGS_00${idx}.cfg`;
+    process.argv.includes("--cfg") ? process.argv[process.argv.indexOf("--cfg") + 1] : `config/FXGS_00${idx}.cfg`;
   const game = await gameMain(resolveCfg(cfgFile), dbDir);
   RegisterCleanUp(() => game.CleanUp());
 }
@@ -153,10 +156,10 @@ if (!only || only === "shop") {
   // topology.
   const idx = process.argv.includes("--idx") ? Number(process.argv[process.argv.indexOf("--idx") + 1]) : 0;
   const cfgFile =
-    process.argv.includes("--cfg") ? process.argv[process.argv.indexOf("--cfg") + 1] : `../FXSS/FXSS_00${idx}.cfg`;
+    process.argv.includes("--cfg") ? process.argv[process.argv.indexOf("--cfg") + 1] : `config/FXSS_00${idx}.cfg`;
   const transactionLogIndex = process.argv.indexOf("--tranx-log-dir");
   const shopOptions = transactionLogIndex < 0
-    ? { transactionLogDirectory: join(import.meta.dir, "..", "..", "FXSS", "Log") }
+    ? { transactionLogDirectory: join(import.meta.dir, "..", "Log") }
     : { transactionLogDirectory: resolveCfg(process.argv[transactionLogIndex + 1]!) };
   const shop = await shopMain(resolveCfg(cfgFile), dbDir, shopOptions);
   RegisterCleanUp(() => shop.CleanUp());
@@ -167,15 +170,18 @@ if (!only || only === "util") {
   // tool listener binds the literal 8128 (CListenThread::Proc's 0x1FC0).
   const cfgFile = process.argv.includes("--cfg")
     ? process.argv[process.argv.indexOf("--cfg") + 1]!
-    : join(import.meta.dir, "..", "..", "FXUS", "FXUS_000.cfg");
+    : join(import.meta.dir, "..", "config", "FXUS_000.cfg");
   const util = await utilMain(resolveCfg(cfgFile));
   RegisterCleanUp(() => util.CleanUp());
 }
 
 if (!only || only === "login") {
   // The LS needs the center's address for its uplink; read it from the LS cfg.
+  const cfgFile = process.argv.includes("--cfg")
+    ? process.argv[process.argv.indexOf("--cfg") + 1]!
+    : join(import.meta.dir, "..", "config", "LS_000.cfg");
   const login = await loginMain(
-    join(import.meta.dir, "..", "..", "LS", "LS_000.cfg"),
+    resolveCfg(cfgFile),
     dbDir,
   );
   RegisterCleanUp(() => login.CleanUp());

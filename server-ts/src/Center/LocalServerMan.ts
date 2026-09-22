@@ -1,5 +1,5 @@
 /** Native source unit: CX/CxCenter/LocalServerMan.cpp. */
-import { copyFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { CServerConfig } from "../core/ServerConfig.ts";
 import { CReceivedPacket, CSendPacket } from "../core/Packet.ts";
 import {
@@ -293,7 +293,8 @@ export class CLocalServerMan {
       return `${server.nConnNo}${separator}`;
     }).join("");
     const html = `<html>\n<head>\n<style>\nbody { font-size:10pt; }\n</style>\n</head>\n<body>\n<h2>BnB Server Information</h2>\n<hr noshade size=1 width=500 align=left>\n<blockquote>\n${stamp} CA:${this.globalUserTable.GetTotalSize()} (${counts})</blockquote>\n<hr noshade size=1 width=500 align=left>\n<p>\n</body></html>`;
-    const logDir = this.cfg.GetAttribute("WebLogDir") || join(import.meta.dir, "..", "..", "Center");
+    const logDir = this.cfg.GetAttribute("WebLogDir") || join(import.meta.dir, "..", "..", "Log");
+    mkdirSync(logDir, { recursive: true });
     const tmpPath = join(logDir, "tmp_html.txt");
     try {
       writeFileSync(tmpPath, html);

@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
 /**
  * CFastFile — the FxServer.idx/FxServer.idd package reader.
@@ -23,13 +24,20 @@ export class CFastFile {
 
   /** CFastFile::FastFileInit — map "%s.idd" and load "%s.idx". */
   FastFileInit(base: string, _n64: number): boolean {
+    let resolvedBase = base;
+    if (!existsSync(`${resolvedBase}.idd`)) {
+      const fallback = join(import.meta.dir, "..", "..", "data", "FxServer");
+      if (existsSync(`${fallback}.idd`)) {
+        resolvedBase = fallback;
+      }
+    }
     try {
-      this.m_pData = new Uint8Array(readFileSync(`${base}.idd`));
+      this.m_pData = new Uint8Array(readFileSync(`${resolvedBase}.idd`));
     } catch {
       this.m_pData = null;
       return false;
     }
-    this.LoadIdx(base);
+    this.LoadIdx(resolvedBase);
     return true;
   }
 

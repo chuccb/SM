@@ -1,0 +1,14 @@
+4
+Item/ItemBomb 50 
+Item/ItemFire 40
+Item/ItemRoller 5
+Item/ItemMaxPower 5
+8
+Item/ItemKart0 60
+Nitro 10
+Item/ItemFuel 10
+RedDevil 10
+Item/ItemBomb 5
+Item/ItemFire 3
+Item/ItemRoller 1
+Item/ItemMaxPower 1

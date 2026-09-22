@@ -1330,12 +1330,16 @@ export class CGameSession extends CListSession {
     }
     packet.Encode4(this.m_dwArg76 >>> 0);
     // fopen("iteminfo.txt", "r") — whitespace-split "%s %d" pairs, two
-    // lists, each headed by its count
+    // lists, each headed by its count. Fall back to server-ts/data/iteminfo.txt.
     let text: string;
     try {
       text = readFileSync("iteminfo.txt", "latin1");
     } catch {
-      return; // fopen null — no packet leaves the server
+      try {
+        text = readFileSync(join(import.meta.dir, "..", "..", "data", "iteminfo.txt"), "latin1");
+      } catch {
+        return; // fopen null — no packet leaves the server
+      }
     }
     const tokens = text.split(/\s+/).filter((t) => t.length > 0);
     let pos = 0;
