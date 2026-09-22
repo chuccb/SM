@@ -57,7 +57,7 @@ Unicode lowercase `0xE0`，錯進`224 % 6 = 2`。ASCII `Alpha/alpha`都進shard1
   `GetUserHashNo`（`invDB`亦只委派它）。`prCAAuthUser`／`prConfirmUnregisteredId`／`prCreateUser`
   只有在native與舊selector不同、native shard無帳號但舊shard仍有同ID時阻止空白重建；
   它們不以舊shard繼續寫入，也不記錄ID／password。
-- `LocalBilling/Store.ts`直接匯入同一函式，wallet、hold、ledger與給物仍在同一inventory shard，
+- `services/LocalBilling/Store.ts`直接匯入同一函式，wallet、hold、ledger與給物仍在同一inventory shard，
   沒有另造billing hash。
 - `Guild.db`是集中式資料庫；其member／account表不依ID切成六檔。使用者登入所讀的`GuildSn`
   位於`FxUserAccount`，會隨該account family一起遷移；工具不擅自拆搬Guild資料。
