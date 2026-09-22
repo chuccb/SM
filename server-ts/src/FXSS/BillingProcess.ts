@@ -15,7 +15,7 @@ import { EncodeCP950 } from "../core/Encoding.ts";
 import { CBillingSocketTw } from "./BillingSocket.ts";
 import { usesLocalBilling } from "../services/LocalBilling/Config.ts";
 import { BillingReader, string8 } from "../services/LocalBilling/Protocol.ts";
-import { BILLING_GAME, BILLING_ERROR, LOCAL_BILLING_RETRY_MS, RESERVATION_MS } from "../services/LocalBilling/Defs.ts";
+import { BILLING_ERROR, LOCAL_BILLING_RETRY_MS, RESERVATION_MS } from "../services/LocalBilling/Defs.ts";
 import { CUser } from "./User.ts";
 import { CItemMan } from "./ItemMan.ts";
 import { CLocalUserTable } from "./LocalUserTable.ts";
@@ -23,12 +23,23 @@ import { CTranxCtrl } from "./TranxCtrl.ts";
 import { CMainSystem } from "./MainSystem.ts";
 import { CCenterProcess } from "./CenterProcess.ts";
 import { EncodeVariantTime } from "../core/VariantTime.ts";
-import { SHOP_PERMANENT_EXPIRY_LEVEL, SHOP_PERMANENT_VALIDITY_DAYS, CART_RECEIPT_CODE, CART_RECEIPT_RESULT, PURCHASE_RESULT, BILLING_ORPHAN_STOCK, COUPON_PREINVENTORY_TYPE, COUPON_STOCK_SN, COUPON_RESULT } from "./Defs.ts";
+import {
+  SHOP_PERMANENT_EXPIRY_LEVEL,
+  SHOP_PERMANENT_VALIDITY_DAYS,
+  CART_RECEIPT_CODE,
+  CART_RECEIPT_RESULT,
+  PURCHASE_RESULT,
+  BILLING_ORPHAN_STOCK,
+  COUPON_PREINVENTORY_TYPE,
+  COUPON_STOCK_SN,
+  COUPON_RESULT,
+  BILLING_GAME,
+  BILLING_CONNECT_SLEEP_MS,
+  BILLING_TERMINATE_THRESHOLD,
+  BILLING_RECONNECT_TICKS,
+  BILLING_RTT_TICKS,
+} from "./Defs.ts";
 import { GetShopMainPool } from "./runtime/MainPoolRuntime.ts";
-
-const BILLING_RECONNECT_TICKS = 0x28;
-const BILLING_RTT_TICKS = 0x5dc;
-const MAX_BILLING_CONNECT_ATTEMPTS = 10_000;
 
 interface BILLINGSVR {
   SN: number;
@@ -63,14 +74,30 @@ export class CBillingProcess {
     this.m_aBillingSvr = this.db.GetBillingSvrs();
   }
 
+  /** dword_498040 — billing server cursor / attempt counter, seeded from ServerIndex (+5). */
+  m_nBillingSvrCursor = -1;
   m_nConnectAttempts = 0;
 
   async ConnectToSvr(): Promise<number> {
+    // First call seeds cursor from ServerIndex, matching native dword_498040 init (FxShop.exe.c:479)
+    if (this.m_nBillingSvrCursor === -1) {
+      this.m_nBillingSvrCursor = this.m_nSvrTag;
+      this.m_nConnectAttempts = this.m_nSvrTag;
+    }
     if (this.m_aBillingSvr.length === 0) {
       console.log("[Shop] No billing server information!");
       return 0;
     }
-    for (const svr of this.m_aBillingSvr) {
+    // Native loops forever until success or >10000 attempts, picking server at cursor % count,
+    // sleeping 0x3E8 ms between failures (FxShop.exe.c:514), terminating at >10000.
+    while (true) {
+      const count = this.m_aBillingSvr.length;
+      if (count === 0) {
+        console.log("[Shop] No billing server information!");
+        return 0;
+      }
+      const idx = ((this.m_nBillingSvrCursor % count) + count) % count;
+      const svr = this.m_aBillingSvr[idx]!;
       const socket = new CBillingSocketTw(true, {
         onPacket: (_socket, packet) => this.OnPacket(packet),
       });
@@ -96,26 +123,29 @@ export class CBillingProcess {
             error: () => socket.Close(),
           },
         });
-        if (!socket.m_bConnected) continue;
-        socket.bunSocket = conn;
-        this.m_pSocket = socket;
-        this.m_fConnected = 1;
-        console.log("[Shop] Connection to Billing Server established");
-        const hello = new CBillingSendPacket(Shop2Billing_TwPacket.OnConnEstablished);
-        hello.Encode4(BILLING_GAME);
-        hello.Encode4(this.m_nSvrTag);
-        this.Send(hello);
-        return this.m_fConnected;
-      } catch {
-        console.log("[Shop] Connection to Billing Server failed.");
-        if (++this.m_nConnectAttempts > MAX_BILLING_CONNECT_ATTEMPTS) {
-          console.error("[Shop] CMainSystem:TerminateProcess() called, ExitProcess();");
-          process.exit(1);
+        if (socket.m_bConnected) {
+          socket.bunSocket = conn;
+          this.m_pSocket = socket;
+          this.m_fConnected = 1;
+          console.log("[Shop] Connection to Billing Server established");
+          const hello = new CBillingSendPacket(Shop2Billing_TwPacket.OnConnEstablished);
+          hello.Encode4(BILLING_GAME);
+          hello.Encode4(this.m_nSvrTag);
+          this.Send(hello);
+          return this.m_fConnected;
         }
-        continue;
+      } catch {
+        // fall through to failure path
+      }
+      console.log("[Shop] Connection to Billing Server failed.");
+      await Bun.sleep(BILLING_CONNECT_SLEEP_MS);
+      this.m_nBillingSvrCursor++;
+      this.m_nConnectAttempts++;
+      if (this.m_nBillingSvrCursor > BILLING_TERMINATE_THRESHOLD || this.m_nConnectAttempts > BILLING_TERMINATE_THRESHOLD) {
+        console.error("[Shop] CMainSystem:TerminateProcess() called, ExitProcess();");
+        process.exit(1);
       }
     }
-    return 0;
   }
 
   async Init(): Promise<void> {

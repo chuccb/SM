@@ -63,3 +63,10 @@ export const COUPON_BILLING_SUCCESS_ALT = 3;
 
 /** Gift pre-inventory cap that surfaces the native -2 path. */
 export const GIFT_PREINVENTORY_LIMIT = 100;
+
+/** CBillingProcess — native constants from FxShop.exe.c:479 / 1548 / 1780. */
+export const BILLING_GAME = 4;
+export const BILLING_CONNECT_SLEEP_MS = 0x3e8; // 1000 ms
+export const BILLING_TERMINATE_THRESHOLD = 10_000;
+export const BILLING_RECONNECT_TICKS = 0x28; // 40
+export const BILLING_RTT_TICKS = 0x5dc; // 1500
