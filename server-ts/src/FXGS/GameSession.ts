@@ -1209,7 +1209,6 @@ export class CGameSession extends CListSession {
       const user = this.m_rgPlayer[slot];
       if (!user || user.HasAuthority(AUTHORITY_ALWAYS_ZERO) !== 0) continue;
       const state0 = this.m_rgSlotState[slot * 3]!;
-      const state1 = this.m_rgSlotState[slot * 3 + 1]!;
       if (++counts[this.GetColor(slot)]! === 1) teams++;
       players++;
       if (chiefUser && chiefUser.m_pSocket === user.m_pSocket) {
@@ -1222,7 +1221,6 @@ export class CGameSession extends CListSession {
       } else if ((state0 & SLOTSTATE_CHIEF) === 0 && (state0 & SLOTSTATE_GROUP_MASK) !== 4) {
         return 2;
       }
-      void state1;
     }
     if (this.m_nGameType !== 0) {
       for (let c = 0; c < MAX_SESSION_SLOTS; c++) {
@@ -1448,7 +1446,6 @@ export class CGameSession extends CListSession {
     // SetCurrentGameContext(0) + CGameContext::Init
     this.m_pCtx.Init();
     this.m_rgnUsedItem.fill(0); // memset(+11652, 0, 0x20)
-    this.m_abDeleted.fill(0);
     for (let slot = 0; slot < MAX_SESSION_SLOTS; slot++) this.m_abDeleted[slot] = this.IsPlayerSet(slot) ? 0 : 1;
     this.m_rgSlotGhost.fill(-1); // memset(+872, -1, 0x20)
     this.m_rgGhostSlot.fill(-1); // memset(+904, -1, 0x20)
@@ -1834,101 +1831,23 @@ export class CGameSession extends CListSession {
       socket.PostClosePacket();
       return;
     }
-    const ctx = this.m_pCtx;
     switch (event) {
-      case 0: {
-        // UseSpecialItem
-        const x = n.Decode1();
-        const itemidx = n.Decode1();
-        const count = n.Decode1();
-        if (count !== 0) {
-          if (CMainSystem.ms_pInstance!.m_nChannelType === CHANNEL_TYPE_NO_SHOP) {
-            console.error(`[GS] ${this.m_rgPlayer[slot]?.GetName()} Try to Use ShopItem at NoShopItemServer`);
-            return;
-          }
-          this.m_rgnUsedItem[slot] = 1;
-          this.m_DynInfoCalculator.SetNice(slot, 1); // session +12112 = calculator +0x1AC
-          const sn = n.Decode4();
-          const user = this.m_rgPlayer[slot];
-          const inv = user ? user.GetUserInventory(sn) : null;
-          let underflow = false;
-          if (inv) {
-            underflow = inv.Amount - count < 0;
-            inv.Amount -= count;
-            inv.fModified = 1;
-            if (underflow) inv.Amount = 0;
-          }
-          if (!inv || underflow) {
-            console.error("[GS] Tried to use nonresident Item..Disconnect user");
-            socket.PostClosePacket();
-            return;
-          }
-        }
-        const itemAttr = CItemAttr.ms_pInstance!;
-        if (itemidx < 0 || itemidx >= itemAttr.m_vtName.length) {
-          console.error(`[GS] Illegal itemidx (UseSpecialItem). Disconnect [${socket.GetInfoStr()}].`);
-          socket.PostClosePacket();
-          return;
-        }
-        const effect = itemAttr.m_vtEffect[itemidx]!;
-        if (effect === 22) {
-          if (this.m_abDeleted[slot] === 3) ctx.m_rgnDownTime[slot] = this.m_GameClock.ElapsedTime() | 0;
-        } else if (!((effect >= 11 && effect <= 13) || effect === 21 || (effect > 22 && effect <= 28) || effect === 31 || effect === 32)) {
-          console.error(`[GS] Illegal item effect (UseSpecialItem). Disconnect [${socket.GetInfoStr()}].`);
-          socket.PostClosePacket();
-          return;
-        }
-        packet.Encode1(x);
-        packet.Encode1(itemidx);
-        packet.Encode1(count);
-        this.SendPacketExclude(packet, socket);
+      case 0:
+        this.HandleUseSpecialItem(n, socket, slot, packet);
         break;
-      }
       case 1:
       case 7:
         this.SendPacketExclude(packet, socket);
         break;
-      case 2: {
-        this.m_abDeleted[slot] = 3;
-        ctx.m_rgnDownTime[slot] = this.m_GameClock.ElapsedTime() | 0;
-        ctx.m_rgnDiePos[GAME_CONTEXT_DIE_COORDS_PER_SLOT * slot] = a & 0xffff;
-        ctx.m_rgnDiePos[GAME_CONTEXT_DIE_COORDS_PER_SLOT * slot + 1] = b & 0xffff;
-        this.SendPacketExclude(packet, socket);
+      case 2:
+        this.HandleTrapped(n, socket, slot, a, b, packet);
         break;
-      }
-      case 3: {
-        const saver = n.Decode1();
-        if (saver < MAX_SESSION_SLOTS) this.m_DynInfoCalculator.SetSaverIndex(slot, saver); // the first save feeds GetWinExp/GetDrawExp
-        this.m_abDeleted[slot] = 0;
-        this.SendPacketExclude(packet, socket);
+      case 3:
+        this.HandleRescue(n, socket, slot, packet);
         break;
-      }
-      case 4: {
-        // the death report
-        let killer = n.Decode1();
-        killer = (killer << 24) >> 24; // signed char
-        if (killer !== -1) this.m_DynInfoCalculator.SetKillerIndex(slot, killer);
-        packet.Encode1(killer);
-        this.OnBomberDie(slot);
-        const drops = n.Decode1();
-        packet.Encode1(drops);
-        if (drops > 0) {
-          for (let i = 0; i < drops; i++) {
-            const obspos = n.Decode1(); // byte 1 → the obstacle grid (+4032)
-            const boxpos = n.Decode1(); // byte 2 → the box-item table (+3032)
-            ctx.m_rgnObstacle[(obspos & 0xf) + GAME_CONTEXT_TILE_COLUMNS * (obspos >> 4)] = 0;
-            ctx.m_rgnBoxItem[boxpos] = 0;
-            packet.Encode1(obspos);
-            packet.Encode1(boxpos);
-          }
-        }
-        this.SendPacket(packet);
-        if (this.m_abDeleted[slot] !== 4) {
-          this.m_abDeleted[slot] = 1;
-          ctx.m_rgnDownTime[slot] = this.m_GameClock.ElapsedTime() | 0;
-        }
+      case 4:
+        this.HandleDeath(n, socket, slot, packet);
         return;
-      }
       case 5:
         console.error("[GS] user tried to send die by server packet");
         this.SendPacketExclude(packet, socket);
@@ -1937,18 +1856,111 @@ export class CGameSession extends CListSession {
         this.m_abDeleted[slot] = 2;
         this.SendPacketExclude(packet, socket);
         break;
-      case 8: {
-        const v = n.Decode1();
-        const w = n.Decode1();
-        packet.Encode1(v);
-        packet.Encode1(w); // lst 41F1D3-41F203: both bytes echo
-        this.SendPacketExclude(packet, socket);
+      case 8:
+        this.HandleAuxEvent(n, socket, packet);
         break;
-      }
       default:
         console.error("[GS] user tried to send invalid set bomber event packet");
         return;
     }
+  }
+
+  private HandleUseSpecialItem(n: CReceivedPacket, socket: CClientSocket, slot: number, packet: CSendPacket): void {
+    const ctx = this.m_pCtx;
+    const x = n.Decode1();
+    const itemidx = n.Decode1();
+    const count = n.Decode1();
+    if (count !== 0) {
+      if (CMainSystem.ms_pInstance!.m_nChannelType === CHANNEL_TYPE_NO_SHOP) {
+        console.error(`[GS] ${this.m_rgPlayer[slot]?.GetName()} Try to Use ShopItem at NoShopItemServer`);
+        return;
+      }
+      this.m_rgnUsedItem[slot] = 1;
+      this.m_DynInfoCalculator.SetNice(slot, 1); // session +12112 = calculator +0x1AC
+      const sn = n.Decode4();
+      const user = this.m_rgPlayer[slot];
+      const inv = user ? user.GetUserInventory(sn) : null;
+      let underflow = false;
+      if (inv) {
+        underflow = inv.Amount - count < 0;
+        inv.Amount -= count;
+        inv.fModified = 1;
+        if (underflow) inv.Amount = 0;
+      }
+      if (!inv || underflow) {
+        console.error("[GS] Tried to use nonresident Item..Disconnect user");
+        socket.PostClosePacket();
+        return;
+      }
+    }
+    const itemAttr = CItemAttr.ms_pInstance!;
+    if (itemidx < 0 || itemidx >= itemAttr.m_vtName.length) {
+      console.error(`[GS] Illegal itemidx (UseSpecialItem). Disconnect [${socket.GetInfoStr()}].`);
+      socket.PostClosePacket();
+      return;
+    }
+    const effect = itemAttr.m_vtEffect[itemidx]!;
+    if (effect === 22) {
+      if (this.m_abDeleted[slot] === 3) ctx.m_rgnDownTime[slot] = this.m_GameClock.ElapsedTime() | 0;
+    } else if (!((effect >= 11 && effect <= 13) || effect === 21 || (effect > 22 && effect <= 28) || effect === 31 || effect === 32)) {
+      console.error(`[GS] Illegal item effect (UseSpecialItem). Disconnect [${socket.GetInfoStr()}].`);
+      socket.PostClosePacket();
+      return;
+    }
+    packet.Encode1(x);
+    packet.Encode1(itemidx);
+    packet.Encode1(count);
+    this.SendPacketExclude(packet, socket);
+  }
+
+  private HandleTrapped(_n: CReceivedPacket, socket: CClientSocket, slot: number, a: number, b: number, packet: CSendPacket): void {
+    const ctx = this.m_pCtx;
+    this.m_abDeleted[slot] = 3;
+    ctx.m_rgnDownTime[slot] = this.m_GameClock.ElapsedTime() | 0;
+    ctx.m_rgnDiePos[GAME_CONTEXT_DIE_COORDS_PER_SLOT * slot] = a & 0xffff;
+    ctx.m_rgnDiePos[GAME_CONTEXT_DIE_COORDS_PER_SLOT * slot + 1] = b & 0xffff;
+    this.SendPacketExclude(packet, socket);
+  }
+
+  private HandleRescue(n: CReceivedPacket, socket: CClientSocket, slot: number, packet: CSendPacket): void {
+    const saver = n.Decode1();
+    if (saver < MAX_SESSION_SLOTS) this.m_DynInfoCalculator.SetSaverIndex(slot, saver);
+    this.m_abDeleted[slot] = 0;
+    this.SendPacketExclude(packet, socket);
+  }
+
+  private HandleDeath(n: CReceivedPacket, _socket: CClientSocket, slot: number, packet: CSendPacket): void {
+    const ctx = this.m_pCtx;
+    let killer = n.Decode1();
+    killer = (killer << 24) >> 24; // signed char
+    if (killer !== -1) this.m_DynInfoCalculator.SetKillerIndex(slot, killer);
+    packet.Encode1(killer);
+    this.OnBomberDie(slot);
+    const drops = n.Decode1();
+    packet.Encode1(drops);
+    if (drops > 0) {
+      for (let i = 0; i < drops; i++) {
+        const obspos = n.Decode1();
+        const boxpos = n.Decode1();
+        ctx.m_rgnObstacle[(obspos & 0xf) + GAME_CONTEXT_TILE_COLUMNS * (obspos >> 4)] = 0;
+        ctx.m_rgnBoxItem[boxpos] = 0;
+        packet.Encode1(obspos);
+        packet.Encode1(boxpos);
+      }
+    }
+    this.SendPacket(packet);
+    if (this.m_abDeleted[slot] !== 4) {
+      this.m_abDeleted[slot] = 1;
+      ctx.m_rgnDownTime[slot] = this.m_GameClock.ElapsedTime() | 0;
+    }
+  }
+
+  private HandleAuxEvent(n: CReceivedPacket, socket: CClientSocket, packet: CSendPacket): void {
+    const v = n.Decode1();
+    const w = n.Decode1();
+    packet.Encode1(v);
+    packet.Encode1(w);
+    this.SendPacketExclude(packet, socket);
   }
 
   /** CGameSession::OnSetEffect (147, FxServer.exe.c:41CA78) — the raw buffer relay. */
