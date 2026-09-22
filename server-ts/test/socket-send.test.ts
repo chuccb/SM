@@ -29,7 +29,7 @@ import {
   LOCALSOCKET_SEQ_DELTA,
   SVRCLASS_GAME,
   SVRIDX_IDENTIFY_XOR,
-} from "../src/protocol/CenterProtocol.ts";
+} from "../src/core/protocol/CenterProtocol.ts";
 
 class TestSocket extends CPacketSocket {}
 

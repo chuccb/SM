@@ -14,7 +14,7 @@ import { CGameSession } from "../src/FXGS/GameSession.ts";
 import { CMainSystem } from "../src/FXGS/MainSystem.ts";
 import { CClientSocket } from "../src/FXGS/ClientSocket.ts";
 import { CUser } from "../src/FXGS/User.ts";
-import { S2C_GamePacket } from "../src/protocol/PacketIDs.ts";
+import { S2C_GamePacket } from "../src/core/protocol/PacketIDs.ts";
 
 let savedIDF: CIDFMan | null;
 let savedMaps: CGameMapTmplList | null;

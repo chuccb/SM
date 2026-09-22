@@ -3,7 +3,7 @@
 import { CipherDegree, CSendPacket } from "../core/Packet.ts";
 import { COSmartStream } from "../core/SmartStream.ts";
 import type { CDBMan } from "../db/DBMan.ts";
-import { S2C_LoginNoticePacket } from "../protocol/PacketIDs.ts";
+import { S2C_LoginNoticePacket } from "../core/protocol/PacketIDs.ts";
 
 /** CConfigDyn::OnTimer refresh cadence (400 ms login timer ticks). */
 export const CONFIG_DYN_NOTICE_UPDATE_TICKS = 0x1194; // 4500

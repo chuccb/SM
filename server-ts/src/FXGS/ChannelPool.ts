@@ -2,9 +2,9 @@
 import type { CServerConfig } from "../core/ServerConfig.ts";
 import { CReceivedPacket, CSendPacket, CipherDegree, PACKET_TYPE_PLACEHOLDER } from "../core/Packet.ts";
 import { CDBMan } from "../db/DBMan.ts";
-import { S2C_GamePacket, C2S_GameLobbyPacket } from "../protocol/PacketIDs.ts";
+import { S2C_GamePacket, C2S_GameLobbyPacket } from "../core/protocol/PacketIDs.ts";
 import { CDynInfoCalculator_GetMaxExpInLevel } from "../shared/LevelTable.ts";
-import { MC_GameServerSendPacket, SVRCLASS_GAME, SVRCLASS_SHOP } from "../protocol/CenterProtocol.ts";
+import { MC_GameServerSendPacket, SVRCLASS_GAME, SVRCLASS_SHOP } from "../core/protocol/CenterProtocol.ts";
 import { CChatPool } from "./ChatPool.ts";
 import { CUserItemMan } from "./ItemMan.ts";
 import { CGameSessionTable } from "./GameSessionTable.ts";

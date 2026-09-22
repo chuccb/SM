@@ -11,7 +11,7 @@ import {
   CLoginPool,
 } from "../src/LS/CxLogin.ts";
 import type { CMultiServer } from "../src/LS/MultiServer.ts";
-import { S2C_LoginNoticePacket, S2C_LoginResponsePacket } from "../src/protocol/PacketIDs.ts";
+import { S2C_LoginNoticePacket, S2C_LoginResponsePacket } from "../src/core/protocol/PacketIDs.ts";
 
 let priorPool: CLoginPool | null;
 let priorCenter: CCenterProcess | null;

@@ -2,7 +2,7 @@
 import { CDBMan } from "../db/DBMan.ts";
 import { CipherDegree, CSendPacket } from "../core/Packet.ts";
 import { COSmartStream } from "../core/SmartStream.ts";
-import { S2C_ShopPacket } from "../protocol/PacketIDs.ts";
+import { S2C_ShopPacket } from "../core/protocol/PacketIDs.ts";
 import { BonusMap, CouponMap, PackageMap, ShopItem, UserItem } from "./Recordsets.ts";
 
 export class CItemMan {

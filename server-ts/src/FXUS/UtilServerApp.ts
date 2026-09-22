@@ -1,7 +1,7 @@
 /** Native source unit: CX/CxUtil/UtilServerApp.cpp. */
 import { CServerConfig, CXUTIL_STR_KEYS } from "../core/ServerConfig.ts";
 import { PacketLog } from "../core/PacketLog.ts";
-import { PACKET_NAME_TABLES } from "../protocol/PacketIDs.ts";
+import { PACKET_NAME_TABLES } from "../core/protocol/PacketIDs.ts";
 import { CLocalUserTable } from "./LocalUserTable.ts";
 import { CMainPool } from "./MainPool.ts";
 import { CMainSystem } from "./MainSystem.ts";

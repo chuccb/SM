@@ -17,12 +17,12 @@ import {
   Shop2Billing_CouponPacket,
   Billing2Shop_TwPacket,
   Shop2Billing_TwPacket,
-} from "../src/protocol/PacketIDs.ts";
+} from "../src/core/protocol/PacketIDs.ts";
 import {
   STANDARD_PACKET_OPCODE_BYTES,
   TAIWAN_BILLING_OPCODE_BYTES,
   WORD_PACKET_OPCODE_BYTES,
-} from "../src/protocol/PacketNames.ts";
+} from "../src/core/protocol/PacketNames.ts";
 import type { CDBMan } from "../src/db/DBMan.ts";
 
 const RTT = "00000005000000070000015f7b";

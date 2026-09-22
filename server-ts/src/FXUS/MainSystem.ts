@@ -1,7 +1,7 @@
 /** Native source unit: CX/CxUtil/MainSystem.cpp. */
 import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
-import { CENTER_VERSION, CONN_HELLO_VERSION, SVRCLASS_UTIL } from "../protocol/CenterProtocol.ts";
-import { S2C_UtilPacket } from "../protocol/PacketIDs.ts";
+import { CENTER_VERSION, CONN_HELLO_VERSION, SVRCLASS_UTIL } from "../core/protocol/CenterProtocol.ts";
+import { S2C_UtilPacket } from "../core/protocol/PacketIDs.ts";
 import type { CClientSocket } from "./ClientSocket.ts";
 import { CLocalUserTable } from "./LocalUserTable.ts";
 

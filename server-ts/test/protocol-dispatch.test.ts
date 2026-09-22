@@ -22,7 +22,7 @@ import {
   C2S_GameChatPacket,
   C2S_GameLobbyPacket,
   Center2Monitor_Packet,
-} from "../src/protocol/PacketIDs.ts";
+} from "../src/core/protocol/PacketIDs.ts";
 import {
   MC_GameServerSendPacket,
   MC_LoginServerSendPacket,
@@ -30,7 +30,7 @@ import {
   SVRCLASS_GAME,
   SVRCLASS_LOGIN,
   SVRCLASS_SHOP,
-} from "../src/protocol/CenterProtocol.ts";
+} from "../src/core/protocol/CenterProtocol.ts";
 
 function receivedFrom(packet: CSendPacket): CReceivedPacket {
   const received = new CReceivedPacket();

@@ -22,13 +22,13 @@ import { CServerConfig, CXCENTER_STR_KEYS, CXLOGIN_STR_KEYS } from "../src/core/
 import { CSendPacket } from "../src/core/Packet.ts";
 import { CDBMan } from "../src/db/DBMan.ts";
 import { CLocalSocket } from "../src/shared/LocalSocket.ts";
-import { SVRCLASS_GAME, SVRCLASS_UTIL } from "../src/protocol/CenterProtocol.ts";
+import { SVRCLASS_GAME, SVRCLASS_UTIL } from "../src/core/protocol/CenterProtocol.ts";
 import {
   CCenterProcess,
   CClientSocket as LsClientSocket,
   CLoginPool,
 } from "../src/LS/CxLogin.ts";
-import { S2C_LoginNoticePacket } from "../src/protocol/PacketIDs.ts";
+import { S2C_LoginNoticePacket } from "../src/core/protocol/PacketIDs.ts";
 import { CMultiServer } from "../src/LS/MultiServer.ts";
 import {
   CClientSocket,

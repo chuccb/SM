@@ -1,7 +1,7 @@
 /** Native source unit: FX/FxShop/UserPool.cpp. */
 import { timeGetTime } from "../core/timeGetTime.ts";
 import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
-import { S2C_ShopPacket, C2S_ShopPacket } from "../protocol/PacketIDs.ts";
+import { S2C_ShopPacket, C2S_ShopPacket } from "../core/protocol/PacketIDs.ts";
 import type { CUser } from "./User.ts";
 import type { CClientSocket } from "./ClientSocket.ts";
 

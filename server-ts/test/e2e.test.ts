@@ -24,9 +24,9 @@ import {
 import { UpdateCRC32 } from "../src/core/CRC.ts";
 import { RAND_MAX } from "../src/core/CRand.ts";
 import { CLocalSocket } from "../src/shared/LocalSocket.ts";
-import { SVRCLASS_UTIL, MC_ReceivedPacket } from "../src/protocol/CenterProtocol.ts";
+import { SVRCLASS_UTIL, MC_ReceivedPacket } from "../src/core/protocol/CenterProtocol.ts";
 import { CReceivedPacket, CSendPacket, CipherDegree } from "../src/core/Packet.ts";
-import { S2C_GamePacket } from "../src/protocol/PacketIDs.ts";
+import { S2C_GamePacket } from "../src/core/protocol/PacketIDs.ts";
 import { CA_CONFIG_SEED_IP } from "../src/db/CAConfigBak.ts";
 import { CDBMan, EncodePassword, GetUserHashNo } from "../src/db/DBMan.ts";
 import { SimpleStreamEncrypt3 } from "../src/core/StreamCipher.ts";

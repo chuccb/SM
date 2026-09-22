@@ -1,6 +1,6 @@
 /** Native source unit: CX/CxUtil/UserPool.cpp. */
 import { CReceivedPacket, CSendPacket } from "../core/Packet.ts";
-import { C2S_UtilPacket, S2C_UtilPacket } from "../protocol/PacketIDs.ts";
+import { C2S_UtilPacket, S2C_UtilPacket } from "../core/protocol/PacketIDs.ts";
 import type { CClientSocket } from "./ClientSocket.ts";
 import type { CUser } from "./User.ts";
 

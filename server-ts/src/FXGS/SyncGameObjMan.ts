@@ -1,6 +1,6 @@
 /** Native source unit: FX/FxServer/SyncGameObjMan.cpp. */
 import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
-import { S2C_GamePacket } from "../protocol/PacketIDs.ts";
+import { S2C_GamePacket } from "../core/protocol/PacketIDs.ts";
 import { MAX_SESSION_SLOTS } from "./Defs.ts";
 import type { CGameSession } from "./GameSession.ts";
 import type { CClientSocket } from "./ClientSocket.ts";

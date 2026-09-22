@@ -1,7 +1,7 @@
 /** Native source unit: CX/CxLogin/UserPool.cpp. */
 import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
 import { timeGetTime } from "../core/timeGetTime.ts";
-import { C2S_LoginPacket, S2C_LoginResponsePacket } from "../protocol/PacketIDs.ts";
+import { C2S_LoginPacket, S2C_LoginResponsePacket } from "../core/protocol/PacketIDs.ts";
 import type { CClientSocket } from "./ClientSocket.ts";
 import type { CUser } from "./User.ts";
 

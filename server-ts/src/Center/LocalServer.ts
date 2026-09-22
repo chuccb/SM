@@ -2,7 +2,7 @@
 import type { CLocalSocket } from "./LocalSocket.ts";
 import { MakeLower } from "../core/MakeLower.ts";
 import { CReceivedPacket, CSendPacket } from "../core/Packet.ts";
-import { CM_ReceivedPacket, MC_ReceivedPacket, SVRCLASS_SHOP } from "../protocol/CenterProtocol.ts";
+import { CM_ReceivedPacket, MC_ReceivedPacket, SVRCLASS_SHOP } from "../core/protocol/CenterProtocol.ts";
 import { IpToU32 } from "./NetworkAddress.ts";
 import { CUser, type CenterUserContext } from "./User.ts";
 import type { CGlobalUserTable } from "./GlobalUserTable.ts";

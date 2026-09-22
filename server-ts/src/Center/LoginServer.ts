@@ -1,6 +1,6 @@
 /** Native source unit: CX/CxCenter/LoginServer.cpp. */
 import { CReceivedPacket, CSendPacket } from "../core/Packet.ts";
-import { CM_ReceivedPacket, MC_ReceivedPacket, SVRCLASS_LOGIN } from "../protocol/CenterProtocol.ts";
+import { CM_ReceivedPacket, MC_ReceivedPacket, SVRCLASS_LOGIN } from "../core/protocol/CenterProtocol.ts";
 import { CLocalServer, type LocalServerHost } from "./LocalServer.ts";
 import { CUser } from "./User.ts";
 

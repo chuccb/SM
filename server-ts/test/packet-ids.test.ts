@@ -10,7 +10,7 @@ import {
   PacketIdDescriptor,
   PacketIdName,
   Shop2Billing_TwPacket,
-} from "../src/protocol/PacketIDs.ts";
+} from "../src/core/protocol/PacketIDs.ts";
 import {
   CM_GameServerPacket,
   CM_LoginServerPacket,
@@ -32,8 +32,8 @@ import {
   SVRCLASS_LOGIN,
   SVRCLASS_SHOP,
   SVRCLASS_UTIL,
-} from "../src/protocol/CenterProtocol.ts";
-import { STANDARD_PACKET_OPCODE_BYTES, TAIWAN_BILLING_OPCODE_BYTES } from "../src/protocol/PacketNames.ts";
+} from "../src/core/protocol/CenterProtocol.ts";
+import { STANDARD_PACKET_OPCODE_BYTES, TAIWAN_BILLING_OPCODE_BYTES } from "../src/core/protocol/PacketNames.ts";
 
 function ids(record: Readonly<Record<string, number>>): number[] {
   return [...new Set(Object.values(record))].sort((a, b) => a - b);

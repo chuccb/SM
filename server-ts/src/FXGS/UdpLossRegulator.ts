@@ -1,6 +1,6 @@
 /** Native source unit: FX/FxServer/UdpLossRegulator.cpp. */
 import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
-import { S2C_GamePacket } from "../protocol/PacketIDs.ts";
+import { S2C_GamePacket } from "../core/protocol/PacketIDs.ts";
 import { MAX_SESSION_SLOTS, UDP_REGULATE_DELAY } from "./Defs.ts";
 import type { CGameSession } from "./GameSession.ts";
 import { DestroySessionPlayer } from "./runtime/SessionTableRuntime.ts";

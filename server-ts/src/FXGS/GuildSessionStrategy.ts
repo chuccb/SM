@@ -1,6 +1,6 @@
 /** Native source unit: FX/FxServer/GuildSessionStrategy.cpp. */
 import { CSendPacket } from "../core/Packet.ts";
-import { S2C_GamePacket } from "../protocol/PacketIDs.ts";
+import { S2C_GamePacket } from "../core/protocol/PacketIDs.ts";
 import { MAX_SESSION_SLOTS, SLOTSTATE_COLOR_MASK } from "./Defs.ts";
 import type { CGameSession } from "./GameSession.ts";
 import type { CClientSocket } from "./ClientSocket.ts";

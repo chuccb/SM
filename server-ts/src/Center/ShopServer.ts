@@ -1,6 +1,6 @@
 /** Native source unit: CX/CxCenter/ShopServer.cpp. */
 import { CReceivedPacket, CSendPacket } from "../core/Packet.ts";
-import { CM_ReceivedPacket, MC_ReceivedPacket } from "../protocol/CenterProtocol.ts";
+import { CM_ReceivedPacket, MC_ReceivedPacket } from "../core/protocol/CenterProtocol.ts";
 import { CLocalServer, type LocalServerHost } from "./LocalServer.ts";
 
 export class CShopServer extends CLocalServer {

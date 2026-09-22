@@ -9,7 +9,7 @@ import { CONNECTION_TIMEOUT_MS, CONNECTING_LIST_BUCKET_COUNT, SERVER_IDX_NONE } 
 import { CServerConfig, CXCENTER_STR_KEYS } from "../src/core/ServerConfig.ts";
 import { GetTickCount } from "../src/core/GetTickCount.ts";
 import { CReceivedPacket, CSendPacket, enSocket } from "../src/core/Packet.ts";
-import { CM_ReceivedPacket, SVRCLASS_GAME, SVRCLASS_LOGIN, SVRCLASS_SHOP } from "../src/protocol/CenterProtocol.ts";
+import { CM_ReceivedPacket, SVRCLASS_GAME, SVRCLASS_LOGIN, SVRCLASS_SHOP } from "../src/core/protocol/CenterProtocol.ts";
 
 let now: number;
 beforeEach(() => {

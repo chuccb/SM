@@ -6,7 +6,7 @@ import { CServerConfig, FXSERVER_STR_KEYS } from "../core/ServerConfig.ts";
 import { PacketLog } from "../core/PacketLog.ts";
 import { CDBMan } from "../db/DBMan.ts";
 import { CIDFMan } from "./IDFMan.ts";
-import { PACKET_NAME_TABLES } from "../protocol/PacketIDs.ts";
+import { PACKET_NAME_TABLES } from "../core/protocol/PacketIDs.ts";
 import { CChannelPool } from "./ChannelPool.ts";
 import { CBomberAttr } from "./BomberAttr.ts";
 import { CGameMapTmplList } from "./GameMapTmplList.ts";

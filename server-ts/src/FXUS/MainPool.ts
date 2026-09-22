@@ -1,7 +1,7 @@
 /** Native source unit: CX/CxUtil/MainPool.cpp. */
 import { CReceivedPacket, CSendPacket } from "../core/Packet.ts";
-import { MC_UtilServerSendPacket } from "../protocol/CenterProtocol.ts";
-import { C2S_UtilPacket, S2C_UtilPacket } from "../protocol/PacketIDs.ts";
+import { MC_UtilServerSendPacket } from "../core/protocol/CenterProtocol.ts";
+import { C2S_UtilPacket, S2C_UtilPacket } from "../core/protocol/PacketIDs.ts";
 import { CUserPool } from "./UserPool.ts";
 import { CUser } from "./User.ts";
 import type { CClientSocket } from "./ClientSocket.ts";

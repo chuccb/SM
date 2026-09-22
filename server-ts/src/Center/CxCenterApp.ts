@@ -4,8 +4,8 @@ import { PacketLog } from "../core/PacketLog.ts";
 import {
   MC_PACKET_NAMES_BY_SERVER_CLASS,
   CM_PACKET_NAMES_BY_SERVER_CLASS,
-} from "../protocol/CenterProtocol.ts";
-import { PACKET_NAME_TABLES } from "../protocol/PacketIDs.ts";
+} from "../core/protocol/CenterProtocol.ts";
+import { PACKET_NAME_TABLES } from "../core/protocol/PacketIDs.ts";
 import { CLocalServerMan } from "./LocalServerMan.ts";
 import { CListenThread } from "./ListenThread.ts";
 import { CMonitorListenThread } from "./MonitorListenThread.ts";

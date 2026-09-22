@@ -24,7 +24,7 @@ import {
   MC_PACKET_NAMES_BY_SERVER_CLASS,
   CM_PACKET_NAMES_BY_SERVER_CLASS,
   SVRIDX_IDENTIFY_XOR,
-} from "../protocol/CenterProtocol.ts";
+} from "../core/protocol/CenterProtocol.ts";
 import { PacketLog } from "../core/PacketLog.ts";
 
 /** CCenterProcess::ConnectToCenter retry loop — Sleep(0xBB8) between

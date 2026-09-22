@@ -12,7 +12,7 @@ import {
   LOCALSOCKET_SEQ_DELTA,
   SVRIDX_IDENTIFY_XOR,
   MC_DISPATCH_NAMES_BY_SERVER_CLASS,
-} from "../protocol/CenterProtocol.ts";
+} from "../core/protocol/CenterProtocol.ts";
 import type { CLocalServer, LocalServerHost } from "./LocalServer.ts";
 
 /** Port-side host callbacks for the native center local socket. */

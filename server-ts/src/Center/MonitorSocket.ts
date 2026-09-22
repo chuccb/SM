@@ -1,8 +1,8 @@
 /** Native source unit: CX/CxCenter/MonitorSocket.cpp. */
 import { CPacketSocket } from "../core/PacketSocket.ts";
 import { CReceivedPacket, CSendPacket, enSocket, type enSocket as EnSocket } from "../core/Packet.ts";
-import { MONITOR_HEADER_CODE_RCV, MONITOR_HEADER_CODE_SND, MONITOR_HEADER_CODE_MODIFIER, MONITOR_SEQ, MONITOR_SEQ_DELTA } from "../protocol/CenterProtocol.ts";
-import { Center2Monitor_Packet, Monitor2Center_Packet } from "../protocol/PacketIDs.ts";
+import { MONITOR_HEADER_CODE_RCV, MONITOR_HEADER_CODE_SND, MONITOR_HEADER_CODE_MODIFIER, MONITOR_SEQ, MONITOR_SEQ_DELTA } from "../core/protocol/CenterProtocol.ts";
+import { Center2Monitor_Packet, Monitor2Center_Packet } from "../core/protocol/PacketIDs.ts";
 import type { CLocalServer } from "./LocalServer.ts";
 import type { CGlobalUserTable } from "./GlobalUserTable.ts";
 

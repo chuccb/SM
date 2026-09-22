@@ -7,7 +7,7 @@ import { MTUDPServer } from "./MTUDPServer.ts";
 import { CTimerThread } from "./TimerThread.ts";
 import { SetLocalUserTableFinder } from "./UDPPacketDispatcher.ts";
 import { CConfigDyn } from "./ConfigDyn.ts";
-import { PACKET_NAME_TABLES } from "../protocol/PacketIDs.ts";
+import { PACKET_NAME_TABLES } from "../core/protocol/PacketIDs.ts";
 import { CLoginPool } from "./LoginPool.ts";
 import { CCenterProcess } from "./CenterProcess.ts";
 import { CMainSystem } from "./MainSystem.ts";

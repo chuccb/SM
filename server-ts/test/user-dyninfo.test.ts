@@ -23,7 +23,7 @@ import { CGameSession } from "../src/FXGS/GameSession.ts";
 import { CGameSessionTable } from "../src/FXGS/GameSessionTable.ts";
 import { CDynInfoCalculator } from "../src/FXGS/DynInfoCalculator.ts";
 import { DYN_FLUSH_BURST, USER_MONEY_MAX, FxCLIENT_HASH_A, SESSION_IDX_MAX } from "../src/FXGS/Defs.ts";
-import { S2C_GamePacket } from "../src/protocol/PacketIDs.ts";
+import { S2C_GamePacket } from "../src/core/protocol/PacketIDs.ts";
 
 /** Read initialized PE data by VA; no Windows code execution or native-run claim. */
 function nativeInt32s(file: string, va: number, count: number): number[] {

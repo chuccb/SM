@@ -15,7 +15,7 @@
  */
 import { COSmartStream } from "../core/SmartStream.ts";
 import { CipherDegree, CSendPacket } from "../core/Packet.ts";
-import { S2C_LoginNoticePacket } from "../protocol/PacketIDs.ts";
+import { S2C_LoginNoticePacket } from "../core/protocol/PacketIDs.ts";
 
 export class CChannelCache {
   m_nChannelNo = 0;

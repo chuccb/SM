@@ -1,8 +1,8 @@
 /** Native source unit: CX/CxLogin/MainSystem.cpp. */
 import { CServerConfig } from "../core/ServerConfig.ts";
 import { CSendPacket, CipherDegree } from "../core/Packet.ts";
-import { CENTER_VERSION, CONN_HELLO_VERSION, SVRCLASS_LOGIN } from "../protocol/CenterProtocol.ts";
-import { S2C_LoginNoticePacket } from "../protocol/PacketIDs.ts";
+import { CENTER_VERSION, CONN_HELLO_VERSION, SVRCLASS_LOGIN } from "../core/protocol/CenterProtocol.ts";
+import { S2C_LoginNoticePacket } from "../core/protocol/PacketIDs.ts";
 import type { CClientSocket } from "./ClientSocket.ts";
 
 /**

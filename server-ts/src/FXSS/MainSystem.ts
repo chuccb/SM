@@ -2,8 +2,8 @@
 import { CRand } from "../core/CRand.ts";
 import { GetUnixTimeSeconds } from "../core/LocalTime.ts";
 import { CReceivedPacket, CSendPacket } from "../core/Packet.ts";
-import { S2C_ShopPacket } from "../protocol/PacketIDs.ts";
-import { CENTER_VERSION, CONN_HELLO_VERSION, SVRCLASS_SHOP } from "../protocol/CenterProtocol.ts";
+import { S2C_ShopPacket } from "../core/protocol/PacketIDs.ts";
+import { CENTER_VERSION, CONN_HELLO_VERSION, SVRCLASS_SHOP } from "../core/protocol/CenterProtocol.ts";
 import type { CClientSocket } from "./ClientSocket.ts";
 
 /** CMainSystem::OnConnEstablished (FxShop.exe.c:21056) — the client patch URL. */

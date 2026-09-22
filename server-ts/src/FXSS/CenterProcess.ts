@@ -3,8 +3,8 @@ import { CServerConfig } from "../core/ServerConfig.ts";
 import { CDBMan } from "../db/DBMan.ts";
 import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
 import { CLocalSocket } from "../shared/LocalSocket.ts";
-import { S2C_ShopPacket } from "../protocol/PacketIDs.ts";
-import { CM_ShopServerPacket, MC_ShopServerSendPacket, SVRCLASS_SHOP } from "../protocol/CenterProtocol.ts";
+import { S2C_ShopPacket } from "../core/protocol/PacketIDs.ts";
+import { CM_ShopServerPacket, MC_ShopServerSendPacket, SVRCLASS_SHOP } from "../core/protocol/CenterProtocol.ts";
 import { CItemMan } from "./ItemMan.ts";
 import { CUserPool } from "./UserPool.ts";
 import {

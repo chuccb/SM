@@ -17,7 +17,7 @@ import { CPracticeSession } from "../src/FXGS/PracticeSession.ts";
 import { CUdpLossRegulator } from "../src/FXGS/UdpLossRegulator.ts";
 import { CClientSocket } from "../src/FXGS/ClientSocket.ts";
 import { CUser } from "../src/FXGS/User.ts";
-import { S2C_GamePacket } from "../src/protocol/PacketIDs.ts";
+import { S2C_GamePacket } from "../src/core/protocol/PacketIDs.ts";
 
 let saved: {
   idf: CIDFMan | null; bomber: CBomberAttr | null; item: CItemAttr | null;

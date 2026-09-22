@@ -8,7 +8,7 @@ import {
   Billing2Shop_TwPacket,
   Shop2Billing_TwPacket,
   S2C_ShopPacket,
-} from "../protocol/PacketIDs.ts";
+} from "../core/protocol/PacketIDs.ts";
 import type { ShopItem } from "./Recordsets.ts";
 import { CSendPacket as CBillingSendPacket, DecodeBillingString } from "./Packet.ts";
 import { EncodeCP950 } from "../core/Encoding.ts";

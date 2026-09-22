@@ -2,7 +2,7 @@
 import { CServerConfig, FXSHOP_STR_KEYS } from "../core/ServerConfig.ts";
 import { PacketLog } from "../core/PacketLog.ts";
 import { CDBMan } from "../db/DBMan.ts";
-import { BILLING_PACKET_LOG_CONTEXT, PACKET_NAME_TABLES } from "../protocol/PacketIDs.ts";
+import { BILLING_PACKET_LOG_CONTEXT, PACKET_NAME_TABLES } from "../core/protocol/PacketIDs.ts";
 import { CItemMan } from "./ItemMan.ts";
 import { CLocalUserTable } from "./LocalUserTable.ts";
 import { CMainPool } from "./MainPool.ts";

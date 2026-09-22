@@ -9,8 +9,8 @@ import {
   STANDARD_PACKET_OPCODE_BYTES,
   TAIWAN_BILLING_OPCODE_BYTES,
   WORD_PACKET_OPCODE_BYTES,
-} from "../protocol/PacketNames.ts";
-import { BNB_TAIWAN_PacketFamily } from "../protocol/PacketIDs.ts";
+} from "../core/protocol/PacketNames.ts";
+import { BNB_TAIWAN_PacketFamily } from "../core/protocol/PacketIDs.ts";
 
 export const TW_LENGTH_BYTES = 4;
 export const TW_HEADER_CODE_BYTES = 4;

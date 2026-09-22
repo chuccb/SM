@@ -2,8 +2,8 @@
 import { CDBMan } from "../db/DBMan.ts";
 import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
 import { EncodeVariantTime } from "../core/VariantTime.ts";
-import { C2S_ShopPacket, S2C_ShopPacket } from "../protocol/PacketIDs.ts";
-import { MC_ShopServerSendPacket } from "../protocol/CenterProtocol.ts";
+import { C2S_ShopPacket, S2C_ShopPacket } from "../core/protocol/PacketIDs.ts";
+import { MC_ShopServerSendPacket } from "../core/protocol/CenterProtocol.ts";
 import { CItemMan } from "./ItemMan.ts";
 import type { _USERACCOUNT, _USERDYNINFO } from "./Recordsets.ts";
 import { ItemCategory, IsInventoryAddable } from "../shared/Item.ts";

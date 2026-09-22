@@ -4,7 +4,7 @@
 
 import { CReceivedPacket, CSendPacket, CipherDegree, PACKET_TYPE_PLACEHOLDER } from "../core/Packet.ts";
 import type { HOSTHANDLE } from "../shared/MTUDP.ts";
-import { S2C_GamePacket, C2S_GameSessionPacket } from "../protocol/PacketIDs.ts";
+import { S2C_GamePacket, C2S_GameSessionPacket } from "../core/protocol/PacketIDs.ts";
 import { timeGetTime } from "../core/timeGetTime.ts";
 import { CUserPool } from "./UserPool.ts";
 import { CreateChannelSocketList, SendChannelPacket } from "./runtime/ClientSocketRuntime.ts";

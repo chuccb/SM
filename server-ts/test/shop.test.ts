@@ -15,7 +15,7 @@ import { CCxCenterApp, CLocalServerMan, CUser } from "../src/Center/CxCenter.ts"
 import { CFxShopApp, CLocalUserTable, CUser as ShopUser, UserInventory as ShopUserInventory } from "../src/FXSS/FxShop.ts";
 import { CReceivedPacket, CSendPacket } from "../src/core/Packet.ts";
 import { CItemMan } from "../src/FXSS/ItemMan.ts";
-import { SVRCLASS_SHOP } from "../src/protocol/CenterProtocol.ts";
+import { SVRCLASS_SHOP } from "../src/core/protocol/CenterProtocol.ts";
 import { GetUserHashNo } from "../src/db/DBMan.ts";
 import { CISmartStream } from "../src/core/SmartStream.ts";
 import { TestClient, r1, r2, r4, rstr, gsEncode, gsDecode, type CReceived } from "./TestClient.ts";

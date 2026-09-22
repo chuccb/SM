@@ -1,7 +1,7 @@
 /** Native source unit: CX/CxCenter/User.cpp. */
 import { GetTickCount } from "../core/GetTickCount.ts";
 import { CONNECTION_TIMEOUT_MS, SERVER_IDX_NONE } from "./Defs.ts";
-import { SVRCLASS_GAME, SVRCLASS_LOGIN, SVRCLASS_SHOP } from "../protocol/CenterProtocol.ts";
+import { SVRCLASS_GAME, SVRCLASS_LOGIN, SVRCLASS_SHOP } from "../core/protocol/CenterProtocol.ts";
 import type { CLocalServer } from "./LocalServer.ts";
 import type { CGlobalUserTable } from "./GlobalUserTable.ts";
 

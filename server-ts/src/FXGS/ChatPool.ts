@@ -1,7 +1,7 @@
 /** Native source unit: FX/FxServer/ChatPool.cpp. */
 import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
-import { C2S_GameChatPacket, S2C_GamePacket } from "../protocol/PacketIDs.ts";
-import { MC_GameServerSendPacket } from "../protocol/CenterProtocol.ts";
+import { C2S_GameChatPacket, S2C_GamePacket } from "../core/protocol/PacketIDs.ts";
+import { MC_GameServerSendPacket } from "../core/protocol/CenterProtocol.ts";
 import { SESSION_IDX_NONE } from "./Defs.ts";
 import { CUserPool } from "./UserPool.ts";
 import { CGameSessionTable } from "./GameSessionTable.ts";

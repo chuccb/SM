@@ -25,7 +25,7 @@
 import type { CDBMan } from "../db/DBMan.ts";
 import { COSmartStream } from "../core/SmartStream.ts";
 import { CipherDegree, CSendPacket } from "../core/Packet.ts";
-import { S2C_LoginResponsePacket } from "../protocol/PacketIDs.ts";
+import { S2C_LoginResponsePacket } from "../core/protocol/PacketIDs.ts";
 import type { _LOGINSERVER, _MULTISERVER, _MULTISERVERNOTICE } from "./Recordsets.ts";
 
 export function inet_addr(cp: string): number {

@@ -1,6 +1,6 @@
 /** Native source unit: FX/FxServer/ListSession.cpp. */
 import { CReceivedPacket, CSendPacket, CipherDegree, PACKET_TYPE_PLACEHOLDER } from "../core/Packet.ts";
-import { S2C_GamePacket } from "../protocol/PacketIDs.ts";
+import { S2C_GamePacket } from "../core/protocol/PacketIDs.ts";
 import { FunctionalItem } from "../shared/Item.ts";
 import { timeGetTime } from "../core/timeGetTime.ts";
 import {

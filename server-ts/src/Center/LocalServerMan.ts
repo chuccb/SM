@@ -8,7 +8,7 @@ import {
   SVRCLASS_LOGIN,
   SVRCLASS_SHOP,
   SVRCLASS_UTIL,
-} from "../protocol/CenterProtocol.ts";
+} from "../core/protocol/CenterProtocol.ts";
 import { CGlobalUserTable } from "./GlobalUserTable.ts";
 import { CLocalServer } from "./LocalServer.ts";
 import { CLoginServer } from "./LoginServer.ts";

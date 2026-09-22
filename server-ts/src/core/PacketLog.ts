@@ -28,7 +28,7 @@
  * Packet names resolve through the PacketIDs.ts tables registered per server
  * in its main(); unregistered flows print the bare id as p<N>.
  */
-import { PacketIdDescriptor } from "../protocol/PacketIDs.ts";
+import { PacketIdDescriptor } from "./protocol/PacketIDs.ts";
 import {
   MergePacketNameInfo,
   PacketNameLabel,
@@ -36,7 +36,7 @@ import {
   type PacketIdTable,
   type PacketNameInfo,
   type PacketNameTable,
-} from "../protocol/PacketNames.ts";
+} from "./protocol/PacketNames.ts";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 

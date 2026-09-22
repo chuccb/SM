@@ -14,7 +14,7 @@ import {
   TW_SOCKET_HEADER_CODE_RCV,
   TW_SOCKET_HEADER_CODE_SND,
 } from "./Packet.ts";
-import { BILLING_PACKET_LOG_CONTEXT, BNB_TAIWAN_PacketFamily } from "../protocol/PacketIDs.ts";
+import { BILLING_PACKET_LOG_CONTEXT, BNB_TAIWAN_PacketFamily } from "../core/protocol/PacketIDs.ts";
 
 export class CBillingSocketTw extends CPacketSocket {
   /** The native constructor flag at +240 controls CloseAll/overflow's exit.

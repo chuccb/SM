@@ -2,7 +2,7 @@
  * CPracticeSession — the solo practice rooms with their AI seats. */
 
 import { CReceivedPacket, CSendPacket, CipherDegree, PACKET_TYPE_PLACEHOLDER } from "../core/Packet.ts";
-import { S2C_GamePacket, C2S_GameSessionPacket } from "../protocol/PacketIDs.ts";
+import { S2C_GamePacket, C2S_GameSessionPacket } from "../core/protocol/PacketIDs.ts";
 import { timeGetTime } from "../core/timeGetTime.ts";
 import {
   AI_LEVEL_BAND,

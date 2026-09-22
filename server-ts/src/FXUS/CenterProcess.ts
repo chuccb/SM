@@ -2,8 +2,8 @@
 import { CServerConfig } from "../core/ServerConfig.ts";
 import { CReceivedPacket, CSendPacket } from "../core/Packet.ts";
 import { CLocalSocket } from "../shared/LocalSocket.ts";
-import { CM_UtilServerPacket, SVRCLASS_UTIL } from "../protocol/CenterProtocol.ts";
-import { S2C_UtilPacket } from "../protocol/PacketIDs.ts";
+import { CM_UtilServerPacket, SVRCLASS_UTIL } from "../core/protocol/CenterProtocol.ts";
+import { S2C_UtilPacket } from "../core/protocol/PacketIDs.ts";
 import { CLocalUserTable } from "./LocalUserTable.ts";
 import { BroadcastUtilPacket, SendUtilUserDetail } from "./runtime/MainPoolRuntime.ts";
 import { CMainSystem } from "./MainSystem.ts";
