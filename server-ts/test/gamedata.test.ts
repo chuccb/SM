@@ -19,7 +19,7 @@ describe("CItemAttr (Attr/ItemAttr, FxServer.exe.c:17080)", () => {
     saved = CIDFMan.ms_pInstance;
     // the real package next to FXGS_000.cfg — the base the GS boot derives
     // from dirname(cfg) + "/FxServer"
-    new CIDFMan(join(import.meta.dir, "..", "..", "FXGS", "FxServer"));
+    new CIDFMan(join(import.meta.dir, "..", "data", "FxServer"));
   });
 
   afterAll(() => {

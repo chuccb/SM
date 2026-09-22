@@ -127,7 +127,7 @@ describe("CGameMapTmpl::LoadMap (0040C15A)", () => {
 
 describe("map groups and template lifecycle", () => {
   test("the shipped package has 226 ordered maps, 13 themes and boolean mission flags", () => {
-    new CIDFMan(join(import.meta.dir, "..", "..", "FXGS", "FxServer"));
+    new CIDFMan(join(import.meta.dir, "..", "data", "FxServer"));
     maps.CreateTmplList();
     expect(maps.GetMapCount()).toBe(226);
     expect(maps.m_apTheme).toHaveLength(13);

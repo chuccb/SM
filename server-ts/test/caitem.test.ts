@@ -212,7 +212,7 @@ test("CLI inspection is read-only, reports the target, and import rejects mistyp
 test("shipped server IDF entries are bounded and the original needle resolves through CItemAttr", () => {
   const priorIDF = CIDFMan.ms_pInstance, priorAttr = CItemAttr.ms_pInstance;
   try {
-    const idf = new CIDFMan(join(import.meta.dir, "../../FXGS/FxServer"));
+    const idf = new CIDFMan(join(import.meta.dir, "../data/FxServer"));
     expect(idf.m_FastFile.GetDataCount()).toBe(256);
     for (const entry of idf.m_FastFile.m_vtEntry) {
       expect(entry.offset + entry.length).toBeLessThanOrEqual(idf.m_FastFile.m_pData!.length);

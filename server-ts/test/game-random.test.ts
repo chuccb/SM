@@ -37,7 +37,7 @@ beforeEach(() => {
   };
   main = new CMainSystem(new CServerConfig([]));
   main.m_WorkerRandom.srand(1);
-  new CIDFMan(join(import.meta.dir, "..", "..", "FXGS", "FxServer"));
+  new CIDFMan(join(import.meta.dir, "..", "data", "FxServer"));
   bomber = new CBomberAttr();
   bomber.Load();
   item = new CItemAttr();

@@ -25,7 +25,7 @@ beforeEach(() => {
       CGameMapTmplList.ms_pInstance, CMainSystem.ms_pInstance, CGameSessionTable.ms_pInstance, CGameSession.ms_ulSerialNo] = saved;
   };
   new CMainSystem(new CServerConfig([])).m_WorkerRandom.srand(1);
-  new CIDFMan(join(import.meta.dir, "..", "..", "FXGS", "FxServer"));
+  new CIDFMan(join(import.meta.dir, "..", "data", "FxServer"));
   new CBomberAttr().Load(); new CItemAttr().Load();
   const maps = new CGameMapTmplList(); map = new CGameMapTmpl();
   Object.assign(map, { m_nIdx: 0, m_fPracticeMap: 1, m_nGhostStart: 10, m_nGhostFreq: 3, m_fReBirthMap: 1 });

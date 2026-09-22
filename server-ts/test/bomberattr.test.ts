@@ -36,7 +36,7 @@ function record(name: string, values = [0, 5, 7, 1, 10, 1, 7, 10, 100, 9]): Buff
   return Buffer.concat([dwords(name.length), Buffer.from(name, "latin1"), dwords(...values)]);
 }
 function shipped(): void {
-  new CIDFMan(join(import.meta.dir, "..", "..", "FXGS", "FxServer"));
+  new CIDFMan(join(import.meta.dir, "..", "data", "FxServer"));
 }
 
 describe("CBomberAttr binary layout and lifecycle", () => {
