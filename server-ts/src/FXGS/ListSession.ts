@@ -6,6 +6,11 @@ import { timeGetTime } from "../core/timeGetTime.ts";
 import {
   CHAT_MAX_PACKET_LEN,
   MAP_IDX_RANDOM,
+  SESSION_MODIFIED_CUR_PLAYER,
+  SESSION_MODIFIED_MAX_PLAYER,
+  SESSION_MODIFIED_MAP,
+  SESSION_MODIFIED_PLAYING,
+  SESSION_MODIFIED_TITLE,
   MAX_SESSION_SLOTS,
   SLOTSTATE_CHIEF,
   SLOTSTATE_CHIEF_CLEAR,
@@ -92,7 +97,7 @@ export class CListSession extends CBaseSession {
 
   override DoChangeTitle(title: string): void {
     super.DoChangeTitle(title);
-    this.m_fModified |= 0x10;
+    this.m_fModified |= SESSION_MODIFIED_TITLE;
   }
 
   override OnSelectBomber(n: CReceivedPacket, socket: CClientSocket): void {
@@ -258,7 +263,7 @@ export class CListSession extends CBaseSession {
         if ((this.m_rgSlotState[i * 3]! & 1) === 0) open++;
       }
       if (open !== this.m_nMaxPlayerNum) {
-        this.m_fModified |= 8;
+        this.m_fModified |= SESSION_MODIFIED_MAX_PLAYER;
         this.m_nMaxPlayerNum = open;
       }
     }
@@ -266,13 +271,13 @@ export class CListSession extends CBaseSession {
 
   /** CListSession::SetPlaying. */
   SetPlaying(playing: number): void {
-    this.m_fModified |= 1;
+    this.m_fModified |= SESSION_MODIFIED_PLAYING;
     this.m_fPlaying = playing;
   }
 
   /** CListSession::SetCurPlayer. */
   SetCurPlayer(cur: number): void {
-    this.m_fModified |= 4;
+    this.m_fModified |= SESSION_MODIFIED_CUR_PLAYER;
     this.m_nCurPlayerNum = cur;
   }
 
@@ -309,11 +314,11 @@ export class CListSession extends CBaseSession {
     packet.Encode2(this.m_nIdx);
     packet.Encode4(this.m_nSerialNo);
     packet.Encode1(this.m_fModified);
-    if ((this.m_fModified & 1) !== 0) packet.Encode1(this.m_fPlaying);
-    if ((this.m_fModified & 2) !== 0) packet.Encode2(this.m_nMapIdx & 0xffff);
-    if ((this.m_fModified & 4) !== 0) packet.Encode1(this.m_nCurPlayerNum);
-    if ((this.m_fModified & 8) !== 0) packet.Encode1(this.m_nMaxPlayerNum);
-    if ((this.m_fModified & 0x10) !== 0) packet.EncodeStr(this.m_strName);
+    if ((this.m_fModified & SESSION_MODIFIED_PLAYING) !== 0) packet.Encode1(this.m_fPlaying);
+    if ((this.m_fModified & SESSION_MODIFIED_MAP) !== 0) packet.Encode2(this.m_nMapIdx & 0xffff);
+    if ((this.m_fModified & SESSION_MODIFIED_CUR_PLAYER) !== 0) packet.Encode1(this.m_nCurPlayerNum);
+    if ((this.m_fModified & SESSION_MODIFIED_MAX_PLAYER) !== 0) packet.Encode1(this.m_nMaxPlayerNum);
+    if ((this.m_fModified & SESSION_MODIFIED_TITLE) !== 0) packet.EncodeStr(this.m_strName);
     this.m_fModified = 0; // CListSession::MakeModifiedPacket clears before returning
     return 1;
   }

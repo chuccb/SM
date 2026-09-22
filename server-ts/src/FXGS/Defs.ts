@@ -174,3 +174,10 @@ export const PRACTICE_AI_COLOR = 7;
 /** CPracticeSession — AI level range 1..31 (FxServer.exe.c:41745 / 425B4F). */
 export const AI_LEVEL_MIN = 1;
 export const AI_LEVEL_MAX = 31;
+
+/** CListSession m_fModified bit flags — lobby 86 [E1 mask] + optional fields. */
+export const SESSION_MODIFIED_PLAYING = 1;
+export const SESSION_MODIFIED_MAP = 2;
+export const SESSION_MODIFIED_CUR_PLAYER = 4;
+export const SESSION_MODIFIED_MAX_PLAYER = 8;
+export const SESSION_MODIFIED_TITLE = 0x10;

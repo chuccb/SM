@@ -27,6 +27,7 @@ import {
   MAX_SESSION_SLOTS,
   RETURN_STAGE_DELAY,
   SESSION_INFO_DETAIL_RESULT,
+  SESSION_MODIFIED_MAP,
   SLOTSTATE_CHIEF,
   SLOTSTATE_COLOR_MASK,
   SLOTSTATE_GROUP_CLEAR,
@@ -1076,7 +1077,7 @@ export class CGameSession extends CListSession {
   OnSelectMap(n: CReceivedPacket, _socket: CClientSocket): void {
     const mapIdx = (n.Decode2() << 16) >> 16; // 0041C497: movsx edi, ax
     if (this.m_fPlaying === 0) {
-      this.m_fModified |= 2;
+      this.m_fModified |= SESSION_MODIFIED_MAP;
       this.m_nMapIdx = mapIdx;
     }
     const packet = new CSendPacket(S2C_GamePacket.OnSessionMapIdx, CipherDegree.kPacketEncryptedCRC8);
