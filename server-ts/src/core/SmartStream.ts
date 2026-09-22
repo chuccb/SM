@@ -17,10 +17,6 @@
 import { deflateSync, inflateSync } from "node:zlib";
 import { EncodeCP950, DecodeCP950 } from "./Encoding.ts";
 
-declare const Bun: {
-  deflateSync(data: Uint8Array | ArrayBufferView, options?: { level?: number }): Uint8Array;
-  inflateSync(data: Uint8Array | ArrayBufferView): Uint8Array;
-} | undefined;
 
 const ADLER32_MODULUS = 65_521;
 const U8_BYTES = Uint8Array.BYTES_PER_ELEMENT;
@@ -114,9 +110,7 @@ export class COSmartStream {
     const raw = this.pRawBuf.subarray(0, this.sizeRawBuf);
     const compressed = this.sizeRawBuf === 0
       ? null
-      : typeof Bun !== "undefined" && typeof Bun.deflateSync === "function"
-        ? Bun.deflateSync(raw, { level: SMART_STREAM_DEFLATE_LEVEL })
-        : deflateSync(raw, { level: SMART_STREAM_DEFLATE_LEVEL });
+      : deflateSync(raw, { level: SMART_STREAM_DEFLATE_LEVEL });
 
     let inner: Uint8Array;
     if (
@@ -197,9 +191,7 @@ export class CISmartStream {
         off + SMART_STREAM_INNER_FLAG_BYTES + SMART_STREAM_RAW_SIZE_BYTES,
         off + nSize,
       );
-      this.pRawBuf = typeof Bun !== "undefined" && typeof Bun.inflateSync === "function"
-        ? Bun.inflateSync(compressedSlice)
-        : inflateSync(compressedSlice);
+      this.pRawBuf = inflateSync(compressedSlice);
     }
     this.posDecode = 0;
   }
