@@ -25,6 +25,7 @@ import { SCHEMA_ITEM } from "./CAItemSchema.ts";
 import { mkdirSync, readFileSync } from "node:fs";
 import { LocateCAConfigBak, ParseCAConfigBak, CA_CONFIG_SEED_IP } from "./CAConfigBak.ts";
 import { join } from "node:path";
+import { GIFT_PREINVENTORY_LIMIT } from "../FXSS/Defs.ts";
 
 /** _USERDYNINFO — money/exp/win/draw/lose (+ the id). */
 export interface _USERDYNINFO {
@@ -865,7 +866,12 @@ export class CDBMan {
     return ins.changes === 1 ? 0 : -1;
   }
 
-  /** prAddPreInventory (returns the new SN) */
+  /** prAddPreInventory — native prAddPreInventory can return -2 for gift-limit-over
+   * (FxShop.exe.c:408D70: `if (return == -2) return -2`). The original stored
+   * proc enforces a per-user pre-inventory cap; the exact limit is not
+   * recoverable from the backup, so we enforce a generous cap that still
+   * exercises the 204 6 path. Returns SN (>0) on success, -2 gift-limit-over,
+   * -1 generic failure. */
   prAddPreInventory(
     id: string,
     type: number,
@@ -877,13 +883,20 @@ export class CDBMan {
     strAttr = "",
     description = "",
   ): number {
-    const info = this.invDB(id)
-      .query(
-        `INSERT INTO FxPreInventory (UserID, Type, ItemSN, StockSN, Amount, ValidityPeriod, ValidityLevel, strAttr, Description)
-         VALUES (?,?,?,?,?,?,?,?,?)`,
-      )
-      .run(id, type, itemSN, stockSN, amount, validityPeriod, validityLevel, strAttr, description);
-    return Number(info.lastInsertRowid);
+    try {
+      const db = this.invDB(id);
+      const countRow = db.query("SELECT COUNT(*) AS c FROM FxPreInventory WHERE UserID = ?").get(id) as { c: number } | undefined;
+      if (countRow && countRow.c >= GIFT_PREINVENTORY_LIMIT) return -2;
+      const info = db
+        .query(
+          `INSERT INTO FxPreInventory (UserID, Type, ItemSN, StockSN, Amount, ValidityPeriod, ValidityLevel, strAttr, Description)
+           VALUES (?,?,?,?,?,?,?,?,?)`,
+        )
+        .run(id, type, itemSN, stockSN, amount, validityPeriod, validityLevel, strAttr, description);
+      return Number(info.lastInsertRowid);
+    } catch {
+      return -1;
+    }
   }
 
   /** prDeleteInventory */

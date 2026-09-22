@@ -13,6 +13,8 @@ import {
   CHARGE_VERIFY_RESULT,
   SHOP_PERMANENT_EXPIRY_LEVEL,
   SHOP_PERMANENT_VALIDITY_DAYS,
+  PURCHASE_RESULT,
+  COUPON_RESULT,
 } from "./Defs.ts";
 import { BILLING_ERROR } from "../services/LocalBilling/Defs.ts";
 import { CUser } from "./User.ts";
@@ -359,14 +361,14 @@ export class CMainPool extends CUserPool {
     const itemMan = CItemMan.ms_pInstance!;
     const shopItem = itemMan.GetShopItem(stockSN);
     if (!shopItem) {
-      this.PurchaseError(user, 1, ERR_PURCHASE);
+      this.PurchaseError(user, PURCHASE_RESULT.GenericFailure, ERR_PURCHASE);
       return;
     }
     // Native 00416069 init even for billing path: 2872=0, 2880=stock, 2888=Unit, 2884=ItemSN, 2896=0
     // This mirrors OnRequestPresent's layout and is required for the 312
     // handler's StockSN lookup (User+720) and the busy guard (User+2880).
     if (user.m_nTranxStockSN !== 0) {
-      this.PurchaseError(user, 1, ERR_PURCHASE);
+      this.PurchaseError(user, PURCHASE_RESULT.GenericFailure, ERR_PURCHASE);
       return;
     }
     user.m_nTranxReserved0 = 0;
@@ -381,7 +383,7 @@ export class CMainPool extends CUserPool {
     }
     // A port-side purchase is already in flight → error 1.
     if (user.m_pPurchaseTranx !== null) {
-      this.PurchaseError(user, 1, ERR_PURCHASE);
+      this.PurchaseError(user, PURCHASE_RESULT.GenericFailure, ERR_PURCHASE);
       user.ResetTranxInfo();
       return;
     }
@@ -394,7 +396,7 @@ export class CMainPool extends CUserPool {
       for (const pkg of packages) {
         const sub = itemMan.GetShopItem(pkg.StockSN);
         if (!sub) {
-          this.PurchaseError(user, 5, ERR_PURCHASE);
+          this.PurchaseError(user, PURCHASE_RESULT.GiftFailure, ERR_PURCHASE);
           user.ResetTranxInfo();
           return;
         }
@@ -402,13 +404,13 @@ export class CMainPool extends CUserPool {
         // Native's category-15 exemption tests the PARENT, which is 11 in
         // this branch. A category-15 CHILD is therefore not exempt.
         if (owned !== 0 && sub.Category !== ItemCategory.Consumable && sub.Category !== ItemCategory.LimitedItem) {
-          this.PurchaseError(user, 4, ERR_PURCHASE);
+          this.PurchaseError(user, PURCHASE_RESULT.AlreadyOwned, ERR_PURCHASE);
           user.ResetTranxInfo();
           return;
         }
         const ui = itemMan.GetUserItem(sub.ItemSN);
         if (ui && sub.Category === ItemCategory.LimitedItem && owned >= ui.nAttr1) {
-          this.PurchaseError(user, 11, ERR_PURCHASE); // package branch has no formatted limit text
+          this.PurchaseError(user, PURCHASE_RESULT.OwnedLimitReached, ERR_PURCHASE); // package branch has no formatted limit text
           user.ResetTranxInfo();
           return;
         }
@@ -417,20 +419,20 @@ export class CMainPool extends CUserPool {
       const ui = itemMan.GetUserItem(shopItem.ItemSN);
       if (!ui) {
         console.error(`[Shop] Invalid item sn (OnReqPurchaseStockItem) = ${shopItem.ItemSN}`);
-        this.PurchaseError(user, 1, ERR_PURCHASE);
+        this.PurchaseError(user, PURCHASE_RESULT.GenericFailure, ERR_PURCHASE);
         user.ResetTranxInfo();
         return;
       }
       const owned = (this.db.prIsValidInventory(id, shopItem.ItemSN) + this.db.prIsValidPreInventory(id, shopItem.ItemSN)) | 0;
       if (owned >= ui.nAttr1) {
-        this.PurchaseError(user, 11, formatLimit(ui.nAttr1));
+        this.PurchaseError(user, PURCHASE_RESULT.OwnedLimitReached, formatLimit(ui.nAttr1));
         user.ResetTranxInfo();
         return;
       }
     } else if (!IsInventoryAddable(shopItem.Category)) {
       const owned = (this.db.prIsValidInventory(id, shopItem.ItemSN) + this.db.prIsValidPreInventory(id, shopItem.ItemSN)) | 0;
       if (owned !== 0) {
-        this.PurchaseError(user, 4, ERR_PURCHASE);
+        this.PurchaseError(user, PURCHASE_RESULT.AlreadyOwned, ERR_PURCHASE);
         user.ResetTranxInfo();
         return;
       }
@@ -479,12 +481,12 @@ export class CMainPool extends CUserPool {
       if (user.m_fCartProcessing === 0) {
         // success: client 204 [E1 0][8B SystemTimeToVariantTime double]
         const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
-        p.Encode1(0);
+        p.Encode1(PURCHASE_RESULT.Success);
         p.EncodeBuffer(EncodeVariantTime(new Date()));
         user.m_pSocket?.SendPacket(p);
       }
     } else if (user.m_fCartProcessing === 0) {
-      this.PurchaseError(user, 1, ERR_PURCHASE);
+      this.PurchaseError(user, PURCHASE_RESULT.GenericFailure, ERR_PURCHASE);
     }
     user.ResetTranxInfo();
   }
@@ -564,7 +566,7 @@ export class CMainPool extends CUserPool {
     if (user.m_fTranxInProgress !== 0) return;
 
     if (this.billingProcess.m_fLocalBilling) {
-      this.PurchaseError(user, 1, BILLING_ERROR.unsupported);
+      this.PurchaseError(user, PURCHASE_RESULT.GenericFailure, BILLING_ERROR.unsupported);
       return;
     }
 
@@ -572,7 +574,7 @@ export class CMainPool extends CUserPool {
     const shopItem = itemMan ? itemMan.GetShopItem(stockSN) : null;
     if (!shopItem) {
       const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
-      p.Encode1(5);
+      p.Encode1(PURCHASE_RESULT.GiftFailure);
       p.EncodeStr(ERR_PURCHASE);
       socket.SendPacket(p);
       return;
@@ -580,14 +582,14 @@ export class CMainPool extends CUserPool {
 
     if (this.db.prConfirmUnregisteredId(targetId) === 0) {
       const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
-      p.Encode1(3);
+      p.Encode1(PURCHASE_RESULT.UnregisteredUser);
       p.EncodeStr(ERR_UNREGISTERED_USER);
       socket.SendPacket(p);
       return;
     }
 
     if (!this.billingProcess.IsConnected() || user.m_nTranxStockSN !== 0) {
-      this.PurchaseError(user, 5, ERR_PURCHASE);
+      this.PurchaseError(user, PURCHASE_RESULT.GiftFailure, ERR_PURCHASE);
       return;
     }
 
@@ -604,19 +606,19 @@ export class CMainPool extends CUserPool {
       for (const pkg of packages) {
         const sub = itemMan!.GetShopItem(pkg.StockSN);
         if (!sub) {
-          this.PurchaseError(user, 5, ERR_PURCHASE);
+          this.PurchaseError(user, PURCHASE_RESULT.GiftFailure, ERR_PURCHASE);
           user.ResetTranxInfo();
           return;
         }
         const owned = (this.db.prIsValidInventory(targetId, sub.ItemSN) + this.db.prIsValidPreInventory(targetId, sub.ItemSN)) | 0;
         if (owned !== 0 && sub.Category !== ItemCategory.Consumable && sub.Category !== ItemCategory.LimitedItem) {
-          this.PurchaseError(user, 4, ERR_TARGET_ALREADY_OWNED);
+          this.PurchaseError(user, PURCHASE_RESULT.AlreadyOwned, ERR_TARGET_ALREADY_OWNED);
           user.ResetTranxInfo();
           return;
         }
         const ui = itemMan!.GetUserItem(sub.ItemSN);
         if (ui && sub.Category === ItemCategory.LimitedItem && owned >= ui.nAttr1) {
-          this.PurchaseError(user, 11, formatLimit(ui.nAttr1));
+          this.PurchaseError(user, PURCHASE_RESULT.OwnedLimitReached, formatLimit(ui.nAttr1));
           user.ResetTranxInfo();
           return;
         }
@@ -625,27 +627,27 @@ export class CMainPool extends CUserPool {
       const ui = itemMan!.GetUserItem(shopItem.ItemSN);
       if (!ui) {
         console.error(`[Shop] Invalid item sn (OnReqPurchaseStockItem) = ${shopItem.ItemSN}`);
-        this.PurchaseError(user, 1, ERR_PURCHASE);
+        this.PurchaseError(user, PURCHASE_RESULT.GenericFailure, ERR_PURCHASE);
         user.ResetTranxInfo();
         return;
       }
       const owned = (this.db.prIsValidInventory(targetId, shopItem.ItemSN) + this.db.prIsValidPreInventory(targetId, shopItem.ItemSN)) | 0;
       if (owned >= ui.nAttr1) {
-        this.PurchaseError(user, 11, formatLimit(ui.nAttr1));
+        this.PurchaseError(user, PURCHASE_RESULT.OwnedLimitReached, formatLimit(ui.nAttr1));
         user.ResetTranxInfo();
         return;
       }
     } else if (!IsInventoryAddable(shopItem.Category)) {
       const owned = (this.db.prIsValidInventory(targetId, shopItem.ItemSN) + this.db.prIsValidPreInventory(targetId, shopItem.ItemSN)) | 0;
       if (owned !== 0) {
-        this.PurchaseError(user, 4, ERR_TARGET_ALREADY_OWNED);
+        this.PurchaseError(user, PURCHASE_RESULT.AlreadyOwned, ERR_TARGET_ALREADY_OWNED);
         user.ResetTranxInfo();
         return;
       }
     }
 
     if (shopItem.MoneyType !== 0) {
-      this.PurchaseError(user, 5, ERR_PURCHASE);
+      this.PurchaseError(user, PURCHASE_RESULT.GiftFailure, ERR_PURCHASE);
       user.ResetTranxInfo();
     } else {
       this.billingProcess.RequestPurchaseTw(user, shopItem);
@@ -660,7 +662,7 @@ export class CMainPool extends CUserPool {
     if (!user) return;
     if (this.billingProcess.m_fLocalBilling) {
       const p = new CSendPacket(S2C_ShopPacket.OnUseCouponRes, CipherDegree.kPacketEncryptedCRC8);
-      p.Encode1(7); // existing client-visible coupon refusal, no claim that it was redeemed
+      p.Encode1(COUPON_RESULT.Invalid); // existing client-visible coupon refusal, no claim that it was redeemed
       socket.SendPacket(p);
       return;
     }
@@ -672,7 +674,7 @@ export class CMainPool extends CUserPool {
       return;
     }
     const p = new CSendPacket(S2C_ShopPacket.OnUseCouponRes, CipherDegree.kPacketEncryptedCRC8);
-    p.Encode1(7);
+    p.Encode1(COUPON_RESULT.Invalid);
     socket.SendPacket(p);
   }
 
@@ -707,7 +709,7 @@ export class CMainPool extends CUserPool {
   OnReqPurchaseCartList(n: CReceivedPacket, socket: CClientSocket): void {
     const user = socket.GetUser(socket.m_nSelectedUserIdx);
     if (!user || user.m_fTranxInProgress !== 0) return;
-    if (this.billingProcess.m_fLocalBilling) { this.PurchaseError(user, 1, BILLING_ERROR.unsupported); return; }
+    if (this.billingProcess.m_fLocalBilling) { this.PurchaseError(user, PURCHASE_RESULT.GenericFailure, BILLING_ERROR.unsupported); return; }
 
     user.m_fCartProcessing = 1;
     user.m_nCartCount = n.Decode1();

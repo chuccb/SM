@@ -28,3 +28,38 @@ export const CHARGE_VERIFY_RESULT = {
 /** CMainPool::PurchaseCartList's client-215 two-byte result prefix. */
 export const CART_RECEIPT_CODE = 9;
 export const CART_RECEIPT_RESULT = 0;
+
+/** Client 204 OnPurchaseRes error codes — native FxShop 204 handler.
+ *  1 generic, 3 unregistered, 4 already owned, 5 gift failure,
+ *  6 gift limit over, 7 under age, 8 not ready, 11 owned limit reached. */
+export const PURCHASE_RESULT = {
+  Success: 0,
+  GenericFailure: 1,
+  UnregisteredUser: 3,
+  AlreadyOwned: 4,
+  GiftFailure: 5,
+  GiftLimitOver: 6,
+  GiftUnderAge: 7,
+  NotReady: 8,
+  OwnedLimitReached: 11,
+} as const;
+
+/** Billing orphan marker used in 321 when user not found or busy (0xFFFFFFFF). */
+export const BILLING_ORPHAN_STOCK = 0xffffffff;
+
+/** Client 208 OnUseCouponRes codes — native FxShop 208.
+ *  0 success, 7 generic coupon failure (local/unsupported/unregistered), 8 billing-side failure. */
+export const COUPON_RESULT = {
+  Success: 0,
+  Invalid: 7,
+  BillingFailure: 8,
+} as const;
+
+/** Coupon grant constants — native OnCheckCoupon 00403150. */
+export const COUPON_PREINVENTORY_TYPE = 200;
+export const COUPON_STOCK_SN = 10;
+export const COUPON_BILLING_SUCCESS = 0;
+export const COUPON_BILLING_SUCCESS_ALT = 3;
+
+/** Gift pre-inventory cap that surfaces the native -2 path. */
+export const GIFT_PREINVENTORY_LIMIT = 100;
