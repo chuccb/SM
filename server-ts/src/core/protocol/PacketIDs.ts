@@ -24,7 +24,7 @@ import {
  *   send side = the second argument of every CSendPacket ctor / InitPacket
  *     call in each .c.  A ctor site whose packet is pushed through the
  *     CCenterProcess link (vtbl+68 on `this+4`) is NOT client-facing — those
- *     are the MC_* server→center ids and live in protocol/CenterProtocol.ts (CxCenter's own
+ *     are the MC_* server→center ids and live in core/protocol/CenterProtocol.ts (CxCenter's own
  *     sends are the CM_* family).  LS 0/1/7/9/100, GS 1/3/4/7/9/10/11 and
  *     shop 2/3/9 all resolved to S2S this way.
  *
@@ -35,7 +35,7 @@ import {
  * the official handler/sender and its decompile site.
  *
  * Production packet constructors and dispatches must not repeat type literals
- * outside this file (or protocol/CenterProtocol.ts for MC/CM).  Numeric values remain only in
+ * outside this file (or core/protocol/CenterProtocol.ts for MC/CM).  Numeric values remain only in
  * wire fixtures that independently pin these tables. PacketLog resolves id →
  * official name through each server's registrations; unknown ids stay `p<N>`
  * (asserted by test/packetlog.test.ts).
