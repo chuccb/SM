@@ -368,16 +368,21 @@ export class CBillingProcess {
     user.m_pSocket?.SendPacket(p);
   }
 
-  /** 00403C80: 312 [E4]x3 [E1 len + reference] [E4 serial,stock,result].
-   * Local billing performs atomic delivery on 321, so Shop must NOT insert
-   * a second inventory row here. External settlement remains unsupported and
-   * is cancelled using the native orphan-user 321/result=2 path.
+  /** 00403C80: 312 [E4]x3 [E1 len + reference] [E4 globalSerial][E4 ignored][E4 result][result==1: E1 len + message].
+   * Native ignores the middle dword (stock in local billing) and uses
+   * User+720 (StockSN) for ShopItem lookup. Local billing performs atomic
+   * delivery on 321, so Shop must NOT insert a second inventory row here.
+   * External settlement remains unsupported and is cancelled using the
+   * native orphan-user 321/result=2 path.
    */
   OnPurchaseOKTw(n: CReceivedPacket): void {
     const r = new BillingReader(n.m_pBlock.subarray(n.m_uOffset, n.m_uLength));
     try {
       r.u32(); r.u32(); r.u32();
-      const reference = r.string(), serial = r.u32(), stock = r.u32(), result = r.u32();
+      const reference = r.string();
+      const serial = r.u32(); // global serial — native uses FindUserFromGlobalSerialNo
+      const _ignoredStock = r.u32(); // native discards; local billing echoes stock here
+      const result = r.u32();
       const message = result === 1 ? r.string() : "";
       r.end();
       const purchase = this.localPurchases.get(serial);
@@ -389,7 +394,8 @@ export class CBillingProcess {
         }
         return;
       }
-      if (purchase.stock !== stock) return;
+      // Native ignores the stock field; do not reject on mismatch — the
+      // authoritative stock is User+720 (purchase.stock) for logging.
       if (purchase.reference !== null) {
         if (reference === purchase.reference && result === 0) this.Send(purchase.request);
         return; // never let a late 312 failure overwrite a confirming purchase
@@ -401,7 +407,7 @@ export class CBillingProcess {
       }
       if (!/^[a-f0-9]{32}$/.test(reference)) return;
       purchase.reference = reference;
-      purchase.request = this.MakePurchaseConfirmTw(reference, serial, stock,
+      purchase.request = this.MakePurchaseConfirmTw(reference, serial, purchase.stock,
         purchase.user.m_pSocket && purchase.user.m_fTranxInProgress === 0 ? 0 : 2);
       purchase.lastSend = Date.now();
       this.Send(purchase.request);

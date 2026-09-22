@@ -156,8 +156,11 @@ test("external billing runs the category matrix; local points route still delega
   const request = spyOn(billing, "RequestPurchaseTw").mockImplementation(() => {});
   try {
     pool.OnReqPurchaseStockItem(user, 5000); expect(request).toHaveBeenCalledTimes(1); expect(packets).toEqual([]);
+    // Native leaves TranxInfo set (busy guard 1) after a billing request.
+    // Reset to test the category matrix independently of the busy guard.
+    user.ResetTranxInfo();
     own(100); pool.OnReqPurchaseStockItem(user, 5000); expect(result().code).toBe(4); expect(request).toHaveBeenCalledTimes(1);
-    packets.length = 0; billing.m_fLocalBilling = true; pool.OnReqPurchaseStockItem(user, 5000);
+    packets.length = 0; user.ResetTranxInfo(); billing.m_fLocalBilling = true; pool.OnReqPurchaseStockItem(user, 5000);
     expect(request).toHaveBeenCalledTimes(2); expect(packets).toEqual([]); expect(money()).toBe(200000);
   } finally { request.mockRestore(); }
 });

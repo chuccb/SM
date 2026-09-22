@@ -362,6 +362,19 @@ export class CMainPool extends CUserPool {
       this.PurchaseError(user, 1, ERR_PURCHASE);
       return;
     }
+    // Native 00416069 init even for billing path: 2872=0, 2880=stock, 2888=Unit, 2884=ItemSN, 2896=0
+    // This mirrors OnRequestPresent's layout and is required for the 312
+    // handler's StockSN lookup (User+720) and the busy guard (User+2880).
+    if (user.m_nTranxStockSN !== 0) {
+      this.PurchaseError(user, 1, ERR_PURCHASE);
+      return;
+    }
+    user.m_nTranxReserved0 = 0;
+    user.m_nTranxStockSN = stockSN;
+    user.m_nTranxAmount = shopItem.Unit;
+    user.m_nTranxItemSN = shopItem.ItemSN;
+    user.m_nTranxState = 0;
+
     if (this.billingProcess.m_fLocalBilling && shopItem.MoneyType === 0) {
       this.billingProcess.RequestPurchaseTw(user, shopItem);
       return;
@@ -369,6 +382,7 @@ export class CMainPool extends CUserPool {
     // A port-side purchase is already in flight → error 1.
     if (user.m_pPurchaseTranx !== null) {
       this.PurchaseError(user, 1, ERR_PURCHASE);
+      user.ResetTranxInfo();
       return;
     }
     const id = user.GetName();
@@ -431,7 +445,9 @@ export class CMainPool extends CUserPool {
 
     // MoneyType != 0 uses game Money. Native flat packages grant each
     // child's ItemSN and Units*Unit, but retain the PARENT StockSN/validity.
-    // Native also keeps earlier grants on failure; the last result wins.
+    // Native overwrites User+721/722 per child inside the grant loop
+    // (00415E60 LABEL_46), so after the loop TranxInfo holds the last child.
+    // It also keeps earlier grants on failure; the last result wins.
     // This is deliberately distinct from the local billing atomic settlement.
     let ok = 1;
     const grants = shopItem.Category === ItemCategory.Package
@@ -441,6 +457,9 @@ export class CMainPool extends CUserPool {
         })
       : [{ itemSN: shopItem.ItemSN, units: shopItem.Unit }];
     for (const grant of grants) {
+      // Mirror native's per-child TranxInfo overwrite for package grants.
+      user.m_nTranxItemSN = grant.itemSN;
+      user.m_nTranxAmount = grant.units;
       if (shopItem.Price > user.m_nCash) ok = 0;
       else if (shopItem.Category === ItemCategory.PremiumTicket) {
         ok = this.db.prSetPremiumTicket(id, shopItem.ValidityPeriod);
@@ -572,6 +591,8 @@ export class CMainPool extends CUserPool {
       return;
     }
 
+    // Native 00416F90 init: 2872=0, 2880=stock, 2888=Unit, 2896=0, 2884=ItemSN, 2904=targetId
+    user.m_nTranxReserved0 = 0;
     user.m_nTranxStockSN = stockSN;
     user.m_nTranxAmount = shopItem.Unit;
     user.m_nTranxItemSN = shopItem.ItemSN;

@@ -44,6 +44,12 @@ export class CUser {
   m_nConnCount = 0;
 
   // ---------------- TranxInfo (+2872..2908, dwords 718..729) ----------------
+  // Native TranxInfo starts at +2872 with 7 dwords before the list/string.
+  // 718/719 are cleared by ResetTranxInfo and 718 is set to 0 in present/
+  // purchase flows (00416F90, 00416076, 0041725B). Their purpose is unused/
+  // reserved in observed paths but must be zeroed for faithful reset.
+  m_nTranxReserved0 = 0;   // +2872 (dword 718): reserved, always 0 in observed writes
+  m_nTranxReserved1 = 0;   // +2876 (dword 719): reserved, only cleared by Reset
   m_nTranxStockSN = 0;     // +2880 (dword 720): stock item SN being transacted
   m_nTranxItemSN = 0;      // +2884 (dword 721): item SN
   m_nTranxAmount = 0;      // +2888 (dword 722): amount/units
@@ -123,7 +129,10 @@ export class CUser {
    * clears TranxInfo and CouponTranx structures and associated state lists.
    */
   ResetTranxInfo(): void {
-    // TranxInfo (+2872):
+    // TranxInfo (+2872): 7 dwords + list + string + result — exactly mirrors
+    // 0041F170: clears 0B38/0B3C/0B40/0B44/0B48/0B4C/0B50/0B54/0B58/0B64.
+    this.m_nTranxReserved0 = 0;
+    this.m_nTranxReserved1 = 0;
     this.m_nTranxStockSN = 0;
     this.m_nTranxItemSN = 0;
     this.m_nTranxAmount = 0;
@@ -133,7 +142,8 @@ export class CUser {
     this.m_listTranxInfo = [];
     this.m_strTranxInfo = "";
 
-    // CouponTranx (+3008):
+    // CouponTranx (+3008): string, ID, state, list, id string — mirrors
+    // 0041F170 tail: 0BC0/0BD8/0BCC/0BD0/0BD4.
     this.m_strCoupon = "";
     this.m_nCouponID = 0;
     this.m_nCouponState = 0;
