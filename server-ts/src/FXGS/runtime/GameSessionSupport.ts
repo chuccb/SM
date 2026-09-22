@@ -18,7 +18,7 @@ import {
   GAME_CONTEXT_TILE_COLUMNS,
   GAME_CONTEXT_TILE_COUNT,
   MAX_SESSION_SLOTS,
-} from "./Defs.ts";
+} from "../Defs.ts";
 
 /** CGameClock (+12732) — StartGame/EndGame/ElapsedTime (FxServer.exe.c:41B843). */
 export class CGameClock {
