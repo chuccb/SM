@@ -4,6 +4,7 @@ import { S2C_GamePacket } from "../core/protocol/PacketIDs.ts";
 import { FunctionalItem } from "../common/Item.ts";
 import { timeGetTime } from "../core/timeGetTime.ts";
 import {
+  CHAT_MAX_PACKET_LEN,
   MAP_IDX_RANDOM,
   MAX_SESSION_SLOTS,
   SLOTSTATE_CHIEF,
@@ -558,7 +559,7 @@ export class CListSession extends CBaseSession {
       console.error(`[GS] 2 Player requested Team Chat, NOT ALLOWED![${socket.GetInfoStr()}]`);
       return;
     }
-    if (msg.length + user0.GetName().length + 10 > 0x400) {
+    if (msg.length + user0.GetName().length + 10 > CHAT_MAX_PACKET_LEN) {
       console.error("[GS] User send too long chat msg. Disconnect connection");
       socket.PostClosePacket();
       return;
