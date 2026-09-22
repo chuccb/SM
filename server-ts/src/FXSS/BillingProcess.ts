@@ -23,13 +23,13 @@ import { CTranxCtrl } from "./TranxCtrl.ts";
 import { CMainSystem } from "./MainSystem.ts";
 import { CCenterProcess } from "./CenterProcess.ts";
 import { EncodeVariantTime } from "../core/VariantTime.ts";
-import { SHOP_PERMANENT_EXPIRY_LEVEL, SHOP_PERMANENT_VALIDITY_DAYS } from "./Defs.ts";
+import { SHOP_PERMANENT_EXPIRY_LEVEL, SHOP_PERMANENT_VALIDITY_DAYS, CART_RECEIPT_CODE, CART_RECEIPT_RESULT } from "./Defs.ts";
+import { GetShopMainPool } from "./runtime/MainPoolRuntime.ts";
 
 const BILLING_RECONNECT_TICKS = 0x28;
 const BILLING_RTT_TICKS = 0x5dc;
 const MAX_BILLING_CONNECT_ATTEMPTS = 10_000;
 
-/** _BILLINGSVR — the CRSBillingSvr row. */
 interface BILLINGSVR {
   SN: number;
   ip: string;
@@ -45,18 +45,13 @@ interface LocalPurchase {
   started: number;
 }
 
-/** CBillingProcess — the digicell billing link.  Loads the BillingSvr list
- *  from CAConfig, connects (retry every 0x28 timer ticks while down), and
- *  speaks the 3x0 Tw protocol.  With an empty BillingSvr table the process
- *  stays disconnected forever — exactly the original server's behavior with
- *  no billing configured. */
 export class CBillingProcess {
   static ms_pInstance: CBillingProcess | null = null;
 
-  m_aBillingSvr: BILLINGSVR[] = []; // this+12 (50 × 0x14)
-  m_fConnected = 0; // this+1296 (dword 324)
-  m_pSocket: CBillingSocketTw | null = null; // this+8
-  m_nRetryCount = 0; // dword_498048
+  m_aBillingSvr: BILLINGSVR[] = [];
+  m_fConnected = 0;
+  m_pSocket: CBillingSocketTw | null = null;
+  m_nRetryCount = 0;
   m_fLocalBilling = false;
   private localPurchases = new Map<number, LocalPurchase>();
 
@@ -64,14 +59,11 @@ export class CBillingProcess {
     CBillingProcess.ms_pInstance = this;
   }
 
-  /** CBillingProcess::UpdateBillingSvrList — CRSBillingSvr ("BillingSvr"). */
   UpdateBillingSvrList(): void {
     this.m_aBillingSvr = this.db.GetBillingSvrs();
   }
 
-  /** CBillingProcess::ConnectToSvr (FxShop.exe.c:505) — rotate the server
-   *  list; every refused attempt reports, 10000 of them terminate. */
-  m_nConnectAttempts = 0; // dword_498040
+  m_nConnectAttempts = 0;
 
   async ConnectToSvr(): Promise<number> {
     if (this.m_aBillingSvr.length === 0) {
@@ -83,7 +75,7 @@ export class CBillingProcess {
         onPacket: (_socket, packet) => this.OnPacket(packet),
       });
       socket.hooks.onClose = () => {
-        console.error("[Shop] BillingSocket Connected closed... "); // :30937
+        console.error("[Shop] BillingSocket Connected closed... ");
         if (this.m_pSocket === socket) {
           this.m_pSocket = null;
           this.m_fConnected = 0;
@@ -108,15 +100,14 @@ export class CBillingProcess {
         socket.bunSocket = conn;
         this.m_pSocket = socket;
         this.m_fConnected = 1;
-        console.log("[Shop] Connection to Billing Server established"); // :521
-        // CBillingProcess::ConnectToSvr — the 331 hello: [E4 4][E4 GetWorld()]
+        console.log("[Shop] Connection to Billing Server established");
         const hello = new CBillingSendPacket(Shop2Billing_TwPacket.OnConnEstablished);
         hello.Encode4(BILLING_GAME);
         hello.Encode4(this.m_nSvrTag);
         this.Send(hello);
         return this.m_fConnected;
       } catch {
-        console.log("[Shop] Connection to Billing Server failed."); // :513
+        console.log("[Shop] Connection to Billing Server failed.");
         if (++this.m_nConnectAttempts > MAX_BILLING_CONNECT_ATTEMPTS) {
           console.error("[Shop] CMainSystem:TerminateProcess() called, ExitProcess();");
           process.exit(1);
@@ -127,15 +118,12 @@ export class CBillingProcess {
     return 0;
   }
 
-  /** CBillingProcess::Init */
   async Init(): Promise<void> {
     this.m_fLocalBilling = usesLocalBilling(this.db);
     this.UpdateBillingSvrList();
     if ((await this.ConnectToSvr()) !== 0) this.m_fConnected = 1;
   }
 
-  /** CBillingProcess::OnTimer — `++tick % BILLING_RECONNECT_TICKS == 0 && !connected →
-   *  ConnectToSvr()`; `% 0x5DC == 0 → TwRequestRTT()`. */
   async OnTimer(): Promise<void> {
     this.m_nRetryCount++;
     this.RetryLocalPurchases();
@@ -149,8 +137,6 @@ export class CBillingProcess {
     return this.m_fConnected;
   }
 
-  /** CBillingProcess::OnPacket (404DB0) — the billing ids are E4 payloads
-   *  behind the dedicated 8-byte Tw frame. */
   OnPacket(n: CReceivedPacket): void {
     switch (n.Decode4()) {
       case Billing2Shop_TwPacket.OnRemainCashTw:
@@ -173,10 +159,6 @@ export class CBillingProcess {
     }
   }
 
-  /** CBillingProcess::RequestRemainCashTw — billing 301 (4-byte opcode, raw degree):
-   *  [E4 SID][E4 BID][E4 4][E4 GetWorld()][E1 len][name][E4 serial]
-   *  [E1 len][client ip].  Requires the billing link (this+324) and the
-   *  user's socket. */
   RequestRemainCashTw(user: CUser): void {
     if (this.m_fConnected === 0) return;
     if (!user.m_pSocket) return;
@@ -186,7 +168,7 @@ export class CBillingProcess {
     p.Encode4(user.m_nSID);
     p.Encode4(user.m_nBID);
     p.Encode4(BILLING_GAME);
-    p.Encode4(this.m_nSvrTag); // GetWorld()
+    p.Encode4(this.m_nSvrTag);
     p.Encode1(name.length);
     p.EncodeBuffer(Buffer.from(name, "latin1"));
     p.Encode4(user.GetGlobalSerialNo());
@@ -195,12 +177,8 @@ export class CBillingProcess {
     this.Send(p);
   }
 
-  m_nSvrTag = 0; // this+260 = CBillingSocketTw+252 — CBillingSocketTw::GetWorld()
-  // (the ctor seeds it from CServerConfig::GetServerIdx()); set by CFxShopApp::SetUp
+  m_nSvrTag = 0;
 
-  /** CBillingProcess::RequestGift — billing 7:
-   *  [E4 serial][E4 0][E4 0][E4 stockSN][E4 price][EStr clubId][EStr name]
-   *  [E1 domain][E2 UA+128 HIWORD][EStr +2904 tranx string]. */
   RequestGift(user: CUser, _targetId: string, stockSN: number, price: number): void {
     const p = CBillingSendPacket.FromBillingPacket(Shop2Billing_LegacyPacket.RequestGift);
     p.Encode4(user.GetGlobalSerialNo());
@@ -210,15 +188,12 @@ export class CBillingProcess {
     p.Encode4(price);
     p.EncodeStr(user.GetNexonClubId());
     p.EncodeStr(user.GetName());
-    p.Encode1(CMainSystem.ms_pInstance!.m_nFXAttr & 0xff); // CMainSystem+4 GetDomain
+    p.Encode1(CMainSystem.ms_pInstance!.m_nFXAttr & 0xff);
     p.Encode2(user.m_nUserAccountHiword);
     p.EncodeStr(user.m_strTranxInfo);
     this.Send(p);
   }
 
-  /** RequestCheckCoupon / RequestUseCoupon — billing 0/1, identical shape:
-   *  [E4 serial][EStr +3008 coupon][EStr clubId][EStr name][E1 domain]
-   *  [E2 UA+128 HIWORD]. */
   RequestCheckCoupon(user: CUser): void {
     const p = CBillingSendPacket.FromCouponPacket(Shop2Billing_CouponPacket.RequestCheckCoupon);
     this.EncodeCouponBody(p, user);
@@ -236,12 +211,10 @@ export class CBillingProcess {
     p.EncodeStr(user.m_strCoupon);
     p.EncodeStr(user.GetNexonClubId());
     p.EncodeStr(user.GetName());
-    p.Encode1(CMainSystem.ms_pInstance!.m_nFXAttr & 0xff); // CMainSystem+4 GetDomain
+    p.Encode1(CMainSystem.ms_pInstance!.m_nFXAttr & 0xff);
     p.Encode2(user.m_nUserAccountHiword);
   }
 
-  /** CBillingProcess::RequestDigiQAuthorization — billing 341:
-   *  [E1 len][Ebuf]×3 (three length-prefixed ANSI strings). */
   RequestDigiQAuthorization(account: string, password: string, name: string): void {
     const p = new CBillingSendPacket(Shop2Billing_TwPacket.RequestDigiQAuthorization);
     for (const s of [account, password, name]) {
@@ -252,14 +225,9 @@ export class CBillingProcess {
     if (!this.m_pSocket?.m_bConnected) {
       console.warn("[Shop] DigiQ authorization: billing link is unavailable; check CAConfig BillingSvr and connection logs.");
     }
-    // Native still attempts PutPacket/Flush while disconnected. Never invent
-    // an authorization result or log these credential-bearing strings here.
     this.Send(p);
   }
 
-  /** CBillingProcess::RequestPurchaseTw — billing 311:
-   *  [E4 SID][E4 BID][E4 4][E4 GetWorld()][E1 len][name][E4 price][E4 1]
-   *  [E4 globalSerialNo][E4 stockSN][E4 1][E1 len][client ip]. */
   RequestPurchaseTw(user: CUser, item: ShopItem): void {
     if (!user.m_pSocket) return;
     if (this.m_fLocalBilling) {
@@ -282,7 +250,7 @@ export class CBillingProcess {
     string8(p, name);
     p.Encode4(item.Price);
     p.Encode4(1);
-    p.Encode4(user.GetGlobalSerialNo()); // 00402975..00402980: +3096 serial, NOT BID
+    p.Encode4(user.GetGlobalSerialNo());
     p.Encode4(item.SN);
     p.Encode4(1);
     string8(p, ip);
@@ -318,10 +286,6 @@ export class CBillingProcess {
     return p;
   }
 
-  /** Resend only the current phase. A lost 322 retries the SAME durable
-   * reference, never a fresh debit. A pending confirmation has no guessed
-   * failure timeout: storage may already have committed its inventory/points.
-   */
   RetryLocalPurchases(): void {
     const now = Date.now();
     for (const [serial, purchase] of this.localPurchases) {
@@ -335,18 +299,12 @@ export class CBillingProcess {
     }
   }
 
-  /** CBillingProcess::TwRequestRTT — billing 351: [E1 123]. */
   TwRequestRTT(): void {
     const p = new CBillingSendPacket(Shop2Billing_TwPacket.TwRequestRTT);
     p.Encode1(123);
     this.Send(p);
   }
 
-  /** CBillingProcess::OnRemainCashTw (004039F0) — billing 302.
-   * [E4 ignored][E1 length + name bytes][E4 serial][E4 cash][E4 result].
-   * ONLY result 1 is an error, followed by an E1-length message; every
-   * other result updates user+3104 and returns client 203 [E1 1][E4 cash].
-   */
   OnRemainCashTw(n: CReceivedPacket): void {
     if (n.m_uLength - n.m_uOffset < 4) return;
     n.Decode4();
@@ -370,19 +328,13 @@ export class CBillingProcess {
     user.m_pSocket?.SendPacket(p);
   }
 
-  /** 00403C80: 312 [E4]x3 [E1 len + reference] [E4 globalSerial][E4 ignored][E4 result][result==1: E1 len + message].
-   * Native ignores the middle dword (stock in local billing) and uses
-   * User+720 (StockSN) for ShopItem lookup. Local billing performs atomic
-   * delivery on 321, so Shop must NOT insert a second inventory row here.
-   * External billing follows native two-phase inventory insertion and 321.
-   */
   OnPurchaseOKTw(n: CReceivedPacket): void {
     const r = new BillingReader(n.m_pBlock.subarray(n.m_uOffset, n.m_uLength));
     try {
       r.u32(); r.u32(); r.u32();
       const reference = r.string();
       const serial = r.u32();
-      const _ignoredStock = r.u32();
+      r.u32();
       const result = r.u32();
       const message = result === 1 ? r.string() : "";
       r.end();
@@ -411,7 +363,6 @@ export class CBillingProcess {
         return;
       }
 
-      // ---------- External billing path (native 00403C80) ----------
       const user = CLocalUserTable.ms_pInstance?.FindUserFromGlobalSerialNo(serial);
       if (!user || user.m_fTranxInProgress !== 0) {
         if (result === 0) this.Send(this.MakePurchaseConfirmTw(reference, serial, 0xffffffff, 2));
@@ -512,7 +463,7 @@ export class CBillingProcess {
       } else {
         const itemMan = CItemMan.ms_pInstance;
         const ui = itemMan?.GetUserItem(entry.ItemSN);
-        if (ui && ui.Category === 9) {
+        if (ui && ui.Category === ItemCategory.PremiumTicket) {
           try {
             this.db.prSetPremiumTicket(id, 0);
             CCenterProcess.ms_pInstance?.SendAuthenCode(user.GetGlobalSerialNo(), 0);
@@ -527,7 +478,6 @@ export class CBillingProcess {
     user.m_listTranxInfo = [];
   }
 
-  /** Native 004048F4..004049CD: successful 322 receipt → durable TranxLog row → reset. */
   private RecordPurchaseTransaction(user: CUser, stockSN: number): void {
     const itemMan = CItemMan.ms_pInstance;
     if (itemMan !== null) {
@@ -555,7 +505,6 @@ export class CBillingProcess {
     user.ResetTranxInfo();
   }
 
-  /** 004047B0: 322 [E1 len + reference][E4 serial,result][error: string8]. */
   OnPurchaseConfirmTw(n: CReceivedPacket): void {
     const r = new BillingReader(n.m_pBlock.subarray(n.m_uOffset, n.m_uLength));
     try {
@@ -579,14 +528,10 @@ export class CBillingProcess {
         return;
       }
 
-      // ---------- External billing path (native 004047B0) ----------
       const user = CLocalUserTable.ms_pInstance?.FindUserFromGlobalSerialNo(serial);
       if (!user || user.m_fTranxInProgress !== 0) return;
       if (result !== 0) {
-        // Rollback inventory inserted at 312 time.
-        if (user.m_nTranxStockSN !== 0) {
-          this.RollbackExternalGrant(user);
-        }
+        if (user.m_nTranxStockSN !== 0) this.RollbackExternalGrant(user);
         const isGift = user.m_strTranxInfo.length > 0;
         const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
         p.Encode1(isGift ? 5 : 1);
@@ -595,7 +540,7 @@ export class CBillingProcess {
         user.ResetTranxInfo();
         return;
       }
-      // Success: log transaction and send 204 0, then continue cart if active.
+
       const isCart = user.m_fCartProcessing !== 0;
       if (!isCart) {
         const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
@@ -603,7 +548,6 @@ export class CBillingProcess {
         p.EncodeBuffer(EncodeVariantTime(new Date()));
         user.m_pSocket?.SendPacket(p);
       }
-      // Record transaction using last-child semantics.
       const itemMan = CItemMan.ms_pInstance;
       if (itemMan) {
         const parent = itemMan.GetShopItem(user.m_nTranxStockSN);
@@ -628,39 +572,34 @@ export class CBillingProcess {
         }
       }
       user.ResetTranxInfo();
+
       if (isCart) {
-        // Continue the native cart walk after a successful billing item.
-        try {
-          const { CMainPool } = require('./MainPool.ts') as { CMainPool: { ms_pInstance: { PurchaseCartList: (u: CUser) => void } | null } };
-          const pool = CMainPool.ms_pInstance;
-          if (pool) {
-            // Decrement current entry count and advance as native does.
-            const idx = user.m_nCartCount;
-            const entry = user.m_anCart[idx];
-            if (entry) {
-              if (entry.cnt <= 0) user.m_nCartCount--;
-              if (user.m_nCartCount < 0) {
-                user.m_fCartProcessing = 0;
-                if (user.m_pSocket) {
-                  const p215 = new CSendPacket(S2C_ShopPacket.OnPurchaseCartListRes, CipherDegree.kPacketEncryptedCRC8);
-                  p215.Encode1(9);
-                  p215.Encode1(0);
-                  p215.EncodeBuffer(EncodeVariantTime(new Date()));
-                  user.m_pSocket.SendPacket(p215);
-                }
-                user.ResetTranxInfo();
-              } else {
-                const next = user.m_anCart[user.m_nCartCount];
-                if (next) next.cnt = (next.cnt - 1) | 0;
-                pool.PurchaseCartList(user);
-              }
-            } else {
+        const pool = GetShopMainPool() as unknown as { PurchaseCartList?: (u: CUser) => void; m_fCartProcessing?: number } | null;
+        const purchaseCartList = (pool as { PurchaseCartList?: (u: CUser) => void } | null)?.PurchaseCartList;
+        if (typeof purchaseCartList === "function") {
+          const idx = user.m_nCartCount;
+          const entry = user.m_anCart[idx];
+          if (entry) {
+            if (entry.cnt <= 0) user.m_nCartCount--;
+            if (user.m_nCartCount < 0) {
               user.m_fCartProcessing = 0;
+              if (user.m_pSocket) {
+                const p215 = new CSendPacket(S2C_ShopPacket.OnPurchaseCartListRes, CipherDegree.kPacketEncryptedCRC8);
+                p215.Encode1(CART_RECEIPT_CODE);
+                p215.Encode1(CART_RECEIPT_RESULT);
+                p215.EncodeBuffer(EncodeVariantTime(new Date()));
+                user.m_pSocket.SendPacket(p215);
+              }
+              user.ResetTranxInfo();
+            } else {
+              const next = user.m_anCart[user.m_nCartCount];
+              if (next) next.cnt = (next.cnt - 1) | 0;
+              purchaseCartList.call(pool, user);
             }
           } else {
             user.m_fCartProcessing = 0;
           }
-        } catch {
+        } else {
           user.m_fCartProcessing = 0;
         }
       }
@@ -669,12 +608,6 @@ export class CBillingProcess {
     }
   }
 
-  /** CBillingProcess::OnDigiQAuthen (004044C0) — billing 342.
-   * [E4 SID][E4 BID][E1 length + character name][E4 result].
-   * Zero succeeds: client 209/12, then query cash using the EXISTING user
-   * SID/BID (native does not assign the returned pair to the user).
-   * Nonzero fails: client 209/13 with the following E1-length message.
-   */
   OnDigiQAuthen(n: CReceivedPacket): void {
     if (n.m_uLength - n.m_uOffset < 8) return;
     const sid = n.Decode4();
@@ -700,12 +633,10 @@ export class CBillingProcess {
     }
   }
 
-  /** the CBillingSocketTw IssueSend path (vtbl+108 PutPacket, vtbl+64 Flush). */
   Send(p: CSendPacket): void {
     this.m_pSocket?.SendPacket(p);
   }
 
-  /** Port-side destruction of the owned billing transport and pending state. */
   Stop(): void {
     for (const purchase of this.localPurchases.values()) {
       purchase.user.m_pPurchaseTranx = null;
