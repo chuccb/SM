@@ -10,7 +10,7 @@ export function usesLocalBilling(db: CDBMan): boolean {
   return rows.length === 1 && rows[0].ip === "127.0.0.1" &&
     db.prGetStringAttr(LOCAL_BILLING_MODE_KEY).strVal === localBillingMarker(rows[0].ip, rows[0].port);
 }
-export const DEFAULT_BILLING_CONFIG = join(import.meta.dir, "../../config/local-billing.json");
+export const DEFAULT_BILLING_CONFIG = join(import.meta.dir, "../../../config/local-billing.json");
 export function loadBillingConfig(path = DEFAULT_BILLING_CONFIG): BillingConfig {
   const value = JSON.parse(readFileSync(path, "utf8"));
   if (typeof value.enabled !== "boolean" || value.host !== "127.0.0.1" ||
