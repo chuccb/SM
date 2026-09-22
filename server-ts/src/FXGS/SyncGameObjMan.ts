@@ -1,7 +1,7 @@
 /** Native source unit: FX/FxServer/SyncGameObjMan.cpp. */
 import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
 import { S2C_GamePacket } from "../core/protocol/PacketIDs.ts";
-import { MAX_SESSION_SLOTS } from "./Defs.ts";
+import { MAX_SESSION_SLOTS, SYNC_BEST_LOAD_INIT } from "./Defs.ts";
 import type { CGameSession } from "./GameSession.ts";
 import type { CClientSocket } from "./ClientSocket.ts";
 
@@ -46,7 +46,7 @@ export class CSyncGameObjMan {
       return -1;
     }
     let best = -1;
-    let bestLoad = 0x80000000;
+    let bestLoad = SYNC_BEST_LOAD_INIT;
     for (let slot = 0; slot < MAX_SESSION_SLOTS; slot++) {
       const user = this.m_pGameSession.m_rgPlayer[slot];
       if (user && user.GetSelfidx() === 0 && this.m_rgSetObj[slot]!.size < bestLoad) {

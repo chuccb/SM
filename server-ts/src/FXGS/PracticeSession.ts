@@ -13,9 +13,13 @@ import {
   PRACTICE_AI_COLOR,
   MAP_IDX_RANDOM,
   MAX_SESSION_SLOTS,
+  SLOTSTATE_BOMBER_CLEAR,
   SLOTSTATE_BOMBER_MASK,
   SLOTSTATE_CHIEF,
   SLOTSTATE_CHIEF_CLEAR,
+  SLOTSTATE_CLOSED,
+  SLOTSTATE_CLOSED_CLEAR,
+  SLOTSTATE_COLOR_CLEAR,
   SLOTSTATE_COLOR_MASK,
   SLOTSTATE_GROUP_CLEAR,
   SLOTSTATE_GROUP_MASK,
@@ -111,9 +115,9 @@ export class CPracticeSession extends CGameSession {
       if (slot >= userCount) {
         const p = slot * 3;
         // the closed bit is (slot >= 2*userCount) — the AI seats stay open
-        this.m_rgSlotState[p] = (this.m_rgSlotState[p]! & ~1) | (slot >= 2 * userCount ? 1 : 0);
-        this.m_rgSlotState[p + 1] = (this.m_rgSlotState[p + 1]! & 0xc0) | PRACTICE_AI_BOMBER;
-        this.m_rgSlotState[p + 2] = (this.m_rgSlotState[p + 2]! & 0xe0) | PRACTICE_AI_COLOR;
+        this.m_rgSlotState[p] = (this.m_rgSlotState[p]! & SLOTSTATE_CLOSED_CLEAR) | (slot >= 2 * userCount ? SLOTSTATE_CLOSED : 0);
+        this.m_rgSlotState[p + 1] = (this.m_rgSlotState[p + 1]! & SLOTSTATE_BOMBER_CLEAR) | PRACTICE_AI_BOMBER;
+        this.m_rgSlotState[p + 2] = (this.m_rgSlotState[p + 2]! & SLOTSTATE_COLOR_CLEAR) | PRACTICE_AI_COLOR;
       }
       if (this.m_argpAISocket[slot] !== null) this.SetCurPlayer(this.m_nCurPlayerNum + 1);
     }
@@ -235,8 +239,8 @@ export class CPracticeSession extends CGameSession {
     if (this.m_rgPlayer[slot]) open = 0; // a human seat always closes
     const p = slot * 3;
     const state = this.m_rgSlotState[p]!;
-    if (((state & 1) === 0 || open === 0) && ((state & 1) !== 0 || open !== 0)) {
-      this.m_rgSlotState[p] = state ^ ((open ^ state) & 1);
+    if (((state & SLOTSTATE_CLOSED) === 0 || open === 0) && ((state & SLOTSTATE_CLOSED) !== 0 || open !== 0)) {
+      this.m_rgSlotState[p] = state ^ ((open ^ state) & SLOTSTATE_CLOSED);
       const packet = new CSendPacket(S2C_GamePacket.OnOpenCloseSlotRes, CipherDegree.kPacketEncryptedCRC8);
       packet.Encode1(((slot << 4) | (open & 0xf)) & 0xff);
       if (open === 0) packet.Encode2(this.m_anAILevel[slot] & 0xffff);
@@ -244,7 +248,7 @@ export class CPracticeSession extends CGameSession {
       this.SetCurPlayer(this.m_nCurPlayerNum + (open === 0 ? 1 : -1));
       socket.SendPacket(packet);
     } else {
-      this.m_rgSlotState[p] = state ^ ((open ^ state) & 1);
+      this.m_rgSlotState[p] = state ^ ((open ^ state) & SLOTSTATE_CLOSED);
     }
   }
 

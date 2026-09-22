@@ -14,6 +14,7 @@ import {
   MAX_SESSION_SLOTS,
   SLOTSTATE_CHIEF,
   SLOTSTATE_CHIEF_CLEAR,
+  SLOTSTATE_CLOSED,
   SLOTSTATE_GROUP_CLEAR,
   SUPREME_ROOM_SWAP_COUNT,
 } from "./Defs.ts";
@@ -255,12 +256,12 @@ export class CListSession extends CBaseSession {
     this.SendPacket(packet);
     const p = slot * 3;
     const state = this.m_rgSlotState[p]!;
-    const changing = (state & 1) === 0 !== (close === 0);
-    this.m_rgSlotState[p] = state ^ ((close ^ state) & 1);
+    const changing = (state & SLOTSTATE_CLOSED) === 0 !== (close === 0);
+    this.m_rgSlotState[p] = state ^ ((close ^ state) & SLOTSTATE_CLOSED);
     if (changing) {
       let open = 0;
       for (let i = 0; i < this.m_nMaxSlot; i++) {
-        if ((this.m_rgSlotState[i * 3]! & 1) === 0) open++;
+        if ((this.m_rgSlotState[i * 3]! & SLOTSTATE_CLOSED) === 0) open++;
       }
       if (open !== this.m_nMaxPlayerNum) {
         this.m_fModified |= SESSION_MODIFIED_MAX_PLAYER;

@@ -181,3 +181,22 @@ export const SESSION_MODIFIED_MAP = 2;
 export const SESSION_MODIFIED_CUR_PLAYER = 4;
 export const SESSION_MODIFIED_MAX_PLAYER = 8;
 export const SESSION_MODIFIED_TITLE = 0x10;
+
+/** CBaseSession slot bit0 — closed (1 = closed). */
+export const SLOTSTATE_CLOSED = 1;
+export const SLOTSTATE_CLOSED_CLEAR = 0xfe; // ~CLOSED & 0xff
+/** Clears chief + group bits (AddUserBase): ~(CHIEF|GROUP_MASK) with CHIEF=0x02, GROUP=0x1C => 0xE1. */
+export const SLOTSTATE_CHIEF_GROUP_CLEAR = 0xe1;
+
+/** CBaseSession::OnRequestChangeTitle — title longer than 0x16 (22) chars is truncated to 21. */
+export const ROOM_TITLE_TRUNCATION_THRESHOLD = 0x16;
+export const ROOM_TITLE_TRUNCATED_LENGTH = 21;
+
+/** CGameSession random map color tracking — 0x11111111 marks a color in use (SetMapIdxPlayingByLevel). */
+export const MAP_COLOR_IN_USE = 0x11111111;
+
+/** CGameSession — max game duration before forced end (0x2BF20 = 180000 ms = 3 min). */
+export const GAME_DURATION_LIMIT_MS = 0x2bf20;
+
+/** CSyncGameObjMan — initial bestLoad for FindMinimumLoadSlotIdx (0x80000000 = large positive for min search). */
+export const SYNC_BEST_LOAD_INIT = 0x80000000;

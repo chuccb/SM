@@ -7,18 +7,22 @@ import {
   MAX_SESSION_SLOTS,
   SLOTSTATE_BOMBER_CLEAR,
   SLOTSTATE_BOMBER_MASK,
+  SLOTSTATE_CHIEF_CLEAR,
+  SLOTSTATE_CHIEF_GROUP_CLEAR,
+  SLOTSTATE_CLOSED,
+  SLOTSTATE_CLOSED_CLEAR,
   SLOTSTATE_COLOR_CLEAR,
   SLOTSTATE_COLOR_MASK,
   SLOTSTATE_GROUP_MASK,
   SLOTSTATE_READY,
+  ROOM_TITLE_TRUNCATION_THRESHOLD,
+  ROOM_TITLE_TRUNCATED_LENGTH,
 } from "./Defs.ts";
 import { CBomberAttr } from "./BomberAttr.ts";
 import { CMainSystem } from "./MainSystem.ts";
 import type { CClientSocket } from "./ClientSocket.ts";
 import type { CUser } from "./User.ts";
 
-const ROOM_TITLE_TRUNCATION_THRESHOLD = 0x16;
-const ROOM_TITLE_TRUNCATED_LENGTH = 21;
 
 /** CBaseSession — native room-slot, player, socket, and common packet owner. */
 export class CBaseSession {
@@ -105,7 +109,7 @@ export class CBaseSession {
 
   SetClosed(slot: number, closed: boolean): void {
     const p = slot * 3;
-    this.m_rgSlotState[p] = closed ? (this.m_rgSlotState[p]! | 1) : (this.m_rgSlotState[p]! & 0xfe);
+    this.m_rgSlotState[p] = closed ? (this.m_rgSlotState[p]! | SLOTSTATE_CLOSED) : (this.m_rgSlotState[p]! & SLOTSTATE_CLOSED_CLEAR);
   }
 
   IsReady(slot: number): boolean {
@@ -195,7 +199,7 @@ export class CBaseSession {
     this.SetSlotidx(user, slot);
     user.SetPoolType(2);
     this.SetBomber(slot, bomber);
-    this.m_rgSlotState[slot * 3] &= 0xe1;
+    this.m_rgSlotState[slot * 3] &= SLOTSTATE_CHIEF_GROUP_CLEAR;
     this.SetColor(slot, color);
   }
 
@@ -400,7 +404,7 @@ export class CBaseSession {
   /** CBaseSession::DeleteUser(int) — clear the seat and chief bit. */
   DeleteUser(slot: number): void {
     this.m_rgPlayer[slot] = null;
-    this.m_rgSlotState[slot * 3] &= 0xfd;
+    this.m_rgSlotState[slot * 3] &= SLOTSTATE_CHIEF_CLEAR;
   }
 
   /** CBaseSession::DeleteAllUser — virtual DeleteUser for every resident. */
