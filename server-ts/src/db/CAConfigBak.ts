@@ -193,7 +193,7 @@ export function ParseCAConfigBak(buf: Uint8Array): ICAConfigBakRows {
 }
 
 /** LocateCAConfigBak — the original backup shipped in the repository's DB/
- *  directory (port/src/db → ../../../DB/CAConfig.bak), overridable with
+ *  directory (server-ts/src/db → ../../../DB/CAConfig.bak), overridable with
  *  CA_CONFIG_BAK. Resolved from this module so the deployment layout (the
  *  db directory, the cwd) never matters. */
 export function LocateCAConfigBak(): string | null {

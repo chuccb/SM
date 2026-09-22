@@ -77,7 +77,7 @@ LS 建帳／登入 → GS 建立連線 → client 6 請求 Shop
 新 fixture 使用 19811，避免碰撞既有隔離 Shop 測試的 19801。
 子程序以 `process.execPath` 啟動，使用相同的已固定 Bun，不依賴 shell PATH 另有 `bun`。
 
-從 `port/` 執行：
+從 `server-ts/` 執行：
 
 ```sh
 ./node_modules/.bin/bun test test/game-transfer.test.ts test/e2e.test.ts

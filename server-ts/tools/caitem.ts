@@ -1,5 +1,5 @@
 /** Read-only source audit by default; explicit import never overwrites a
- * nonempty catalog. Run from port/, with the same --db as your services. */
+ * nonempty catalog. Run from server-ts/, with the same --db as your services. */
 import { resolve, join } from "node:path";
 import { Database } from "bun:sqlite";
 import { CAITEM_BAK_PATH, LoadCAItemBak } from "../src/db/CAItemBak.ts";

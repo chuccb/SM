@@ -100,7 +100,7 @@ Timer 測試攔截 interval callback，以確定性 tick 驗證控制流；不�
 
 ### 最終執行結果
 
-在 `port/` 執行：
+在 `server-ts/` 執行：
 
 - `bun test`：**317 pass／0 fail／5,763 assertions／16 files／22.01s**。
 - 第一份 probe：**14 observations／8 GAP／6 MATCH**，A04 已 MATCH。
@@ -109,7 +109,7 @@ Timer 測試攔截 interval callback，以確定性 tick 驗證控制流；不�
 - TypeScript **7.1.0-dev.20260920.1** 與 **7.0.2**：各自通過 source `tsc --noEmit`，以及本輪四份測試、兩份 probe 的獨立 strict 檢查。
 - `git diff --check` 通過。
 
-曾誤從 repository root 執行 E2E，兩項既有遊戲測試等待 packet 173 逾時。查明 `SendAirplaneItemProb` 按既有原生流程讀取工作目錄的 `iteminfo.txt`，root 沒有該檔；沒有為讓錯誤工作目錄通過而改動 production loader。回到專案要求的 `port/` 後 focused E2E 與全套均通過；新增的 late-establishment 測試在兩種執行中均通過。
+曾誤從 repository root 執行 E2E，兩項既有遊戲測試等待 packet 173 逾時。查明 `SendAirplaneItemProb` 按既有原生流程讀取工作目錄的 `iteminfo.txt`，root 沒有該檔；沒有為讓錯誤工作目錄通過而改動 production loader。回到專案要求的 `server-ts/` 後 focused E2E 與全套均通過；新增的 late-establishment 測試在兩種執行中均通過。
 
 ## 明確未完成的界線
 

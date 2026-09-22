@@ -6,7 +6,7 @@
  *
  *   bun tools/seed.ts <account> <password> [name]
  *
- * The row lands in port/db/UserInfoNN.db with NN = GetUserHashNo(account)
+ * The row lands in server-ts/db/UserInfoNN.db with NN = GetUserHashNo(account)
  * (lower(first char) % 6), same sharding as the original CDBMan.
  */
 import { join } from "node:path";

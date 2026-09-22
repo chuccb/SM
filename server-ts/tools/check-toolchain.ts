@@ -50,7 +50,7 @@ export async function CheckToolchain(): Promise<void> {
   const differences = FindToolchainDifferences(expected, actual);
   if (differences.length) {
     throw new Error(`Preview toolchain mismatch:\n${differences.join("\n")}\n` +
-      "Run bun install --frozen-lockfile, then ./node_modules/.bin/bun run check from port/. " +
+      "Run bun install --frozen-lockfile, then ./node_modules/.bin/bun run check from server-ts/. " +
       "Do not silently substitute a stable or different canary runtime.");
   }
   console.log(JSON.stringify(actual, null, 2));

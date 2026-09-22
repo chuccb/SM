@@ -6,7 +6,7 @@
 
 ## 啟動與加點
 
-在 `port/` 使用專案預覽版 Bun：
+在 `server-ts/` 使用專案預覽版 Bun：
 
 ```sh
 # 一般部署：先啟動本機 billing，再啟動既有各服務
@@ -22,7 +22,7 @@
 ```
 
 - 上面兩種啟動方式擇一；不要在 standalone billing 已佔用 port 時再執行全套 `start`。
-- 預設資料目錄是 `port/db`。如使用其他資料目錄，**全部服務與管理 CLI 都必須傳相同的 `--db /path/to/db`**。
+- 預設資料目錄是 `server-ts/db`。如使用其他資料目錄，**全部服務與管理 CLI 都必須傳相同的 `--db /path/to/db`**。
 - `config/local-billing.json` 預設 `enabled: true, host: "127.0.0.1", port: 9740`。9740 是本機選擇，不是查得的官方 port。可用 `--billing-config PATH` 指定另一份設定。
 - Tw 沒有 TLS 或 server authentication，**只允許 loopback**，不能公開於 Internet。Game／Shop 與 billing 須在同一台主機／network namespace。
 - `--only shop` 不會偷偷啟動 backend；`start` 或 `--only billing` 才會啟動。

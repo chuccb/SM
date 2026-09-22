@@ -277,7 +277,7 @@ copy後中斷可重跑只清來源。集中式`Guild.db`不誤搬。詳見[A23�
 
 ## 重現與回歸
 
-在 `port/` 執行（各probe使用獨立process）：
+在 `server-ts/` 執行（各probe使用獨立process）：
 
 ```sh
 bun tools/compatibility-probe.ts

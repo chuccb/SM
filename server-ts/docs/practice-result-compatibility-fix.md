@@ -157,7 +157,7 @@ The tests now cover:
 - the diagnostic-only non-standby-chief branch,
 - ordinary-room TCP109 plus UDP readiness behavior.
 
-Run from `port/` with the pinned preview toolchain:
+Run from `server-ts/` with the pinned preview toolchain:
 
 ```sh
 bun run check:toolchain

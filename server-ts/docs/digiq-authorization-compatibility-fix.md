@@ -76,7 +76,7 @@ TS 原本已能產生 341，但 `OnDigiQAuthen` 是空函式，即使收到 342 
 沒有將測試 peer 放入 production 啟動路徑，亦未修改實際部署的 BillingSvr 資料。
 既有 Shop 測試的入場 fixture 仍手動設定 Center connecting 狀態；GS ↔ Shop 的真實轉服驗證由上一輪 E2E 保持覆蓋。
 
-從 `port/` 執行：
+從 `server-ts/` 執行：
 
 ```sh
 ./node_modules/.bin/bun test test/digiq-authorization.test.ts test/shop.test.ts test/billing-transport.test.ts

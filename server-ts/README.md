@@ -78,7 +78,7 @@ SQLite 使用 Bun 隨附實作，沒有另裝不相容的 npm SQLite driver，�
 
 ### 安裝與驗證
 
-在 `port/` 執行；現有 Bun 可先作為一次性 bootstrap installer：
+在 `server-ts/` 執行；現有 Bun 可先作為一次性 bootstrap installer：
 
 ```sh
 bun install --frozen-lockfile
@@ -111,7 +111,7 @@ Bun npm wrapper 的安裝 script 使用 `node install.js`；其餘 server／測�
 
 `probe` 的 GAP 是尚未修復的診斷觀察，不是測試通過證明。
 不要改回使用全域 stable `tsc`，也不要以 `bunx` 臨時下載另一套編譯器。
-`check` 應在 `port/` 執行：部分原生相容資料載入（例如 `iteminfo.txt`）依工作目錄運作。
+`check` 應在 `server-ts/` 執行：部分原生相容資料載入（例如 `iteminfo.txt`）依工作目錄運作。
 版本檢查本身不依賴 cwd，也不接觸正式 DB；SQLite 查詢只使用記憶體資料庫。
 
 ### 後續更新原則

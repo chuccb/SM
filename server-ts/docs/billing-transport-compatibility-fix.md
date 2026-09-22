@@ -108,7 +108,7 @@
 
 ### 最終結果
 
-在 `port/` 執行：
+在 `server-ts/` 執行：
 
 - 全套 `bun test`：**375 pass／0 fail／6,034 assertions／17 files／24.09s**。
 - TypeScript **7.1.0-dev.20260920.1** 與 **7.0.2**：source `--noEmit`，及新測試／子程序 fixture／共用 socket 測試／兩份 probe 的獨立 strict 檢查均通過。

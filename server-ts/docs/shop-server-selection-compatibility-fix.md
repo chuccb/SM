@@ -82,11 +82,11 @@ Flaws in the previous implementation:
 
 ## Implementation Details
 
-1. Updated `CLocalServerMan::GetSmallLoadedSvrIdx` in `port/src/Center/LocalServerMan.ts`:
+1. Updated `CLocalServerMan::GetSmallLoadedSvrIdx` in `server-ts/src/Center/LocalServerMan.ts`:
    - Enforce `nServerClass === SVRCLASS_SHOP` (class 11), returning -1 for other classes.
    - Advance monotonic counter `m_dwSmallLoadedSvrIdx` (`++dword_481088`).
    - Test if the round-robin candidate has `candidate.socket !== null`; if so, select it.
    - Otherwise, iterate configured shop servers, filtering by `svr.socket !== null && svr.nConnNo < minConnNo` (starting at 2000).
    - If no active server exists, return 0.
 
-2. Verified with unit tests in `port/test/center-timeout.test.ts`.
+2. Verified with unit tests in `server-ts/test/center-timeout.test.ts`.

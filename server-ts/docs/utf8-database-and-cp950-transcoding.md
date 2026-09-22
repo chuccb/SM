@@ -37,7 +37,7 @@
 [ 官方 Client 端 (MS950/Big5 協定) ]
 ```
 
-### 2.1 零依賴 CP950 編解碼器 (`port/src/core/Encoding.ts`)
+### 2.1 零依賴 CP950 編解碼器 (`server-ts/src/core/Encoding.ts`)
 - **`DecodeCP950(bytes: Uint8Array): string`**：
   直接呼叫原生標準 Web API `new TextDecoder("big5").decode(bytes)`，零自製代碼、極致高效。
 - **`EncodeCP950(str: string): Uint8Array`**：
@@ -47,21 +47,21 @@
   3. **協定二進位位元組 (0x80..0xFF)**：保留原樣單字節（保障未轉碼之 raw binary token / 測試載體安全透過）。
   4. **未對映未知字元**：輸出 `0x3F` (`'?'`)，與 Windows API 預設行為完全一致。
 
-### 2.2 緊湊壓縮查表 (`port/src/core/CP950Table.ts`)
+### 2.2 緊湊壓縮查表 (`server-ts/src/core/CP950Table.ts`)
 - 包含官方 Windows CP950 完整對齊之 13,742 個繁體中文/符號映射（涵蓋倚天延伸字、常用字與特殊標點符號）。
 - 原全量查表達 175 KB，為維持代碼美觀俐落，使用 Bun 內建 `node:zlib` (`inflateSync`) 壓制為 40 KB 的緊湊 Base64，模組載入時一次性解壓至 TypedArray，解壓耗時 <0.5ms，運行時查表 $O(1)$ 且零額外 GC 負擔。
 
 ### 2.3 核心元件整合
 
-1. **網路封包 (`port/src/core/Packet.ts`)**：
+1. **網路封包 (`server-ts/src/core/Packet.ts`)**：
    - `EncodeStrAt` / `EncodeEncryptedStrAt`：自動將傳入的 UTF-8 字串轉碼為 CP950 位元組後寫入 buffer。
    - `DecodeStr` / `DecodeEncryptedStrAt`：從二進位 buffer 讀取 raw bytes 後轉碼為 UTF-8 字串。
-2. **壓縮子串流 (`port/src/core/SmartStream.ts`)**：
+2. **壓縮子串流 (`server-ts/src/core/SmartStream.ts`)**：
    - `COSmartStream::EncodeStr` 與 `CISmartStream::DecodeStr` 同樣對齊 CP950 邊界轉碼。
 3. **CAItem 資料庫與 FxStock / FxItem 匯入 (`CAItemBak.ts` & `CAItemImport.ts`)**：
    - 從 `.bak` 讀取資料表欄位（如商品名稱 `Name`、道具名 `strName`、字串表 `String` 等）時，在解析階段即轉為純 UTF-8 寫入 SQLite。
    - Navicat 等資料庫管理工具開啟 `CAItem.db` 時即可直接閱讀正體中文（如「針 (15個)」、「耶誕節可愛毛帽」）。
-4. **分表 Sharding 雜湊維持 (`port/src/db/DBMan.ts`)**：
+4. **分表 Sharding 雜湊維持 (`server-ts/src/db/DBMan.ts`)**：
    - `GetUserHashNo(id)` 檢查若帳號包含非 ASCII 字元，會先取出其在 CP950 協定中的第一位元組並以 ASCII 摺疊後執行 `% 6`，維持原版 6 台分庫的分配一致性。
 
 ---

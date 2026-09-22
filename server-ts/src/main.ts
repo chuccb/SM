@@ -8,7 +8,7 @@
  *        0.0.0.0, so this covers multi-host deployments)
  *   --cfg <file> overrides the per-piece cfg (game/shop default to the
  *        shipped FXGS_00{idx}.cfg / FXSS_00{idx}.cfg, --idx picks the file)
- *   --db <dir>   overrides the SQLite directory (default port/db)
+ *   --db <dir>   overrides the SQLite directory (default server-ts/db)
  *   --tranx-log-dir <dir> overrides FxShop's native cwd/Log directory
  */
 import { CServerConfig, CXCENTER_STR_KEYS } from "./core/ServerConfig.ts";
@@ -71,7 +71,7 @@ if (!PacketLog.Enabled()) {
 
 /** Resolve a --cfg value: absolute paths pass through (also on Windows,
  *  where "C:\\..." does not start with "/"), relative ones anchor at the
- *  port directory. */
+ *  server-ts directory. */
 function resolveCfg(cfgFile: string): string {
   return isAbsolute(cfgFile) ? cfgFile : join(import.meta.dir, "..", cfgFile);
 }
