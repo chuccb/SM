@@ -826,7 +826,7 @@ export class CDBMan {
     return r && r.a != null ? r.a : 0;
   }
 
-  /** prAddInventory */
+  /** prAddInventory — native prAddInventory sets Slot 255 for new rows. */
   prAddInventory(
     userSN: number,
     id: string,
@@ -845,10 +845,10 @@ export class CDBMan {
       if (info.changes === 0) {
         const ins = db
           .query(
-            `INSERT INTO FxUserInventory (UserSN, UserID, ItemSN, StockSN, Amount, DateCreated, LevelCreated)
-             VALUES (?,?,?,?,?,?,?)`,
+            `INSERT INTO FxUserInventory (UserSN, UserID, ItemSN, StockSN, Slot, Amount, DateCreated, LevelCreated, Verbose)
+             VALUES (?,?,?,?,?,?,?,?,?)`,
           )
-          .run(userSN, id, itemSN, stockSN, unit, sqliteNowPlus(validityPeriod), userLevel);
+          .run(userSN, id, itemSN, stockSN, INVENTORY_SLOT_NONE, unit, sqliteNowPlus(validityPeriod), userLevel, "");
         return ins.changes === 1 ? 0 : -1;
       }
       return 0;
@@ -859,10 +859,10 @@ export class CDBMan {
     if (exists) return -2;
     const ins = db
       .query(
-        `INSERT INTO FxUserInventory (UserSN, UserID, ItemSN, StockSN, Amount, DateCreated, LevelCreated)
-         VALUES (?,?,?,?,?,?,?)`,
+        `INSERT INTO FxUserInventory (UserSN, UserID, ItemSN, StockSN, Slot, Amount, DateCreated, LevelCreated, Verbose)
+         VALUES (?,?,?,?,?,?,?,?,?)`,
       )
-      .run(userSN, id, itemSN, stockSN, unit, sqliteNowPlus(validityPeriod), userLevel);
+      .run(userSN, id, itemSN, stockSN, INVENTORY_SLOT_NONE, unit, sqliteNowPlus(validityPeriod), userLevel, "");
     return ins.changes === 1 ? 0 : -1;
   }
 
@@ -889,10 +889,10 @@ export class CDBMan {
       if (countRow && countRow.c >= GIFT_PREINVENTORY_LIMIT) return -2;
       const info = db
         .query(
-          `INSERT INTO FxPreInventory (UserID, Type, ItemSN, StockSN, Amount, ValidityPeriod, ValidityLevel, strAttr, Description)
-           VALUES (?,?,?,?,?,?,?,?,?)`,
+          `INSERT INTO FxPreInventory (UserID, Type, ItemSN, StockSN, Slot, Amount, ValidityPeriod, ValidityLevel, strAttr, Description)
+           VALUES (?,?,?,?,?,?,?,?,?,?)`,
         )
-        .run(id, type, itemSN, stockSN, amount, validityPeriod, validityLevel, strAttr, description);
+        .run(id, type, itemSN, stockSN, INVENTORY_SLOT_NONE, amount, validityPeriod, validityLevel, strAttr, description);
       return Number(info.lastInsertRowid);
     } catch {
       return -1;
@@ -907,7 +907,9 @@ export class CDBMan {
     return info.changes === 1 ? 0 : -1;
   }
 
-  /** prLoadInventory — move a pre-inventory row into live inventory; returns 0 on success. */
+  /** prLoadInventory — move a pre-inventory row into live inventory; returns 0 on success.
+   *  Native sets Slot 255 (INVENTORY_SLOT_NONE) for the new live row; pre-inventory
+   *  itself is also Slot 255. */
   prLoadInventory(
     preInventorySn: number,
     userID: string,
@@ -926,9 +928,9 @@ export class CDBMan {
         .run(unit, userID, itemSN);
       if (info.changes === 0) {
         db.query(
-          `INSERT INTO FxUserInventory (UserSN, UserID, ItemSN, StockSN, Amount, DateCreated, LevelCreated)
-           VALUES (0,?,?,?,?,?,?)`,
-        ).run(userID, itemSN, stockSN, unit, sqliteNowPlus(validityPeriod), userLevel);
+          `INSERT INTO FxUserInventory (UserSN, UserID, ItemSN, StockSN, Slot, Amount, DateCreated, LevelCreated, Verbose)
+           VALUES (0,?,?,?,?,?,?,?,'')`,
+        ).run(userID, itemSN, stockSN, INVENTORY_SLOT_NONE, unit, sqliteNowPlus(validityPeriod), userLevel);
       }
     }
     db.query("DELETE FROM FxPreInventory WHERE SN = ?").run(preInventorySn);
