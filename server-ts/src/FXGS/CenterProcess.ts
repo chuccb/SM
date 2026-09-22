@@ -6,7 +6,7 @@ import { CLocalSocket } from "../common/LocalSocket.ts";
 import { S2C_GamePacket } from "../core/protocol/PacketIDs.ts";
 import { CM_GameServerPacket, MC_GameServerSendPacket, SVRCLASS_GAME } from "../core/protocol/CenterProtocol.ts";
 import { CDynInfoCalculator_GetLevel, CDynInfoCalculator_GetMaxExpInLevel } from "../common/LevelTable.ts";
-import { SESSION_LOC_OTHER_SERVER } from "./Defs.ts";
+import { CONNECT_GATE_RESULT, SESSION_LOC_OTHER_SERVER } from "./Defs.ts";
 import { CUserItemMan } from "./ItemMan.ts";
 import { CGuildTable } from "./Guild.ts";
 import { CLocalUserTable } from "./LocalUserTable.ts";
@@ -224,11 +224,11 @@ export class CCenterProcess {
 
   /** CCenterProcess::CheckEnterGame — 1 ok / 4 version / 5 not alive. */
   CheckEnterGame(i: number, _n: number, version: number): number {
-    if (this.m_vtGameStateOrder.length === 0) return 0;
+    if (this.m_vtGameStateOrder.length === 0) return CONNECT_GATE_RESULT.NoGameState;
     if ((this.m_mapAlive.get(i) ?? 0) !== 0) {
-      return (this.m_mapGameVersion.get(i) ?? 0) === version ? 1 : 4;
+      return (this.m_mapGameVersion.get(i) ?? 0) === version ? CONNECT_GATE_RESULT.Success : CONNECT_GATE_RESULT.VersionMismatch;
     }
-    return 5;
+    return CONNECT_GATE_RESULT.ServerTypeUnavailable;
   }
 
   /** CCenterProcess::OnSvrReservedMsg — CM 7 → client 16. */

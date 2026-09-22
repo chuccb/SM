@@ -17,7 +17,7 @@ import type { CClientSocket } from "./ClientSocket.ts";
 import { CUser } from "./User.ts";
 import { ItemCategory, SLOT_DECORATION_COUNT } from "../common/Item.ts";
 import { RegisterChannelPool } from "./runtime/ClientSocketRuntime.ts";
-import { SESSION_IDX_NONE } from "./Defs.ts";
+import { CONNECT_GATE_RESULT, SESSION_IDX_NONE } from "./Defs.ts";
 
 /** Native free function SendGameSlotInfo (0040335B), shared by local and
  * DB-backed remote detail. Category-10 pictures use nAttr1, not ItemSN.
@@ -334,7 +334,7 @@ export class CChannelPool extends CChatPool {
     if (type !== SVRCLASS_SHOP) {
       const version = n.Decode2();
       const r = CCenterProcess.ms_pInstance!.CheckEnterGame(type, target, version);
-      if (r !== 1) {
+      if (r !== CONNECT_GATE_RESULT.Success) {
         const p = new CSendPacket(S2C_GamePacket.OnReqConnectToSvrRes, CipherDegree.kPacketEncryptedCRC8);
         p.Encode1(r);
         socket.SendPacket(p);
@@ -368,7 +368,7 @@ export class CChannelPool extends CChatPool {
     const result = n.Decode1();
     const p = new CSendPacket(S2C_GamePacket.OnReqConnectToSvrRes, CipherDegree.kPacketEncryptedCRC8);
     p.Encode1(result);
-    if (result === 1) {
+    if (result === CONNECT_GATE_RESULT.Success) {
       p.Encode1(n.Decode1()); // the target server class
       p.Encode4(n.Decode4()); // the target server idx
       p.Encode4(n.Decode4()); // ip
@@ -429,7 +429,7 @@ export class CChannelPool extends CChatPool {
       ) === 0
         ? 1
         : 0;
-    if (result === 1) {
+    if (result === CONNECT_GATE_RESULT.Success) {
       // CDBMan::ModifyUserInfo success path: mirror onto the live account
       user.account.strName = strName;
       user.account.Gender = gender;
