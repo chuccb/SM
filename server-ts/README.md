@@ -139,17 +139,13 @@ Bun npm wrapper 的安裝 script 使用 `node install.js`；其餘 server／測�
 ESNext 是 compiler/runtime 提供的語言與標準庫目標，不是另一個可安裝的「ES 預覽套件」。
 目前版本驗證在 Linux x64 完成；其他平台若有不同的 SQLite source identity，必須先核實，不能靜默略過檢查。
 
-## 相容性工作紀錄
+## 核心手冊與相容性文件
 
-- [差異清點一](docs/remaining-work-audit.md)
-- [差異清點二](docs/remaining-work-audit-2.md)
-- [A05／A09／A10／A19／A22：charge、cart、service config、pre-inventory、BonusMap 修復](docs/five-gap-compatibility-fix.md)
-- [A06：NexonClub ID 與本輪工具鏈驗證](docs/nexonclub-id-compatibility-fix.md)
-- [A23：帳號首byte分片與舊Unicode公式資料安全遷移](docs/user-shard-compatibility-fix.md)
-- [爆炸頭：商城 category 限制、遊戲金錢發貨與購入後期限修復](docs/shop-purchase-compatibility-fix.md)
-- [Practice：立即開局、練習地圖選擇與 UDP-loss 誤踢修復](docs/practice-start-compatibility-fix.md)
-- [A20：GS 庫存、功能／外觀狀態與裝飾封包修復](docs/user-inventory-compatibility-fix.md)
-- [商城道具裝備後重新登入：201 E4 庫存筆數黑屏修復](docs/item-relogin-compatibility-fix.md)
-- [Packet 121：房主／SuperChief／odd-slot 倒數時間修復](docs/ban-chief-timing-compatibility-fix.md)
+- [本機 Billing 服務營運與加點指南](docs/local-billing.md)
+- [CAItem 商品庫還原與商城商品核對](docs/caitem-catalog.md)
+- [UTF-8 資料庫儲存與 MS950 (Big5) 邊界轉碼架構](docs/utf8-database-and-cp950-transcoding.md)
+- [A23 帳號首 Byte 分片演算法與安全遷移指引](docs/user-shard-compatibility-fix.md)
+- [官方差異與未完成工作清點一](docs/remaining-work-audit.md)
+- [官方差異與未完成工作清點二](docs/remaining-work-audit-2.md)
 
 保留「未知帳號登入自動註冊」的明確需求。其餘 client 可觀測行為以提供的原生 EXE／PDB／反組譯為依據；未完成的項目仍列在清單，不宣稱整個 server 已完全相容。
