@@ -2,7 +2,11 @@
 import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
 import { C2S_GameChatPacket, S2C_GamePacket } from "../core/protocol/PacketIDs.ts";
 import { MC_GameServerSendPacket } from "../core/protocol/CenterProtocol.ts";
-import { CHAT_MAX_PACKET_LEN, SESSION_IDX_NONE } from "./Defs.ts";
+import {
+  CHAT_MAX_PACKET_LEN,
+  SESSION_IDX_NONE,
+  AUTHORITY_SHOUT,
+} from "./Defs.ts";
 import { CUserPool } from "./UserPool.ts";
 import { CGameSessionTable } from "./GameSessionTable.ts";
 import { CCenterProcess } from "./CenterProcess.ts";
@@ -224,7 +228,7 @@ export class CChatPool extends CUserPool {
   OnKickoffUser(n: CReceivedPacket, socket: CClientSocket): void {
     if (socket.GetUserCount() !== 1) return;
     n.DecodeStr(); // the target name
-    if (socket.HasAuthority(7) === 0) return;
+    if (socket.HasAuthority(AUTHORITY_SHOUT) === 0) return;
     // unreachable without the operator link
   }
 }

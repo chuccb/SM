@@ -200,3 +200,20 @@ export const GAME_DURATION_LIMIT_MS = 0x2bf20;
 
 /** CSyncGameObjMan — initial bestLoad for FindMinimumLoadSlotIdx (0x80000000 = large positive for min search). */
 export const SYNC_BEST_LOAD_INIT = 0x80000000;
+
+/** CGameSessionTable m_acTableFlags — lobby announce flags (timer sweep). */
+export const SESSION_TABLE_FLAG_CREATED = 1;
+export const SESSION_TABLE_FLAG_EXISTING = 2;
+export const SESSION_TABLE_FLAG_DESTROYED = 4;
+
+/** CGameSession::OnBombIgnite — attr byte 0x40 marks flag16 (server die? etc). */
+export const BOMB_ATTR_FLAG16_MASK = 0x40;
+
+/** CUser::HasAuthority codes — recovered from FXGS usage (FxServer.exe.c). */
+export const AUTHORITY_JOIN_CLOSED = 1; // bypass closed slots / password (GM)
+export const AUTHORITY_SHOUT = 7; // CChatPool::OnShoutMsg gate
+export const AUTHORITY_BAN_IMMUNE = 21; // super chief ban bypass (operator)
+export const AUTHORITY_BAN_CHIEF_BYPASS = 22; // DeferBanChief odd-slot and full-room bypass
+export const AUTHORITY_LEVEL_BYPASS = 23; // CanStartGame level/premium bypass (GM)
+export const AUTHORITY_SUPREME_CHIEF = 24; // AddPlayer sets new chief (RoomTicket holder path)
+export const AUTHORITY_ALWAYS_ZERO = 25; // constant-0 stub, skipped in player counts

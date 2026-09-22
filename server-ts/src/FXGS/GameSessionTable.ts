@@ -15,6 +15,10 @@ import {
   SESSION_SERIAL_NONE,
   SESSION_RESULT,
   SESSION_INFO_DETAIL_RESULT,
+  SESSION_TABLE_FLAG_CREATED,
+  SESSION_TABLE_FLAG_DESTROYED,
+  SESSION_TABLE_FLAG_EXISTING,
+  AUTHORITY_JOIN_CLOSED,
 } from "./Defs.ts";
 import { CBomberAttr } from "./BomberAttr.ts";
 import { CPracticeSession } from "./PracticeSession.ts";
@@ -216,8 +220,8 @@ export class CGameSessionTable extends CBaseSessionTable {
     }
     const session = this.m_apGameSession[idx]!;
     if (session && session.fValid !== 0 && session.m_nSerialNo === serial && session.DestroyPlayer(socket, fSendReset) !== 0 && session.m_nCurPlayerNum === 0 && this.CloseSession(idx, serial) !== 0) {
-      if ((this.m_acTableFlags[idx]! & 1) !== 0) this.m_acTableFlags[idx] = 0;
-      else this.m_acTableFlags[idx]! |= 4;
+      if ((this.m_acTableFlags[idx]! & SESSION_TABLE_FLAG_CREATED) !== 0) this.m_acTableFlags[idx] = 0;
+      else this.m_acTableFlags[idx]! |= SESSION_TABLE_FLAG_DESTROYED;
     }
     CBaseSession.UnlockBaseSessions(idx);
   }
@@ -319,7 +323,7 @@ export class CGameSessionTable extends CBaseSessionTable {
     CBaseSession.LockBaseSessions(-1);
     const session = this.m_apGameSession[nb]!;
     session.Create(socket, title, password, selects, gameType);
-    this.m_acTableFlags[nb]! |= 1;
+    this.m_acTableFlags[nb]! |= SESSION_TABLE_FLAG_CREATED;
     res.Encode1(SESSION_RESULT.Success);
     res.Encode2(nb);
     res.Encode4(session.m_nSerialNo);
@@ -418,7 +422,7 @@ export class CGameSessionTable extends CBaseSessionTable {
         }
       }
       if (!seated) {
-        if (socket.HasAuthority(1) === 0 && session.m_szPassword.length > 0 && session.m_szPassword !== password) {
+        if (socket.HasAuthority(AUTHORITY_JOIN_CLOSED) === 0 && session.m_szPassword.length > 0 && session.m_szPassword !== password) {
           res.Encode1(SESSION_RESULT.PasswordMismatch);
           socket.SendPacket(res);
           CBaseSession.UnlockBaseSessions(idx);
@@ -572,13 +576,13 @@ export class CGameSessionTable extends CBaseSessionTable {
       const session = this.m_apGameSession[n];
       if (!session) continue;
       const flags = this.m_acTableFlags[n]!;
-      if ((flags & 1) !== 0) {
+      if ((flags & SESSION_TABLE_FLAG_CREATED) !== 0) {
         const packet = new CSendPacket(PACKET_TYPE_PLACEHOLDER, CipherDegree.kPacketEncryptedCRC8);
         session.MakeCreatedPacket(packet);
         this.m_acTableFlags[n] = 0;
-        this.m_acTableFlags[n]! |= 2;
+        this.m_acTableFlags[n]! |= SESSION_TABLE_FLAG_EXISTING;
         SendChannelPacket(packet, 1);
-      } else if ((flags & 4) !== 0) {
+      } else if ((flags & SESSION_TABLE_FLAG_DESTROYED) !== 0) {
         const packet = new CSendPacket(PACKET_TYPE_PLACEHOLDER, CipherDegree.kPacketEncryptedCRC8);
         session.MakeDestroyedPacket(packet);
         this.m_acTableFlags[n] = 0;

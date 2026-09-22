@@ -17,6 +17,8 @@ import {
   SLOTSTATE_CLOSED,
   SLOTSTATE_GROUP_CLEAR,
   SUPREME_ROOM_SWAP_COUNT,
+  AUTHORITY_SUPREME_CHIEF,
+  AUTHORITY_BAN_IMMUNE,
 } from "./Defs.ts";
 import { CBaseSession } from "./BaseSession.ts";
 import type { CClientSocket } from "./ClientSocket.ts";
@@ -92,7 +94,7 @@ export class CListSession extends CBaseSession {
   /** CListSession::AddPlayer — reject active rooms and update the chief. */
   override AddPlayer(socket: CClientSocket, selects: number[]): number {
     if (this.m_fPlaying !== 0 || super.AddPlayer(socket, selects) === 0) return 0;
-    if (socket.HasAuthority(24) !== 0) this.SetNewChief(this.GetSlotidx(socket.GetUser(0)));
+    if (socket.HasAuthority(AUTHORITY_SUPREME_CHIEF) !== 0) this.SetNewChief(this.GetSlotidx(socket.GetUser(0)));
     return 1;
   }
 
@@ -416,7 +418,7 @@ export class CListSession extends CBaseSession {
       return;
     }
     const targetUser = this.m_rgPlayer[slot]!;
-    if (superFlag !== 0 || socket.HasAuthority(21) !== 0) {
+    if (superFlag !== 0 || socket.HasAuthority(AUTHORITY_BAN_IMMUNE) !== 0) {
       // a super chief (Item/SuperChief) or an operator kicks outright
       let hasSuper = false;
       for (const u of socket.m_apUser) {
@@ -425,7 +427,7 @@ export class CListSession extends CBaseSession {
           break;
         }
       }
-      if (hasSuper || socket.HasAuthority(21) !== 0) {
+      if (hasSuper || socket.HasAuthority(AUTHORITY_BAN_IMMUNE) !== 0) {
         this.m_nBanSerial = 0;
         const targetSocket = targetUser.m_pSocket!;
         this.MoveSocketToExchange(targetSocket);

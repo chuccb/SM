@@ -13,6 +13,7 @@ import {
   ACCOUNTING_LOG_CHANNEL_TYPE,
   CHANNEL_TYPE_GUILD,
   CHANNEL_TYPE_NO_SHOP,
+  BOMB_ATTR_FLAG16_MASK,
   GHOST_SLOT_NEW_FLAG,
   BOMBER_EVENT_MULTI_DIE_HEADER,
   DEATH_COORD,
@@ -38,6 +39,10 @@ import {
   SLOTSTATE_READY,
   STR_BIG_LUCK_MSG,
   SUPREME_ROOM_SWAP_COUNT,
+  AUTHORITY_JOIN_CLOSED,
+  AUTHORITY_BAN_CHIEF_BYPASS,
+  AUTHORITY_LEVEL_BYPASS,
+  AUTHORITY_ALWAYS_ZERO,
 } from "./Defs.ts";
 import { CBanChief } from "./BanChief.ts";
 import { CDynInfoCalculator } from "./DynInfoCalculator.ts";
@@ -413,7 +418,7 @@ export class CGameSession extends CListSession {
   /** CGameSession::AddPlayer — strategy hooks around CListSession::AddPlayer. */
   override AddPlayer(socket: CClientSocket, selects: number[]): number {
     if (this.m_fPlaying !== 0) return 0;
-    const freeSlots = socket.HasAuthority(1) !== 0 ? this.GetNullSlotCount() : this.GetEmptySlotCount();
+    const freeSlots = socket.HasAuthority(AUTHORITY_JOIN_CLOSED) !== 0 ? this.GetNullSlotCount() : this.GetEmptySlotCount();
     if (freeSlots < socket.GetUserCount()) return 0;
 
     this.m_pStrategy.AddPlayer(socket);
@@ -421,7 +426,7 @@ export class CGameSession extends CListSession {
       console.error("[GS] !CListSession::AddPlayer(pSocket, rgnBomber), CGameSession::AddPlayer");
       return 0;
     }
-    if (socket.HasAuthority(1) !== 0) {
+    if (socket.HasAuthority(AUTHORITY_JOIN_CLOSED) !== 0) {
       for (let i = 0; i < socket.GetUserCount(); i++) {
         this.DoOpenCloseSlot(this.GetSlotidx(socket.GetUser(i)), 1);
       }
@@ -701,7 +706,7 @@ export class CGameSession extends CListSession {
       // Plain rooms only enter the odd-slot sub-gate at capacity 0 or 1.
       if (this.m_nMaxPlayerNum > 1) {
         bc.SetOddSlot(0); // 41C202
-      } else if (user.HasAuthority(22) !== 0) { // CUser::HasAuthority(22)
+      } else if (user.HasAuthority(AUTHORITY_BAN_CHIEF_BYPASS) !== 0) { // CUser::HasAuthority(AUTHORITY_BAN_CHIEF_BYPASS)
         bc.SetOddSlot(0); // 41C1F5 → 41C202 (CUser::HasAuthority)
       } else {
         oddGate = true;
@@ -710,7 +715,7 @@ export class CGameSession extends CListSession {
       // Event rooms enter the sub-gate when their configured capacity is odd.
       if (this.m_nMaxPlayerNum % 2 === 0) {
         bc.SetOddSlot(0); // 41C1E4 even → 41C202
-      } else if (user.HasAuthority(22) !== 0) { // CUser::HasAuthority(22)
+      } else if (user.HasAuthority(AUTHORITY_BAN_CHIEF_BYPASS) !== 0) { // CUser::HasAuthority(AUTHORITY_BAN_CHIEF_BYPASS)
         bc.SetOddSlot(0); // 41C1F5 → 41C202
       } else {
         oddGate = true;
@@ -752,7 +757,7 @@ export class CGameSession extends CListSession {
     }
 
     // 41C35B — the first argument to IsBanChief is byte(+833) == byte(+832).
-    if (user.HasAuthority(22) !== 0) return; // CUser::HasAuthority(22)
+    if (user.HasAuthority(AUTHORITY_BAN_CHIEF_BYPASS) !== 0) return; // CUser::HasAuthority(AUTHORITY_BAN_CHIEF_BYPASS)
     const roomFull = this.m_nMaxPlayerNum === this.m_nCurPlayerNum ? 1 : 0;
     if (!bc.IsBanChief(roomFull, this.m_nGameType, timerMultiplier)) return;
     if (bc.m_nWarnedBan === 0) {
@@ -826,7 +831,7 @@ export class CGameSession extends CListSession {
     for (let slot = 0; slot < MAX_SESSION_SLOTS; slot++) {
       const user = this.m_rgPlayer[slot];
       if (!user) continue;
-      // CUser::HasAuthority(25) is the constant-0 stub — skipped
+      // CUser::HasAuthority(AUTHORITY_ALWAYS_ZERO) is the constant-0 stub — skipped
       const code = this.m_abDeleted[slot]!;
       if (code !== 2 && code !== 5 && code !== 6) {
         user.IncGame();
@@ -1200,7 +1205,7 @@ export class CGameSession extends CListSession {
     const chiefUser = chiefSlot < MAX_SESSION_SLOTS ? this.m_rgPlayer[chiefSlot] : null;
     for (let slot = 0; slot < MAX_SESSION_SLOTS; slot++) {
       const user = this.m_rgPlayer[slot];
-      if (!user || user.HasAuthority(25) !== 0) continue;
+      if (!user || user.HasAuthority(AUTHORITY_ALWAYS_ZERO) !== 0) continue;
       const state0 = this.m_rgSlotState[slot * 3]!;
       const state1 = this.m_rgSlotState[slot * 3 + 1]!;
       if (++counts[this.GetColor(slot)]! === 1) teams++;
@@ -1231,7 +1236,7 @@ export class CGameSession extends CListSession {
     if (mapIdx >= 0) {
       if (total > list.GetMapMaxPlayer(mapIdx)) return 4;
       if (chiefUser) {
-        if (chiefUser.HasAuthority(23) !== 0) return 0;
+        if (chiefUser.HasAuthority(AUTHORITY_LEVEL_BYPASS) !== 0) return 0;
         if (!CMainSystem.IsPremiumChannel() && chiefUser.m_fPremiumTicket !== 1 && list.GetMapPremiumOnly(mapIdx) === 1) return 7;
         if (chiefUser.m_nLevel >= list.GetMapLevelLimit(mapIdx)) return 0; // chief level (dword +496), not exp
       } else {
@@ -1510,7 +1515,7 @@ export class CGameSession extends CListSession {
     if (colorMap[7] !== -1) claimMain(7);
     // OnRequestStartGame (FxServer.exe.c:37595): user+1984 is LEVEL, not exp (+212). The ticket argument
     // is a BOOL produced by comparing the byte at +2004 with exactly 1.
-    this.SetMapIdxPlayingByLevel(chiefUser.m_nLevel, chiefUser.HasAuthority(23), chiefUser.m_fPremiumTicket === 1 ? 1 : 0);
+    this.SetMapIdxPlayingByLevel(chiefUser.m_nLevel, chiefUser.HasAuthority(AUTHORITY_LEVEL_BYPASS), chiefUser.m_fPremiumTicket === 1 ? 1 : 0);
     const can = this.CanStartGame(0);
     const res = new CSendPacket(S2C_GamePacket.OnStartGameRes, CipherDegree.kPacketEncryptedCRC8);
     res.Encode1(can);
@@ -1659,7 +1664,7 @@ export class CGameSession extends CListSession {
       x: pos >> 4,
       y: pos & 0xf,
       sub: attr & 0xf,
-      fFlag16: attr & 0x40 ? 1 : 0,
+      fFlag16: attr & BOMB_ATTR_FLAG16_MASK ? 1 : 0,
     };
     ctx.m_rgBomb[ctx.m_nBombCount] = bomb;
     const packet = new CSendPacket(S2C_GamePacket.OnBombIgniteRes, CipherDegree.kPacketEncryptedCRC8);

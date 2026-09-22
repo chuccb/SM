@@ -17,6 +17,7 @@ import {
   SLOTSTATE_READY,
   ROOM_TITLE_TRUNCATION_THRESHOLD,
   ROOM_TITLE_TRUNCATED_LENGTH,
+  AUTHORITY_JOIN_CLOSED,
 } from "./Defs.ts";
 import { CBomberAttr } from "./BomberAttr.ts";
 import { CMainSystem } from "./MainSystem.ts";
@@ -215,7 +216,7 @@ export class CBaseSession {
    */
   protected AddUserFromSocket(socket: CClientSocket, selects: number[], index: number): void {
     const user = socket.GetUser(index)!;
-    const slot = socket.HasAuthority(1) !== 0 ? this.GetNullSlot() : this.GetEmptySlot();
+    const slot = socket.HasAuthority(AUTHORITY_JOIN_CLOSED) !== 0 ? this.GetNullSlot() : this.GetEmptySlot();
     let bomber = selects[index] ?? 0;
     const bomberAttr = CBomberAttr.ms_pInstance!;
     if (!bomberAttr.IsValidSelectIdx(bomber)) bomber = bomberAttr.GetRandomBomberIdx();
@@ -251,7 +252,7 @@ export class CBaseSession {
 
   /** Shared body used by CBaseSession::AddPlayer and its practice thunk. */
   protected AddPlayerBase(socket: CClientSocket, selects: number[]): number {
-    const freeSlots = socket.HasAuthority(1) !== 0 ? this.GetNullSlotCount() : this.GetEmptySlotCount();
+    const freeSlots = socket.HasAuthority(AUTHORITY_JOIN_CLOSED) !== 0 ? this.GetNullSlotCount() : this.GetEmptySlotCount();
     if (freeSlots < socket.GetUserCount()) return 0;
     this.AddAllUser(socket, selects);
     this.AddSocket(socket);

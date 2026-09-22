@@ -23,6 +23,7 @@ import {
   SLOTSTATE_COLOR_MASK,
   SLOTSTATE_GROUP_CLEAR,
   SLOTSTATE_GROUP_MASK,
+  AUTHORITY_ALWAYS_ZERO,
 } from "./Defs.ts";
 import { CGameSession } from "./GameSession.ts";
 import type { CClientSocket } from "./ClientSocket.ts";
@@ -440,7 +441,7 @@ export class CPracticeSession extends CGameSession {
     const chiefUser = this.m_nChiefSlotidx < MAX_SESSION_SLOTS ? this.m_rgPlayer[this.m_nChiefSlotidx] : null;
     for (let slot = 0; slot < MAX_SESSION_SLOTS; slot++) {
       const user = this.m_rgPlayer[slot];
-      if (!user || user.HasAuthority(25) !== 0) continue;
+      if (!user || user.HasAuthority(AUTHORITY_ALWAYS_ZERO) !== 0) continue;
       const state0 = this.m_rgSlotState[slot * 3]!;
       if (++counts[this.GetColor(slot)]! === 1) teams++;
       players++;
