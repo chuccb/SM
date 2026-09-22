@@ -7,7 +7,7 @@ import {
   CLIENTSOCKET_HEADER_CODE_SND,
   CLIENTSOCKET_SEQ,
   CLIENTSOCKET_SEQ_DELTA,
-} from "../protocol/PacketIDs.ts";
+} from "../core/PacketSocket.ts";
 import { CMainPool } from "./MainPool.ts";
 
 /** CWebSocket — the ServerPort+1 web-mall listener socket. The framing is

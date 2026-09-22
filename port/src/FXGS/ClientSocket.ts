@@ -8,7 +8,7 @@ import {
   CLIENTSOCKET_HEADER_CODE_SND,
   CLIENTSOCKET_SEQ,
   CLIENTSOCKET_SEQ_DELTA,
-} from "../protocol/PacketIDs.ts";
+} from "../core/PacketSocket.ts";
 import { timeGetTime } from "../core/timeGetTime.ts";
 import { CUser } from "./User.ts";
 import { CCenterProcess } from "./CenterProcess.ts";

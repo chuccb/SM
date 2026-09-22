@@ -19,6 +19,20 @@ import {
 import { PacketLog } from "./PacketLog.ts";
 import { timeGetTime } from "./timeGetTime.ts";
 
+/** CClientSocket crypto and sequence framing parameters — CxLogin.exe.lst:4098B6
+ *  / FxServer.exe.lst:407D19. SetHeaderCode(rcv=0xC0, snd=0x66, mod=0xE7);
+ *  SetSequence(40, 40, 3, 3) = the sequence starts at 40 and rolls by 3. */
+export const CLIENTSOCKET_HEADER_CODE_RCV = 192; // 0xC0
+export const CLIENTSOCKET_HEADER_CODE_SND = 102; // 0x66
+export const CLIENTSOCKET_HEADER_CODE_MODIFIER = 231; // 0xE7
+export const CLIENTSOCKET_SEQ = 40;
+export const CLIENTSOCKET_SEQ_DELTA = 3;
+
+/** CClientSocket::FlushClientSocketSndBuffer's census gate (FxServer.exe.c
+ *  :9185, FxShop.exe.c:5278) — the socket/user count line prints at most
+ *  every 0x493E0 ms. */
+export const CLIENT_SOCKET_CENSUS_MS = 0x493e0;
+
 /** CA_CIPHER_LIBERAL=1 — deliver checksum-failing packets with a loud log.
  *  Diagnostic probe only; the original always rejects, and with the correct
  *  STREAM_CIPHER_STEP the live client's frames verify byte-exactly, so this

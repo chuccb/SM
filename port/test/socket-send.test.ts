@@ -5,15 +5,15 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { connect } from "node:net";
 import { createHash } from "node:crypto";
-import { CPacketSocket } from "../src/core/PacketSocket.ts";
-import { CReceivedPacket, CSendPacket, CipherDegree, enSocket } from "../src/core/Packet.ts";
-import { CLocalSocket } from "../src/shared/LocalSocket.ts";
 import {
   CLIENTSOCKET_HEADER_CODE_MODIFIER,
   CLIENTSOCKET_HEADER_CODE_SND,
   CLIENTSOCKET_SEQ,
   CLIENTSOCKET_SEQ_DELTA,
-} from "../src/protocol/PacketIDs.ts";
+  CPacketSocket,
+} from "../src/core/PacketSocket.ts";
+import { CReceivedPacket, CSendPacket, CipherDegree, enSocket } from "../src/core/Packet.ts";
+import { CLocalSocket } from "../src/shared/LocalSocket.ts";
 import { CLocalSocket as CCenterLocalSocket, type LocalSocketHost } from "../src/Center/CxCenter.ts";
 import { CBillingProcess, CWebSocket } from "../src/FXSS/FxShop.ts";
 import type { CDBMan } from "../src/db/DBMan.ts";

@@ -8,7 +8,7 @@ import {
   CLIENTSOCKET_HEADER_CODE_SND,
   CLIENTSOCKET_SEQ,
   CLIENTSOCKET_SEQ_DELTA,
-} from "../protocol/PacketIDs.ts";
+} from "../core/PacketSocket.ts";
 import { CUser } from "./User.ts";
 import { DeleteUtilSocket, DispatchUtilClientPacket } from "./MainPoolRuntime.ts";
 

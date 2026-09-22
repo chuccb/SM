@@ -1,7 +1,7 @@
 /** Native source unit: FX/FxServer/TimerThread.cpp. */
 import { timeGetTime } from "../core/timeGetTime.ts";
 import type { CDBMan } from "../db/DBMan.ts";
-import { CLIENT_SOCKET_CENSUS_MS } from "../protocol/CenterProtocol.ts";
+import { CLIENT_SOCKET_CENSUS_MS } from "../core/PacketSocket.ts";
 import { CHANNEL_TYPE_GUILD } from "./Defs.ts";
 import type { CChannelPool } from "./ChannelPool.ts";
 import { CClientSocket } from "./ClientSocket.ts";

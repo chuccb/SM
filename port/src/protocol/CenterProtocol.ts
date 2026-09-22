@@ -23,11 +23,6 @@ export const SVRIDX_IDENTIFY_XOR = 0x77;
 export const CENTER_GREETING_SIZE = 2 + 2; // version, socket descriptor
 export const LOCAL_SERVER_IDENTIFICATION_SIZE = 1 + 4 + 2 + 2; // class, index, versions
 
-/** CClientSocket::FlushClientSocketSndBuffer's census gate (FxServer.exe.c
- *  :9185, FxShop.exe.c:5278) — the socket/user count line prints at most
- *  every 0x493E0 ms. */
-export const CLIENT_SOCKET_CENSUS_MS = 0x493e0;
-
 /**
  * CLocalSocket::CLocalSocket — SetHeaderCode(rcv=96, snd=189, mod=231) and
  * SetSequence(40, 40, 0, 0) (CxLogin.exe.lst:40C1F3..40C22A).  A zero delta

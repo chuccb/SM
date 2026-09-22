@@ -1,6 +1,6 @@
 /** Native source unit: FX/FxShop/TimerThread.cpp. */
 import { timeGetTime } from "../core/timeGetTime.ts";
-import { CLIENT_SOCKET_CENSUS_MS } from "../protocol/CenterProtocol.ts";
+import { CLIENT_SOCKET_CENSUS_MS } from "../core/PacketSocket.ts";
 import type { CBillingProcess } from "./BillingProcess.ts";
 import { CClientSocket } from "./ClientSocket.ts";
 import type { CMainPool } from "./MainPool.ts";

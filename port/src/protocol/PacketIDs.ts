@@ -560,11 +560,3 @@ export function PacketIdName(tableKey: string, dir: "recv" | "send", id: number)
   return PacketIdDescriptor(tableKey, dir, id)?.canonicalName ?? null;
 }
 
-/** Client-facing socket crypto constants — CxLogin.exe.lst:4098B6
- *  / FxServer.exe.lst:407D19. SetHeaderCode(rcv=0xC0, snd=0x66, mod=0xE7);
- *  SetSequence(40, 40, 3, 3) = the sequence starts at 40 and rolls by 3. */
-export const CLIENTSOCKET_HEADER_CODE_RCV = 192; // 0xC0
-export const CLIENTSOCKET_HEADER_CODE_SND = 102; // 0x66
-export const CLIENTSOCKET_HEADER_CODE_MODIFIER = 231; // 0xE7
-export const CLIENTSOCKET_SEQ = 40;
-export const CLIENTSOCKET_SEQ_DELTA = 3;
