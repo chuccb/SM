@@ -1,7 +1,7 @@
 /** Native source unit: FX/FxShop/BillingProcess.cpp. */
 import { CDBMan } from "../db/DBMan.ts";
 import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
-import { ItemCategory } from "../common/Item.ts";
+import { ItemCategory, IsInventoryAddable } from "../common/Item.ts";
 import {
   Shop2Billing_LegacyPacket,
   Shop2Billing_CouponPacket,
@@ -21,7 +21,9 @@ import { CItemMan } from "./ItemMan.ts";
 import { CLocalUserTable } from "./LocalUserTable.ts";
 import { CTranxCtrl } from "./TranxCtrl.ts";
 import { CMainSystem } from "./MainSystem.ts";
+import { CCenterProcess } from "./CenterProcess.ts";
 import { EncodeVariantTime } from "../core/VariantTime.ts";
+import { SHOP_PERMANENT_EXPIRY_LEVEL, SHOP_PERMANENT_VALIDITY_DAYS } from "./Defs.ts";
 
 const BILLING_RECONNECT_TICKS = 0x28;
 const BILLING_RTT_TICKS = 0x5dc;
@@ -295,7 +297,7 @@ export class CBillingProcess {
 
   private LocalPurchaseError(user: CUser, message: string): void {
     if (user.m_fTranxInProgress !== 0) return;
-    const isGift = user.m_strTranxInfo.length > 0 && user.m_strTranxInfo !== user.GetName();
+    const isGift = user.m_strTranxInfo.length > 0;
     const errCode = isGift ? 5 : 1;
     const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
     p.Encode1(errCode);
@@ -372,48 +374,157 @@ export class CBillingProcess {
    * Native ignores the middle dword (stock in local billing) and uses
    * User+720 (StockSN) for ShopItem lookup. Local billing performs atomic
    * delivery on 321, so Shop must NOT insert a second inventory row here.
-   * External settlement remains unsupported and is cancelled using the
-   * native orphan-user 321/result=2 path.
+   * External billing follows native two-phase inventory insertion and 321.
    */
   OnPurchaseOKTw(n: CReceivedPacket): void {
     const r = new BillingReader(n.m_pBlock.subarray(n.m_uOffset, n.m_uLength));
     try {
       r.u32(); r.u32(); r.u32();
       const reference = r.string();
-      const serial = r.u32(); // global serial — native uses FindUserFromGlobalSerialNo
-      const _ignoredStock = r.u32(); // native discards; local billing echoes stock here
+      const serial = r.u32();
+      const _ignoredStock = r.u32();
       const result = r.u32();
       const message = result === 1 ? r.string() : "";
       r.end();
-      const purchase = this.localPurchases.get(serial);
-      if (!purchase || !this.m_fLocalBilling) {
-        if (result === 0) this.Send(this.MakePurchaseConfirmTw(reference, serial, 0xffffffff, 2));
-        if (!this.m_fLocalBilling) {
-          const user = CLocalUserTable.ms_pInstance?.FindUserFromGlobalSerialNo(serial);
-          if (user && user.m_fTranxInProgress === 0) this.LocalPurchaseError(user, result ? message : BILLING_ERROR.unsupported);
+
+      if (this.m_fLocalBilling) {
+        const purchase = this.localPurchases.get(serial);
+        if (!purchase) {
+          if (result === 0) this.Send(this.MakePurchaseConfirmTw(reference, serial, 0xffffffff, 2));
+          return;
         }
+        if (purchase.reference !== null) {
+          if (reference === purchase.reference && result === 0) this.Send(purchase.request);
+          return;
+        }
+        if (result !== 0) {
+          this.LocalPurchaseError(purchase.user, message);
+          this.FinishLocalPurchase(serial);
+          return;
+        }
+        if (!/^[a-f0-9]{32}$/.test(reference)) return;
+        purchase.reference = reference;
+        purchase.request = this.MakePurchaseConfirmTw(reference, serial, purchase.stock,
+          purchase.user.m_pSocket && purchase.user.m_fTranxInProgress === 0 ? 0 : 2);
+        purchase.lastSend = Date.now();
+        this.Send(purchase.request);
         return;
       }
-      // Native ignores the stock field; do not reject on mismatch — the
-      // authoritative stock is User+720 (purchase.stock) for logging.
-      if (purchase.reference !== null) {
-        if (reference === purchase.reference && result === 0) this.Send(purchase.request);
-        return; // never let a late 312 failure overwrite a confirming purchase
+
+      // ---------- External billing path (native 00403C80) ----------
+      const user = CLocalUserTable.ms_pInstance?.FindUserFromGlobalSerialNo(serial);
+      if (!user || user.m_fTranxInProgress !== 0) {
+        if (result === 0) this.Send(this.MakePurchaseConfirmTw(reference, serial, 0xffffffff, 2));
+        return;
       }
       if (result !== 0) {
-        this.LocalPurchaseError(purchase.user, message);
-        this.FinishLocalPurchase(serial);
+        const isGift = user.m_strTranxInfo.length > 0;
+        const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
+        p.Encode1(isGift ? 5 : 1);
+        p.EncodeStr(message);
+        user.m_pSocket?.SendPacket(p);
+        user.ResetTranxInfo();
         return;
       }
-      if (!/^[a-f0-9]{32}$/.test(reference)) return;
-      purchase.reference = reference;
-      purchase.request = this.MakePurchaseConfirmTw(reference, serial, purchase.stock,
-        purchase.user.m_pSocket && purchase.user.m_fTranxInProgress === 0 ? 0 : 2);
-      purchase.lastSend = Date.now();
-      this.Send(purchase.request);
+      const grantOk = this.GrantExternalPurchase(user);
+      const confirmResult = grantOk ? 0 : 1;
+      if (grantOk) {
+        user.m_nTranxState = 1;
+        user.m_nTranxResult = 1;
+      } else {
+        user.m_nTranxResult = 0;
+      }
+      this.Send(this.MakePurchaseConfirmTw(reference, serial, user.m_nTranxStockSN, confirmResult));
+      if (!grantOk) {
+        this.RollbackExternalGrant(user);
+        user.ResetTranxInfo();
+      }
     } catch {
       console.warn("[Shop] Invalid billing 312; purchase remains pending for retry.");
     }
+  }
+
+  private GrantExternalPurchase(user: CUser): boolean {
+    const itemMan = CItemMan.ms_pInstance;
+    if (!itemMan) return false;
+    const parentSN = user.m_nTranxStockSN;
+    const parent = itemMan.GetShopItem(parentSN);
+    if (!parent) return false;
+    const isGift = user.m_strTranxInfo.length > 0;
+    const id = isGift ? user.m_strTranxInfo : user.GetName();
+    if (isGift && this.db.prConfirmUnregisteredId(id) === 0) return false;
+
+    const packageRows = parent.Category === ItemCategory.Package ? itemMan.GetPackageMapList(parent.SN) : [];
+    const grants: { shopItem: ShopItem; units: number }[] = [];
+    if (parent.Category === ItemCategory.Package) {
+      for (const pkg of packageRows) {
+        const child = itemMan.GetShopItem(pkg.StockSN);
+        if (!child) return false;
+        grants.push({ shopItem: child, units: pkg.Units * child.Unit });
+      }
+      if (grants.length === 0) return false;
+    } else {
+      grants.push({ shopItem: parent, units: parent.Unit });
+    }
+
+    const validityPeriod = parent.ValidityPeriod;
+    const validityLevel = parent.ValidityLevel;
+    const expiryDays = validityPeriod || SHOP_PERMANENT_VALIDITY_DAYS;
+    const expiryLevel = validityLevel === 0 ? SHOP_PERMANENT_EXPIRY_LEVEL : (user.m_nLevel + validityLevel) | 0;
+
+    let ok = true;
+    for (const g of grants) {
+      const child = g.shopItem;
+      const units = g.units;
+      user.m_nTranxItemSN = child.ItemSN;
+      user.m_nTranxAmount = units;
+
+      if (isGift) {
+        const preSN = this.db.prAddPreInventory(id, 0, child.ItemSN, child.SN, units, validityPeriod, validityLevel, "", "");
+        if (preSN < 0) { ok = false; break; }
+        user.m_listTranxInfo.push({ ItemSN: child.ItemSN, Amount: units, PreInventorySN: preSN, IsNew: 0, ValidityPeriod: validityPeriod });
+      } else {
+        if (child.Category === ItemCategory.PremiumTicket) {
+          const res = this.db.prSetPremiumTicket(id, validityPeriod);
+          if (res === 0) { ok = false; break; }
+          CCenterProcess.ms_pInstance?.SendAuthenCode(user.GetGlobalSerialNo(), 1);
+          user.m_listTranxInfo.push({ ItemSN: child.ItemSN, Amount: units, PreInventorySN: 0, IsNew: 1, ValidityPeriod: validityPeriod });
+        } else {
+          const addable = IsInventoryAddable(child.Category);
+          const res = this.db.prAddInventoryShop(id, child.ItemSN, child.SN, units, expiryDays, expiryLevel, addable);
+          if (res === 0) { ok = false; break; }
+          user.m_listTranxInfo.push({ ItemSN: child.ItemSN, Amount: units, PreInventorySN: 0, IsNew: res, ValidityPeriod: validityPeriod });
+        }
+      }
+    }
+    return ok;
+  }
+
+  private RollbackExternalGrant(user: CUser): void {
+    const isGift = user.m_strTranxInfo.length > 0;
+    const id = isGift ? user.m_strTranxInfo : user.GetName();
+    for (const entry of user.m_listTranxInfo) {
+      if (isGift) {
+        try {
+          const shard = this.db.GetUserHashNo(id);
+          (this.db as unknown as { inventory: { [k: number]: { query: (s: string) => { run: (...a: unknown[]) => unknown } } } }).inventory[shard]?.query("DELETE FROM FxPreInventory WHERE SN = ?").run(entry.PreInventorySN);
+        } catch {}
+      } else {
+        const itemMan = CItemMan.ms_pInstance;
+        const ui = itemMan?.GetUserItem(entry.ItemSN);
+        if (ui && ui.Category === 9) {
+          try {
+            this.db.prSetPremiumTicket(id, 0);
+            CCenterProcess.ms_pInstance?.SendAuthenCode(user.GetGlobalSerialNo(), 0);
+          } catch {}
+        } else if (entry.IsNew === 2) {
+          try { this.db.prUpdateInventoryAmountDelta(id, entry.ItemSN, -entry.Amount); } catch {}
+        } else {
+          try { this.db.prDeleteInventory(id, entry.ItemSN); } catch {}
+        }
+      }
+    }
+    user.m_listTranxInfo = [];
   }
 
   /** Native 004048F4..004049CD: successful 322 receipt → durable TranxLog row → reset. */
@@ -451,18 +562,108 @@ export class CBillingProcess {
       const reference = r.string(), serial = r.u32(), result = r.u32();
       const message = result !== 0 ? r.string() : "";
       r.end();
-      const purchase = this.localPurchases.get(serial);
-      if (!this.m_fLocalBilling || !purchase || purchase.reference !== reference) return;
-      if (result !== 0) this.LocalPurchaseError(purchase.user, message);
-      else {
+
+      if (this.m_fLocalBilling) {
+        const purchase = this.localPurchases.get(serial);
+        if (!purchase || purchase.reference !== reference) return;
+        if (result !== 0) this.LocalPurchaseError(purchase.user, message);
+        else {
+          const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
+          p.Encode1(0); p.EncodeBuffer(EncodeVariantTime(new Date()));
+          if (purchase.user.m_fTranxInProgress === 0) {
+            purchase.user.m_pSocket?.SendPacket(p);
+            this.RecordPurchaseTransaction(purchase.user, purchase.stock);
+          }
+        }
+        this.FinishLocalPurchase(serial);
+        return;
+      }
+
+      // ---------- External billing path (native 004047B0) ----------
+      const user = CLocalUserTable.ms_pInstance?.FindUserFromGlobalSerialNo(serial);
+      if (!user || user.m_fTranxInProgress !== 0) return;
+      if (result !== 0) {
+        // Rollback inventory inserted at 312 time.
+        if (user.m_nTranxStockSN !== 0) {
+          this.RollbackExternalGrant(user);
+        }
+        const isGift = user.m_strTranxInfo.length > 0;
         const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
-        p.Encode1(0); p.EncodeBuffer(EncodeVariantTime(new Date()));
-        if (purchase.user.m_fTranxInProgress === 0) {
-          purchase.user.m_pSocket?.SendPacket(p);
-          this.RecordPurchaseTransaction(purchase.user, purchase.stock);
+        p.Encode1(isGift ? 5 : 1);
+        p.EncodeStr(message);
+        user.m_pSocket?.SendPacket(p);
+        user.ResetTranxInfo();
+        return;
+      }
+      // Success: log transaction and send 204 0, then continue cart if active.
+      const isCart = user.m_fCartProcessing !== 0;
+      if (!isCart) {
+        const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
+        p.Encode1(0);
+        p.EncodeBuffer(EncodeVariantTime(new Date()));
+        user.m_pSocket?.SendPacket(p);
+      }
+      // Record transaction using last-child semantics.
+      const itemMan = CItemMan.ms_pInstance;
+      if (itemMan) {
+        const parent = itemMan.GetShopItem(user.m_nTranxStockSN);
+        if (parent) {
+          let itemSN = parent.ItemSN;
+          let amount = parent.Unit;
+          if (parent.Category === ItemCategory.Package) {
+            for (const mapping of itemMan.GetPackageMapList(parent.SN)) {
+              const child = itemMan.GetShopItem(mapping.StockSN);
+              if (!child) continue;
+              itemSN = child.ItemSN;
+              amount = mapping.Units * child.Unit;
+            }
+          }
+          CTranxCtrl.ms_pInstance?.AddTranx({
+            kind: Number(user.m_strTranxInfo.length !== 0),
+            stockSN: user.m_nTranxStockSN,
+            itemSN,
+            amount,
+            price: parent.Price,
+          });
         }
       }
-      this.FinishLocalPurchase(serial);
+      user.ResetTranxInfo();
+      if (isCart) {
+        // Continue the native cart walk after a successful billing item.
+        try {
+          const { CMainPool } = require('./MainPool.ts') as { CMainPool: { ms_pInstance: { PurchaseCartList: (u: CUser) => void } | null } };
+          const pool = CMainPool.ms_pInstance;
+          if (pool) {
+            // Decrement current entry count and advance as native does.
+            const idx = user.m_nCartCount;
+            const entry = user.m_anCart[idx];
+            if (entry) {
+              if (entry.cnt <= 0) user.m_nCartCount--;
+              if (user.m_nCartCount < 0) {
+                user.m_fCartProcessing = 0;
+                if (user.m_pSocket) {
+                  const p215 = new CSendPacket(S2C_ShopPacket.OnPurchaseCartListRes, CipherDegree.kPacketEncryptedCRC8);
+                  p215.Encode1(9);
+                  p215.Encode1(0);
+                  p215.EncodeBuffer(EncodeVariantTime(new Date()));
+                  user.m_pSocket.SendPacket(p215);
+                }
+                user.ResetTranxInfo();
+              } else {
+                const next = user.m_anCart[user.m_nCartCount];
+                if (next) next.cnt = (next.cnt - 1) | 0;
+                pool.PurchaseCartList(user);
+              }
+            } else {
+              user.m_fCartProcessing = 0;
+            }
+          } else {
+            user.m_fCartProcessing = 0;
+          }
+        } catch {
+          user.m_fCartProcessing = 0;
+        }
+      }
     } catch {
       console.warn("[Shop] Invalid billing 322; purchase remains pending for retry.");
     }
