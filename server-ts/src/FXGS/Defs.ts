@@ -217,3 +217,8 @@ export const AUTHORITY_BAN_CHIEF_BYPASS = 22; // DeferBanChief odd-slot and full
 export const AUTHORITY_LEVEL_BYPASS = 23; // CanStartGame level/premium bypass (GM)
 export const AUTHORITY_SUPREME_CHIEF = 24; // AddPlayer sets new chief (RoomTicket holder path)
 export const AUTHORITY_ALWAYS_ZERO = 25; // constant-0 stub, skipped in player counts
+
+/** CGameSession::OnReqTakeHouse — 5 lucci per house taken. */
+export const HOUSE_MONEY = 5;
+/** CGameSession::OnReqTakeHouse — fixed byte 5 after house list in packet 161 res. */
+export const HOUSE_PACKET_TAIL = 5;

@@ -28,6 +28,8 @@ import {
   MAX_SESSION_SLOTS,
   RETURN_STAGE_DELAY,
   GAME_DURATION_LIMIT_MS,
+  HOUSE_MONEY,
+  HOUSE_PACKET_TAIL,
   MAP_COLOR_IN_USE,
   SESSION_INFO_DETAIL_RESULT,
   SESSION_MODIFIED_MAP,
@@ -2253,7 +2255,7 @@ export class CGameSession extends CListSession {
       }
     }
     packet.Encode1At(houseCountOffset, taken & 0xff);
-    packet.Encode1(5);
+    packet.Encode1(HOUSE_PACKET_TAIL);
     const boxTotal = n.Decode1();
     const boxCountOffset = packet.m_uOffset;
     packet.Encode1(0);
@@ -2270,7 +2272,7 @@ export class CGameSession extends CListSession {
     }
     packet.Encode1At(boxCountOffset, boxTotal & 0xff);
     this.SendPacket(packet);
-    this.m_rgPlayer[slot]?.IncDecMoney(5 * taken);
+    this.m_rgPlayer[slot]?.IncDecMoney(HOUSE_MONEY * taken);
   }
 
   /** CGameSession::OnShobuari (162, FxServer.exe.c:41CC8B) — settle the score, no packet. */
