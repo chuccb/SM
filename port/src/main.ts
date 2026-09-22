@@ -156,7 +156,7 @@ if (!only || only === "shop") {
     process.argv.includes("--cfg") ? process.argv[process.argv.indexOf("--cfg") + 1] : `../FXSS/FXSS_00${idx}.cfg`;
   const transactionLogIndex = process.argv.indexOf("--tranx-log-dir");
   const shopOptions = transactionLogIndex < 0
-    ? {}
+    ? { transactionLogDirectory: join(import.meta.dir, "..", "..", "FXSS", "Log") }
     : { transactionLogDirectory: resolveCfg(process.argv[transactionLogIndex + 1]!) };
   const shop = await shopMain(resolveCfg(cfgFile), dbDir, shopOptions);
   RegisterCleanUp(() => shop.CleanUp());

@@ -293,15 +293,17 @@ export class CLocalServerMan {
       return `${server.nConnNo}${separator}`;
     }).join("");
     const html = `<html>\n<head>\n<style>\nbody { font-size:10pt; }\n</style>\n</head>\n<body>\n<h2>BnB Server Information</h2>\n<hr noshade size=1 width=500 align=left>\n<blockquote>\n${stamp} CA:${this.globalUserTable.GetTotalSize()} (${counts})</blockquote>\n<hr noshade size=1 width=500 align=left>\n<p>\n</body></html>`;
+    const logDir = this.cfg.GetAttribute("WebLogDir") || join(import.meta.dir, "..", "..", "Center");
+    const tmpPath = join(logDir, "tmp_html.txt");
     try {
-      writeFileSync("tmp_html.txt", html);
+      writeFileSync(tmpPath, html);
     } catch {
       return 0;
     }
     const target = this.cfg.GetAttribute("WebLog");
     if (target !== "") {
       try {
-        copyFileSync("tmp_html.txt", target);
+        copyFileSync(tmpPath, target);
       } catch {
         // Native CopyFile failure is ignored after the temporary file succeeds.
       }
