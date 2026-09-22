@@ -138,61 +138,70 @@ export class CBillingProcess {
   }
 
   OnPacket(n: CReceivedPacket): void {
-    // Family-aware dispatch — Tw outer opcode is E4 (302/312/322/342/352),
-    // while legacy billing/coupon use [E1 family][E1 opcode] (0/1, 0/1, 6/7/8).
-    // Tw opcodes' first byte is never 0 or 1 (0x2E,0x38,0x42,0x56,0x60), so a
-    // leading 0/1 safely indicates the legacy family framing.
+    // Billing link uses Tw framing for both families. After Tw header decode,
+    // the payload is either:
+    //   Tw: [E4 outer opcode 302/312/322/342/352][body...]
+    //   Legacy: [E1 family 0/1][E1 opcode 6/7/8 or 0/1][body...]
+    // Tw opcodes are big-endian DWORDs 302 etc, whose first byte is 0, so
+    // checking first byte alone is insufficient. We first peek the DWORD;
+    // if it matches a known Tw outer, dispatch as Tw, otherwise try legacy.
     const savedOffset = n.m_uOffset;
+    if (n.m_uLength - n.m_uOffset >= 4) {
+      const outerPeek = n.Decode4At(n.m_uOffset);
+      switch (outerPeek) {
+        case Billing2Shop_TwPacket.OnRemainCashTw:
+        case Billing2Shop_TwPacket.OnPurchaseOKTw:
+        case Billing2Shop_TwPacket.OnPurchaseConfirmTw:
+        case Billing2Shop_TwPacket.OnDigiQAuthen:
+        case Billing2Shop_TwPacket.OnTwRTT: {
+          const outer = n.Decode4();
+          switch (outer) {
+            case Billing2Shop_TwPacket.OnRemainCashTw:
+              this.OnRemainCashTw(n);
+              break;
+            case Billing2Shop_TwPacket.OnPurchaseOKTw:
+              this.OnPurchaseOKTw(n);
+              break;
+            case Billing2Shop_TwPacket.OnPurchaseConfirmTw:
+              this.OnPurchaseConfirmTw(n);
+              break;
+            case Billing2Shop_TwPacket.OnDigiQAuthen:
+              this.OnDigiQAuthen(n);
+              break;
+            case Billing2Shop_TwPacket.OnTwRTT:
+              console.log("[Shop] Received RTT Response");
+              break;
+            default:
+              return;
+          }
+          return;
+        }
+        default:
+          break;
+      }
+    }
+    // Legacy family framing: [E1 family][E1 opcode]
     if (n.m_uLength - n.m_uOffset >= 2) {
       const family = n.m_pBlock[n.m_uOffset]!;
       const opcode = n.m_pBlock[n.m_uOffset + 1]!;
-      if (family === 0 || family === 1) {
-        // Peek second byte small enough to be a legacy opcode (not a Tw length)
-        if (family === 1 && (opcode === 0 || opcode === 1)) {
-          n.m_uOffset += 2;
-          if (opcode === 0) this.OnCheckCoupon(n);
-          else this.OnUseCoupon(n);
-          return;
-        }
-        if (family === 0 && (opcode === 6 || opcode === 7 || opcode === 8)) {
-          n.m_uOffset += 2;
-          if (opcode === 6) this.OnGiftLimitOver(n);
-          else if (opcode === 7) this.OnGiftUnderAge(n);
-          else this.OnNotReady(n);
-          return;
-        }
-        // For unknown family 0/1 opcodes, do not fall through to Tw — they are
-        // legacy and intentionally ignored when no handler exists (matches
-        // native default return in OnPacket).
-        if (family === 0 || family === 1) {
-          // If opcode looks like a legacy request echo (7) or other, ignore.
-          // Restore offset for potential Tw retry only if family not 0/1?
-          // Since Tw first byte is never 0/1, any 0/1 here is legacy.
-          return;
-        }
+      if (family === 1 && (opcode === 0 || opcode === 1)) {
+        n.m_uOffset += 2;
+        if (opcode === 0) this.OnCheckCoupon(n);
+        else this.OnUseCoupon(n);
+        return;
       }
+      if (family === 0 && (opcode === 6 || opcode === 7 || opcode === 8)) {
+        n.m_uOffset += 2;
+        if (opcode === 6) this.OnGiftLimitOver(n);
+        else if (opcode === 7) this.OnGiftUnderAge(n);
+        else this.OnNotReady(n);
+        return;
+      }
+      // Unknown family 0/1 opcodes are legacy and intentionally ignored
+      // (matches native default return in OnPacket).
+      if (family === 0 || family === 1) return;
     }
     n.m_uOffset = savedOffset;
-    const outer = n.Decode4();
-    switch (outer) {
-      case Billing2Shop_TwPacket.OnRemainCashTw:
-        this.OnRemainCashTw(n);
-        break;
-      case Billing2Shop_TwPacket.OnPurchaseOKTw:
-        this.OnPurchaseOKTw(n);
-        break;
-      case Billing2Shop_TwPacket.OnPurchaseConfirmTw:
-        this.OnPurchaseConfirmTw(n);
-        break;
-      case Billing2Shop_TwPacket.OnDigiQAuthen:
-        this.OnDigiQAuthen(n);
-        break;
-      case Billing2Shop_TwPacket.OnTwRTT:
-        console.log("[Shop] Received RTT Response");
-        break;
-      default:
-        return;
-    }
   }
 
   /** CBillingProcess::OnGiftLimitOver (004017E0) — legacy billing gift cap.
