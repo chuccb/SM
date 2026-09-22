@@ -164,3 +164,6 @@ export const GAME_CONTEXT_DIE_COORDS_PER_SLOT = 2;
 export const GHOST_SLOT_NEW_FLAG = 0x80;
 /** CGameSession::Update trapped-grace multi-die header — event 5 (server die) <<4 | slot 0 = 80. */
 export const BOMBER_EVENT_MULTI_DIE_HEADER = 80;
+
+/** CChatPool — native checks `len > 0x400` (1024) for too-long chat/item/shout messages. */
+export const CHAT_MAX_PACKET_LEN = 0x400;

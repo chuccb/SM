@@ -2,7 +2,7 @@
 import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
 import { C2S_GameChatPacket, S2C_GamePacket } from "../core/protocol/PacketIDs.ts";
 import { MC_GameServerSendPacket } from "../core/protocol/CenterProtocol.ts";
-import { SESSION_IDX_NONE } from "./Defs.ts";
+import { CHAT_MAX_PACKET_LEN, SESSION_IDX_NONE } from "./Defs.ts";
 import { CUserPool } from "./UserPool.ts";
 import { CGameSessionTable } from "./GameSessionTable.ts";
 import { CCenterProcess } from "./CenterProcess.ts";
@@ -82,7 +82,7 @@ export class CChatPool extends CUserPool {
       return;
     }
     const senders = socket.m_apUser.filter((u): u is CUser => u !== null).map((u) => u.GetName());
-    if (senders.join(", ").length + msg.length + 3 > 0x400) {
+    if (senders.join(", ").length + msg.length + 3 > CHAT_MAX_PACKET_LEN) {
       console.error("[GS] User send too long chat msg. Disconnect connection");
       socket.PostClosePacket();
       return;
@@ -112,7 +112,7 @@ export class CChatPool extends CUserPool {
       return;
     }
     const senders = socket.m_apUser.filter((u): u is CUser => u !== null).map((u) => u.GetName());
-    if (senders.join(", ").length + msg.length + 2 > 0x400) {
+    if (senders.join(", ").length + msg.length + 2 > CHAT_MAX_PACKET_LEN) {
       console.error("[GS] User send too long chat msg. Disconnect connection");
       socket.PostClosePacket();
       return;
@@ -131,7 +131,7 @@ export class CChatPool extends CUserPool {
       console.error("[GS] Invalid item msg: from invalid bomber");
       return;
     }
-    if (msg.length + user.GetName().length + 10 > 0x400) {
+    if (msg.length + user.GetName().length + 10 > CHAT_MAX_PACKET_LEN) {
       console.error("[GS] Too long item msg. Disconnect connection");
       socket.PostClosePacket();
       return;
@@ -196,7 +196,7 @@ export class CChatPool extends CUserPool {
       return;
     }
     const user = socket.GetUser(idx)!;
-    if (msg.length + user.GetName().length + 10 > 0x400) {
+    if (msg.length + user.GetName().length + 10 > CHAT_MAX_PACKET_LEN) {
       console.error("[GS] User send too long chat msg. Disconnect connection");
       socket.PostClosePacket();
       return;
