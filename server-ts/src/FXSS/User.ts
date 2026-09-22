@@ -6,7 +6,7 @@ import { CDynInfoCalculator_GetLevel } from "../common/LevelTable.ts";
 import { CHARGE_KEY_MIN, CHARGE_KEY_MODULUS, NEXONCLUB_EMAIL_DOMAIN } from "./Defs.ts";
 import type { CClientSocket } from "./ClientSocket.ts";
 import { CMainSystem } from "./MainSystem.ts";
-import type { _USERACCOUNT, _USERDYNINFO, UserInventory } from "./Recordsets.ts";
+import type { _USERACCOUNT, _USERDYNINFO, UserInventory, CouponMap } from "./Recordsets.ts";
 
 export interface DBTranxInfo {
   ItemSN: number;
@@ -14,14 +14,6 @@ export interface DBTranxInfo {
   PreInventorySN: number;
   IsNew: number;
   ValidityPeriod: number;
-}
-
-export interface CouponMap {
-  CouponID: number;
-  ItemSN: number;
-  Amount: number;
-  ValidityPeriod: number;
-  LevelLimit: number;
 }
 
 // ============================ CUser ============================

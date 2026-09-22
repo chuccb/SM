@@ -4,6 +4,7 @@
  *  the results unit (163). */
 
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { CReceivedPacket, CSendPacket, CipherDegree, PACKET_TYPE_PLACEHOLDER } from "../core/Packet.ts";
 import { S2C_GamePacket, C2S_GameSessionPacket } from "../core/protocol/PacketIDs.ts";
 import { FunctionalItem } from "../common/Item.ts";

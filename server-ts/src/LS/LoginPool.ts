@@ -361,7 +361,7 @@ export class CLoginPool extends CUserPool {
     packet.EncodeStr(""); // dst — zero-initialized buffer
     socket.SendPacket(packet);
     const configDyn = CConfigDyn.ms_pInstance;
-    if (configDyn !== null && socket.m_nNoticeHash !== configDyn.GetNoticeHash())
+    if (configDyn !== null && configDyn.GetNoticeHash() !== 0 && socket.m_nNoticeHash !== configDyn.GetNoticeHash())
       socket.SendPacket(configDyn.GetNoticePacket());
     void strDes;
     strDes = "";

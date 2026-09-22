@@ -1,5 +1,6 @@
 /** Native source unit: CX/CxCenter/LocalServerMan.cpp. */
 import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { CServerConfig } from "../core/ServerConfig.ts";
 import { CReceivedPacket, CSendPacket } from "../core/Packet.ts";
 import {
