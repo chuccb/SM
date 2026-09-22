@@ -28,6 +28,10 @@ import type { CWebSocket } from "./WebSocket.ts";
 
 // FxShop.exe @0x47ECA0 — 購買商品時發生錯誤
 const ERR_PURCHASE = "購買商品時發生錯誤";
+// FxShop.exe @0x47ECC8 (src__0) — 未登錄的玩家
+const ERR_UNREGISTERED_USER = "未登錄的玩家";
+// FxShop.exe @0x47ECB4 (src__1) — 對方已經持有的物品
+const ERR_TARGET_ALREADY_OWNED = "對方已經持有的物品";
 
 /** CMainPool — the client dispatch (FxShop.exe.c:20547). */
 export class CMainPool extends CUserPool {
@@ -530,30 +534,101 @@ export class CMainPool extends CUserPool {
     socket.SendPacket(p);
   }
 
-  /** CMainPool::OnRequestPresent — client 218 [E2 stockSN][EStr targetId]:
-   *  ConfirmRegisteredId, then the billing gift request. */
+  /** CMainPool::OnRequestPresent (00416F90) — client 218 [E2 stockSN][EStr targetId]:
+   *  Verifies recipient exists (CDBMan::ConfirmRegisteredId), sets up transaction info,
+   *  validates package/inventory constraints for recipient, then triggers Taiwan billing. */
   OnRequestPresent(n: CReceivedPacket, socket: CClientSocket): void {
     const stockSN = n.Decode2();
     const targetId = n.DecodeStr();
     const user = socket.GetUser(socket.m_nSelectedUserIdx);
     if (!user) return;
-    if (this.billingProcess.m_fLocalBilling) { this.PurchaseError(user, 1, BILLING_ERROR.unsupported); return; }
-    if (this.db.prConfirmUnregisteredId(targetId) === 0) {
-      const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
-      p.Encode1(3);
-      p.EncodeStr(ERR_PURCHASE);
-      socket.SendPacket(p);
+    if (user.m_fTranxInProgress !== 0) return;
+
+    if (this.billingProcess.m_fLocalBilling) {
+      this.PurchaseError(user, 1, BILLING_ERROR.unsupported);
       return;
     }
-    if (!CBillingProcess.ms_pInstance || !CBillingProcess.ms_pInstance.IsConnected()) {
+
+    const itemMan = CItemMan.ms_pInstance;
+    const shopItem = itemMan ? itemMan.GetShopItem(stockSN) : null;
+    if (!shopItem) {
       const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
       p.Encode1(5);
       p.EncodeStr(ERR_PURCHASE);
       socket.SendPacket(p);
       return;
     }
-    const item = CItemMan.ms_pInstance!.GetShopItem(stockSN);
-    CBillingProcess.ms_pInstance.RequestGift(user, targetId, stockSN, item?.Price ?? 0);
+
+    if (this.db.prConfirmUnregisteredId(targetId) === 0) {
+      const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
+      p.Encode1(3);
+      p.EncodeStr(ERR_UNREGISTERED_USER);
+      socket.SendPacket(p);
+      return;
+    }
+
+    if (!this.billingProcess.IsConnected() || user.m_nTranxStockSN !== 0) {
+      this.PurchaseError(user, 5, ERR_PURCHASE);
+      return;
+    }
+
+    user.m_nTranxStockSN = stockSN;
+    user.m_nTranxAmount = shopItem.Unit;
+    user.m_nTranxItemSN = shopItem.ItemSN;
+    user.m_nTranxState = 0;
+    user.m_strTranxInfo = targetId;
+
+    const packages = shopItem.Category === ItemCategory.Package ? itemMan!.GetPackageMapList(shopItem.SN) : [];
+    if (shopItem.Category === ItemCategory.Package) {
+      for (const pkg of packages) {
+        const sub = itemMan!.GetShopItem(pkg.StockSN);
+        if (!sub) {
+          this.PurchaseError(user, 5, ERR_PURCHASE);
+          user.ResetTranxInfo();
+          return;
+        }
+        const owned = (this.db.prIsValidInventory(targetId, sub.ItemSN) + this.db.prIsValidPreInventory(targetId, sub.ItemSN)) | 0;
+        if (owned !== 0 && sub.Category !== ItemCategory.Consumable && sub.Category !== ItemCategory.LimitedItem) {
+          this.PurchaseError(user, 4, ERR_TARGET_ALREADY_OWNED);
+          user.ResetTranxInfo();
+          return;
+        }
+        const ui = itemMan!.GetUserItem(sub.ItemSN);
+        if (ui && sub.Category === ItemCategory.LimitedItem && owned >= ui.nAttr1) {
+          this.PurchaseError(user, 11, formatLimit(ui.nAttr1));
+          user.ResetTranxInfo();
+          return;
+        }
+      }
+    } else if (shopItem.Category === ItemCategory.LimitedItem) {
+      const ui = itemMan!.GetUserItem(shopItem.ItemSN);
+      if (!ui) {
+        console.error(`[Shop] Invalid item sn (OnReqPurchaseStockItem) = ${shopItem.ItemSN}`);
+        this.PurchaseError(user, 1, ERR_PURCHASE);
+        user.ResetTranxInfo();
+        return;
+      }
+      const owned = (this.db.prIsValidInventory(targetId, shopItem.ItemSN) + this.db.prIsValidPreInventory(targetId, shopItem.ItemSN)) | 0;
+      if (owned >= ui.nAttr1) {
+        this.PurchaseError(user, 11, formatLimit(ui.nAttr1));
+        user.ResetTranxInfo();
+        return;
+      }
+    } else if (!IsInventoryAddable(shopItem.Category)) {
+      const owned = (this.db.prIsValidInventory(targetId, shopItem.ItemSN) + this.db.prIsValidPreInventory(targetId, shopItem.ItemSN)) | 0;
+      if (owned !== 0) {
+        this.PurchaseError(user, 4, ERR_TARGET_ALREADY_OWNED);
+        user.ResetTranxInfo();
+        return;
+      }
+    }
+
+    if (shopItem.MoneyType !== 0) {
+      this.PurchaseError(user, 5, ERR_PURCHASE);
+      user.ResetTranxInfo();
+    } else {
+      this.billingProcess.RequestPurchaseTw(user, shopItem);
+    }
   }
 
   /** CMainPool::OnRequestUseCoupon — client 219 [EStr coupon][EStr id]. */

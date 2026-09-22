@@ -9,7 +9,7 @@ import { EnsureCAItemCatalog } from "../src/db/CAItemImport.ts";
 import { CItemMan } from "../src/FXSS/ItemMan.ts";
 import { PackageMap, ShopItem, UserItem } from "../src/FXSS/Recordsets.ts";
 import { CMainPool, CUser, CClientSocket, CBillingProcess, CCenterProcess } from "../src/FXSS/FxShop.ts";
-import { CReceivedPacket, CSendPacket, enSocket } from "../src/core/Packet.ts";
+import { CReceivedPacket, CSendPacket, CipherDegree, enSocket } from "../src/core/Packet.ts";
 
 let dir: string, db: CDBMan, pool: CMainPool, billing: CBillingProcess, items: CItemMan, user: CUser;
 let prior: readonly [CMainPool | null, CBillingProcess | null, CItemMan | null, CCenterProcess | null];
@@ -195,3 +195,61 @@ test("native cash path ignores a negative debit return; grants are not rolled ba
     expect([money(), user.m_nCash]).toEqual([200000, 199900]);
   } finally { debit.mockRestore(); }
 });
+
+test("gift purchase: unregistered recipient returns opcode 204 error 3", () => {
+  stock(12);
+  billing.m_fConnected = 1;
+  const p = new CSendPacket(undefined, CipherDegree.kPacketRaw);
+  p.Encode2(5000);
+  p.EncodeStr("nonexistent_user");
+  const recv = new CReceivedPacket();
+  recv.SetCipherDegree(CipherDegree.kPacketRaw);
+  recv.SetRcvPacket(p.m_pBlock.subarray(0, p.m_uOffset), p.m_uOffset);
+  pool.OnRequestPresent(recv, user.m_pSocket as any);
+  const res = result();
+  expect(res.code).toBe(3);
+  expect(res.message).toBe("未登錄的玩家");
+});
+
+test("gift purchase: already owned non-stackable item returns opcode 204 error 4", () => {
+  const targetId = "target_user";
+  db.prCreateUser(targetId, targetId, "fixture", "", 0, 0, "", "", 0, "", "", "", "", "");
+  db.inventory[db.GetUserHashNo(targetId)].query("INSERT INTO FxUserInventory(UserID,ItemSN,Amount,DateCreated,LevelCreated) VALUES(?,?,?,'2099-01-01T00:00:00Z',2000)").run(targetId, 100, 1);
+  stock(12);
+  billing.m_fConnected = 1;
+  const p = new CSendPacket(undefined, CipherDegree.kPacketRaw);
+  p.Encode2(5000);
+  p.EncodeStr(targetId);
+  const recv = new CReceivedPacket();
+  recv.SetCipherDegree(CipherDegree.kPacketRaw);
+  recv.SetRcvPacket(p.m_pBlock.subarray(0, p.m_uOffset), p.m_uOffset);
+  pool.OnRequestPresent(recv, user.m_pSocket as any);
+  const res = result();
+  expect(res.code).toBe(4);
+  expect(res.message).toBe("對方已經持有的物品");
+});
+
+test("gift purchase: valid gift request dispatches RequestPurchaseTw when MoneyType==0", () => {
+  const targetId = "target_user2";
+  db.prCreateUser(targetId, targetId, "fixture", "", 0, 0, "", "", 0, "", "", "", "", "");
+  const s = stock(12);
+  s.MoneyType = 0;
+  billing.m_fConnected = 1;
+  const request = spyOn(billing, "RequestPurchaseTw").mockImplementation(() => {});
+  try {
+    const p = new CSendPacket(undefined, CipherDegree.kPacketRaw);
+    p.Encode2(5000);
+    p.EncodeStr(targetId);
+    const recv = new CReceivedPacket();
+    recv.SetCipherDegree(CipherDegree.kPacketRaw);
+    recv.SetRcvPacket(p.m_pBlock.subarray(0, p.m_uOffset), p.m_uOffset);
+    pool.OnRequestPresent(recv, user.m_pSocket as any);
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(user.m_strTranxInfo).toBe(targetId);
+    expect(user.m_nTranxStockSN).toBe(5000);
+    expect(packets).toEqual([]);
+  } finally {
+    request.mockRestore();
+  }
+});
+
