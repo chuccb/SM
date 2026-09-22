@@ -17,7 +17,7 @@ import {
   GetLegacyPortUserHashNo,
   GetUserHashNo,
   USER_DB_SHARD_COUNT,
-} from "./DBMan.ts";
+} from "../src/db/DBMan.ts";
 
 export const USER_SHARD_FORMULA = "ascii-lower(first-unsigned-byte)%6";
 export const LEGACY_PORT_USER_SHARD_FORMULA = "unicode-toLowerCase(first-code-unit-low-byte)%6";

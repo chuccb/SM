@@ -1,6 +1,6 @@
 /** Offline A23 shard audit/migration. Stop every server before migrate. */
 import { join, resolve } from "node:path";
-import { inspectUserShardLayout, migrateUserShards } from "../src/db/UserShardMigration.ts";
+import { inspectUserShardLayout, migrateUserShards } from "./UserShardMigration.ts";
 
 const USAGE = `Usage:
   bun tools/user-shards.ts inspect [--db DIRECTORY]

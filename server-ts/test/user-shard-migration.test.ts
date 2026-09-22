@@ -11,7 +11,7 @@ import {
   GetLegacyPortUserHashNo,
   GetUserHashNo,
 } from "../src/db/DBMan.ts";
-import { inspectUserShardLayout, migrateUserShards } from "../src/db/UserShardMigration.ts";
+import { inspectUserShardLayout, migrateUserShards } from "../tools/UserShardMigration.ts";
 
 function withDirectory(run: (directory: string) => void): void {
   const directory = mkdtempSync(join(tmpdir(), "user-shards-"));
