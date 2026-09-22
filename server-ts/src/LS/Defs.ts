@@ -34,13 +34,14 @@ export const NEWUSER_RESULT = {
   Failure: 1,
 } as const;
 
-/** Client 6 OnReqConnectToSvrRes gate codes — CCenterProcess::CheckEnterGame (5964).
- *  0 no game state, 1 success, 4 version mismatch, 5 server type unavailable.
- *  Values 4/5 are also used as client-visible failure codes.
+/** Client 6 OnReqConnectToSvrRes gate codes — CCenterProcess::CheckEnterGame (5964) and
+ *  CUser::CheckConnectingToSvr (center). 0 no game state, 1 success, 2 premium required
+ *  (center type 41 without ticket), 4 version mismatch, 5 server type unavailable.
  */
 export const CONNECT_GATE_RESULT = {
   NoGameState: 0,
   Success: 1,
+  PremiumRequired: 2,
   VersionMismatch: 4,
   ServerTypeUnavailable: 5,
 } as const;

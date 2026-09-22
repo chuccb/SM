@@ -1,6 +1,6 @@
 /** Native source unit: CX/CxCenter/User.cpp. */
 import { GetTickCount } from "../core/GetTickCount.ts";
-import { CONNECTION_TIMEOUT_MS, PREMIUM_CHANNEL_TYPE, SERVER_IDX_NONE } from "./Defs.ts";
+import { CONNECT_GATE_RESULT, CONNECTION_TIMEOUT_MS, PREMIUM_CHANNEL_TYPE, SERVER_IDX_NONE } from "./Defs.ts";
 import { SVRCLASS_GAME, SVRCLASS_LOGIN, SVRCLASS_SHOP } from "../core/protocol/CenterProtocol.ts";
 import type { CLocalServer } from "./LocalServer.ts";
 import type { CGlobalUserTable } from "./GlobalUserTable.ts";
@@ -105,7 +105,7 @@ export class CUser {
       return 0;
     }
     // the enterable-type-41 premium gate: CUser+56 is the LS premium ticket
-    if (svr.nType === PREMIUM_CHANNEL_TYPE && this.nAuthencode !== 1) return 2;
+    if (svr.nType === PREMIUM_CHANNEL_TYPE && this.nAuthencode !== 1) return CONNECT_GATE_RESULT.PremiumRequired;
     // The check itself arms the deadline (00415512..00415520). A later
     // member's refusal does not undo this flag, even when no move follows.
     this.m_fConnecting = 1;

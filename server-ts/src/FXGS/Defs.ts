@@ -107,12 +107,14 @@ export const IS_LADDER_GAME = 0;
  *  (SendGameResult → SendBigLuckMsg; GetWinExp never sets the trigger flag). */
 export const STR_BIG_LUCK_MSG = "\x5b\xbe\xcb\xb8\xb2\x5d\x20\x25\x73\x20\xb4\xd4\xb2\xb2\xbc\xad\x20\xc7\xc1\xb8\xae\xb9\xcc\xbe\xf6\x20\xc3\xa4\xb3\xce\xbf\xa1\xbc\xad\x20\xb0\xe6\xc7\xe8\xc4\xa1\x20\x31\x30\x30\xb9\xe8\xc0\xc7\x20\xc7\xe0\xbf\xee\xc0\xbb\x20\xbe\xf2\xc0\xb8\xbc\xcc\xbd\xc0\xb4\xcf\xb4\xd9\x2e";
 
-/** Client 6 OnReqConnectToSvrRes gate codes — CCenterProcess::CheckEnterGame.
- *  0 no game state, 1 success, 4 version mismatch, 5 server type unavailable.
+/** Client 6 OnReqConnectToSvrRes gate codes — CCenterProcess::CheckEnterGame and
+ *  CUser::CheckConnectingToSvr (center). 0 no game state, 1 success, 2 premium required
+ *  (center type 41 without ticket), 4 version mismatch, 5 server type unavailable.
  *  Shared with LS (same native logic). */
 export const CONNECT_GATE_RESULT = {
   NoGameState: 0,
   Success: 1,
+  PremiumRequired: 2,
   VersionMismatch: 4,
   ServerTypeUnavailable: 5,
 } as const;

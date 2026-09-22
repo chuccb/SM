@@ -16,3 +16,12 @@ export const USER_COUNT_REPORT_TICKS = 750;
 export const CLOCK_REPORT_TICKS = 1_500;
 /** CUser::CheckConnectingToSvr premium gate — server type 41 is the premium channel (enterable only with authencode 1). */
 export const PREMIUM_CHANNEL_TYPE = 41;
+/** Client 6 OnReqConnectToSvrRes gate codes — center CheckConnectingToSvr returns 2 for premium required,
+ *  plus CheckEnterGame codes 0/1/4/5 shared with LS/GS. */
+export const CONNECT_GATE_RESULT = {
+  NoGameState: 0,
+  Success: 1,
+  PremiumRequired: 2,
+  VersionMismatch: 4,
+  ServerTypeUnavailable: 5,
+} as const;
