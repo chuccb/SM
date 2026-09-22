@@ -15,13 +15,18 @@ import { CLocalUserTable } from "./LocalUserTable.ts";
 import type { CCenterProcess } from "./CenterProcess.ts";
 import { RegisterLoginPool } from "./runtime/LoginRuntime.ts";
 import { CUserPool } from "./UserPool.ts";
-
-/** "현재 게임을 하고 계시는 곳" (byte_47A458, EUC-KR) — the double-login notice. */
-const STR_ALREADY_PLAYING = "\xc7\xf6\xc0\xe7 \xb0\xd4\xc0\xd3\xc0\xbb \xc7\xcf\xb0\xed \xb0\xe8\xbd\xc3\xb4\xc2 \xb0\xf7";
-/** aPc (CxLogin.exe.lst: .text:0040F85C push offset aPc ; "PC") */
-const STR_PC = "PC";
-/** `rand() & 3` at CxLogin 0040EAFF..0040EB08. */
-const GAME_ROOM_CODE_MASK = 0x3;
+import {
+  LOGIN_RESULT,
+  NEWUSER_RESULT,
+  CONNECT_GATE_RESULT,
+  GAME_ROOM_CODE_MASK,
+  STR_ALREADY_PLAYING,
+  STR_PC,
+  LOGIN_ENC_KEY_ID,
+  LOGIN_ENC_KEY_PW,
+  CHANNEL_HASH_MISMATCH,
+  CHANNEL_HASH_MATCH,
+} from "./Defs.ts";
 
 /** CLoginPool extends CUserPool — owns every client socket and the handlers. */
 export class CLoginPool extends CUserPool {
@@ -135,8 +140,8 @@ export class CLoginPool extends CUserPool {
     if (inited > 0) {
       do {
         const user = socket.GetUser(userIdx)!;
-        const id = n.DecodeEncryptedStr(0x11223344);
-        const pw = n.DecodeEncryptedStr(0x44332211);
+        const id = n.DecodeEncryptedStr(LOGIN_ENC_KEY_ID);
+        const pw = n.DecodeEncryptedStr(LOGIN_ENC_KEY_PW);
         inited = CDBMan_InitUser(this.m_db, user, id, pw);
         if (inited !== 0) break;
         userIdx++;
@@ -145,7 +150,8 @@ export class CLoginPool extends CUserPool {
     socket.m_nNoticeHash = n.Decode4();
     if (inited !== 0) {
       const packet = new CSendPacket(S2C_LoginResponsePacket.OnLoginRes, CipherDegree.kPacketEncryptedCRC8);
-      packet.Encode1(inited >= 2 && inited <= 3 ? 1 : 3);
+      // Native: inited 2..3 → 1, else 3. inited 3 = invalid id/pw, 1 = DB failure.
+      packet.Encode1(inited >= 2 && inited <= 3 ? LOGIN_RESULT.InvalidCredentials : LOGIN_RESULT.DBFailure);
       packet.Encode1(userIdx);
       socket.SendPacket(packet);
     } else {
@@ -220,7 +226,7 @@ export class CLoginPool extends CUserPool {
     const nSvrIdx = n.Decode4();
     const nVersion = n.Decode2();
     const gate = this.m_center.CheckEnterGame(nServerType, nSvrIdx, nVersion);
-    if (gate === 1) {
+    if (gate === CONNECT_GATE_RESULT.Success) {
       const userCount = socket.GetUserCount();
       const packet = new CSendPacket(MC_LoginServerSendPacket.OnReqConnectToSvr); // MC
       packet.Encode1(userCount);
@@ -258,7 +264,7 @@ export class CLoginPool extends CUserPool {
       return;
     }
     const fHashMatch = n.Decode4() === this.m_channelCache.GetHashValue();
-    const infoPacket = this.m_channelCache.GetInfoPacket(fHashMatch ? 0 : 1);
+    const infoPacket = this.m_channelCache.GetInfoPacket(fHashMatch ? CHANNEL_HASH_MATCH : CHANNEL_HASH_MISMATCH);
     socket.SendPacket(infoPacket);
     socket.SendPacket(this.m_channelCache.GetStatePacket());
     const p14 = new CSendPacket(S2C_LoginNoticePacket.OnChannelsGameState, CipherDegree.kPacketEncryptedCRC8);
@@ -323,7 +329,7 @@ export class CLoginPool extends CUserPool {
     }
     if (fAllAdded === 0) {
       const packet = new CSendPacket(S2C_LoginResponsePacket.OnLoginRes, CipherDegree.kPacketEncryptedCRC8);
-      packet.Encode1(2);
+      packet.Encode1(LOGIN_RESULT.CenterFailure);
       socket.SendPacket(packet);
       return;
     }
@@ -335,7 +341,7 @@ export class CLoginPool extends CUserPool {
     // strDes: the double-login message (EUC-KR when 1 user, "PC" when several).
     let strDes = count <= 1 ? STR_ALREADY_PLAYING : STR_PC;
     const packet = new CSendPacket(S2C_LoginResponsePacket.OnLoginRes, CipherDegree.kPacketEncryptedCRC8);
-    packet.Encode1(0);
+    packet.Encode1(LOGIN_RESULT.Success);
     packet.Encode2(fAllSimpleInfo !== 0 ? 1 : 0);
     packet.EncodeStr(strDes);
     packet.Encode1(count);
@@ -384,7 +390,7 @@ export class CLoginPool extends CUserPool {
     const result = n.Decode1();
     const packet = new CSendPacket(S2C_LoginResponsePacket.OnReqConnectToSvrRes, CipherDegree.kPacketEncryptedCRC8);
     packet.Encode1(result);
-    if (result === 1) {
+    if (result === CONNECT_GATE_RESULT.Success) {
       const svrType = n.Decode1();
       const svrIdx = n.Decode4();
       const ip = n.Decode4();
@@ -479,9 +485,7 @@ function CDBMan_RegisterNewUser(
     identityNo,
     birthday,
   );
-  if (ret !== 0) return 1;
+  if (ret !== 0) return NEWUSER_RESULT.Failure;
   console.log(`[LS] New User [${id}] Created`); // CxLogin.exe.c:10767
-  return 0;
-
-
+  return NEWUSER_RESULT.Success;
 }

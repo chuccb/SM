@@ -11,6 +11,7 @@ import { MACHINE_ID_BYTES, PeerAddressDword, type CClientSocket } from "./Client
 import type { CLoginPool } from "./LoginPool.ts";
 import { CUserPool } from "./UserPool.ts";
 import { RegisterLoginCenter } from "./runtime/LoginRuntime.ts";
+import { ADVERTISEMENT_TRAILING, CONNECT_GATE_RESULT } from "./Defs.ts";
 
 /** _Advertisement (FxAdvertisement row, 36-byte vector entry): std::string
  *  (12 bytes, no SSO) plus six int slots at +12..+32. UpdateAdvertisement
@@ -195,10 +196,10 @@ export class CCenterProcess {
 
   /** CCenterProcess::CheckEnterGame (CxLogin.exe.c:5964) */
   CheckEnterGame(nServerType: number, _nSvrIdx: number, nVersion: number): number {
-    if (this.m_vtGameState.length === 0) return 0;
-    if ((this.m_mapGameState.get(nServerType) ?? 0) === 0) return 5;
-    if ((this.m_mapGameVersion.get(nServerType) ?? 0) !== nVersion) return 4;
-    return 1;
+    if (this.m_vtGameState.length === 0) return CONNECT_GATE_RESULT.NoGameState;
+    if ((this.m_mapGameState.get(nServerType) ?? 0) === 0) return CONNECT_GATE_RESULT.ServerTypeUnavailable;
+    if ((this.m_mapGameVersion.get(nServerType) ?? 0) !== nVersion) return CONNECT_GATE_RESULT.VersionMismatch;
+    return CONNECT_GATE_RESULT.Success;
   }
 
   /** CCenterProcess::UpdateLevelLimit (CxLogin.exe.c:5235) */
@@ -290,7 +291,7 @@ export class CCenterProcess {
     packet.EncodeStr(adv.strImage);
     packet.Encode2(adv.Param1 & 0xffff);
     packet.Encode2(adv.Param2 & 0xffff);
-    packet.Encode2(60);
+    packet.Encode2(ADVERTISEMENT_TRAILING);
     // guild server list: at most 2 entries, the window start rotates per call
     const guildCount = this.m_vtGuildSvrList.length;
     let guildStart = 0;
