@@ -102,7 +102,7 @@ premium、限時、LimitEx、gift、coupon、cart 等限制詳見 [local-billing
   不先轉成 Unicode 中文再塞回現有 byte-oriented encoder。inspect 只在顯示商品名稱時解碼 Big5。
 - 例如商品 1102：`b07720283135add329` → **針 (15個)**，ItemSN=1、Unit=15、Price=FixedPrice=29、DataFile=`Item/Niddle`。
   商品 1103 的 50 個針為 79 點，而非一律 1 點。
-- `FXGS/iteminfo.txt`／`server-ts/iteminfo.txt` 是遊戲機率／掉落設定，不是 Shop 商品目錄，不應拿來代替 CAItem。
+- `FXGS/iteminfo.txt`／`server-ts/data/iteminfo.txt` 是遊戲機率／掉落設定，不是 Shop 商品目錄，不應拿來代替 CAItem。
 - `FXGS/FxServer.idx`／`.idd` 已存在；GS Boot 透過 `CIDFMan` 從 **GS cfg 旁的 FxServer** 載入。
   索引共 256 筆（226 Map、3 Attr 及其他條目），全部 offset/length 均落在 5,180,245-byte `.idd` 範圍內。
   `Attr/ItemAttr` 有 71 個遊戲道具項；原版 prefix 比對能將 `Item/Niddle` 對到第 46 項（0-based）`Item/ItemNiddle`。
