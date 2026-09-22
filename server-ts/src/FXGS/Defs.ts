@@ -167,3 +167,10 @@ export const BOMBER_EVENT_MULTI_DIE_HEADER = 80;
 
 /** CChatPool — native checks `len > 0x400` (1024) for too-long chat/item/shout messages. */
 export const CHAT_MAX_PACKET_LEN = 0x400;
+
+/** CPracticeSession — AI seats use bomber 5 and colour 7 (FxServer.exe.c:41745). */
+export const PRACTICE_AI_BOMBER = 5;
+export const PRACTICE_AI_COLOR = 7;
+/** CPracticeSession — AI level range 1..31 (FxServer.exe.c:41745 / 425B4F). */
+export const AI_LEVEL_MIN = 1;
+export const AI_LEVEL_MAX = 31;

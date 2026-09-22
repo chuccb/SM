@@ -7,6 +7,10 @@ import { timeGetTime } from "../core/timeGetTime.ts";
 import {
   AI_LEVEL_BAND,
   AI_LEVEL_BAND_TOP,
+  AI_LEVEL_MIN,
+  AI_LEVEL_MAX,
+  PRACTICE_AI_BOMBER,
+  PRACTICE_AI_COLOR,
   MAP_IDX_RANDOM,
   MAX_SESSION_SLOTS,
   SLOTSTATE_BOMBER_MASK,
@@ -99,8 +103,8 @@ export class CPracticeSession extends CGameSession {
     let band = AI_LEVEL_BAND * Math.floor(maxLevel / AI_LEVEL_BAND);
     if (band >= AI_LEVEL_BAND_TOP) band -= band % AI_LEVEL_BAND_TOP;
     let level = band + 1;
-    if (level < 1) level = 1;
-    if (level > 31) level = 31;
+    if (level < AI_LEVEL_MIN) level = AI_LEVEL_MIN;
+    if (level > AI_LEVEL_MAX) level = AI_LEVEL_MAX;
     for (let slot = 0; slot < MAX_SESSION_SLOTS; slot++) {
       this.m_anAILevel[slot] = level; // every seat carries the band level
       this.m_argpAISocket[slot] = slot >= userCount && slot < 2 * userCount ? socket : null;
@@ -108,8 +112,8 @@ export class CPracticeSession extends CGameSession {
         const p = slot * 3;
         // the closed bit is (slot >= 2*userCount) — the AI seats stay open
         this.m_rgSlotState[p] = (this.m_rgSlotState[p]! & ~1) | (slot >= 2 * userCount ? 1 : 0);
-        this.m_rgSlotState[p + 1] = (this.m_rgSlotState[p + 1]! & 0xc0) | 5; // bomber 5
-        this.m_rgSlotState[p + 2] = (this.m_rgSlotState[p + 2]! & 0xe0) | 7; // colour 7
+        this.m_rgSlotState[p + 1] = (this.m_rgSlotState[p + 1]! & 0xc0) | PRACTICE_AI_BOMBER;
+        this.m_rgSlotState[p + 2] = (this.m_rgSlotState[p + 2]! & 0xe0) | PRACTICE_AI_COLOR;
       }
       if (this.m_argpAISocket[slot] !== null) this.SetCurPlayer(this.m_nCurPlayerNum + 1);
     }
@@ -304,7 +308,7 @@ export class CPracticeSession extends CGameSession {
       socket.PostClosePacket();
       return;
     }
-    if (color === 7) {
+    if (color === PRACTICE_AI_COLOR) {
       console.error(`[GS] Invalid Color (OnSelectColor). Disconnect [${socket.GetInfoStr()}].`);
       socket.PostClosePacket();
       return;
@@ -367,7 +371,7 @@ export class CPracticeSession extends CGameSession {
     let level: number;
     if (up !== 0) level = cur < AI_LEVEL_BAND_TOP ? cur + AI_LEVEL_BAND : cur + AI_LEVEL_BAND_TOP;
     else level = cur <= AI_LEVEL_BAND_TOP + 1 ? cur - AI_LEVEL_BAND : cur - AI_LEVEL_BAND_TOP;
-    if (level > 31 || level < 1) {
+    if (level > AI_LEVEL_MAX || level < AI_LEVEL_MIN) {
       console.error("[GS] Wrong AI Level Change");
       return;
     }
