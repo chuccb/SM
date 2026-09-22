@@ -5,7 +5,7 @@ import { CServerConfig } from "../core/ServerConfig.ts";
 import { CReceivedPacket, CSendPacket, CipherDegree } from "../core/Packet.ts";
 import { S2C_GamePacket } from "../core/protocol/PacketIDs.ts";
 import { CENTER_VERSION, CONN_HELLO_VERSION, SVRCLASS_GAME } from "../core/protocol/CenterProtocol.ts";
-import { CONN_PATCH_URL } from "./Defs.ts";
+import { CONN_PATCH_URL, PREMIUM_CHANNEL_TYPE } from "./Defs.ts";
 import type { CClientSocket } from "./ClientSocket.ts";
 import { DispatchClientPacket } from "./runtime/ClientSocketRuntime.ts";
 
@@ -40,7 +40,7 @@ export class CMainSystem {
 
   /** CMainSystem::IsPremiumChannel — the channel type is 41. */
   static IsPremiumChannel(): boolean {
-    return CMainSystem.ms_pInstance!.m_nChannelType === 41;
+    return CMainSystem.ms_pInstance!.m_nChannelType === PREMIUM_CHANNEL_TYPE;
   }
 
   /** CMainSystem::OnConnEstablished — the connect-time packet 0

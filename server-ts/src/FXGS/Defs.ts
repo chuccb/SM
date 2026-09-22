@@ -2,11 +2,14 @@
  *  sentinels and the timing/hash values, named once for the whole unit. */
 
 /** MainSystem+8 — the channel types the GS behaviour keys on (the Center
- *  cfg's FXGSTypeN values; 77 = the guild channel). */
+ *  cfg's FXGSTypeN values; 41 = premium, 77 = guild). */
+export const PREMIUM_CHANNEL_TYPE = 41;
 export const CHANNEL_TYPE_GUILD = 77;
 /** …99 (cfg FXGSType4) is the accounting-log gate: SendGameResult's three
  *  exp/win/lose Reports only print on that channel type. */
 export const ACCOUNTING_LOG_CHANNEL_TYPE = 99;
+/** 108 — NoShopItemServer: UseSpecialItem with count!=0 is rejected (OnSetBomberEvent). */
+export const CHANNEL_TYPE_NO_SHOP = 108;
 /** the off-screen (x,y) pair the 80 death report carries for a bomber killed
  *  by a trap or by the UDP-loss sweep (:33026, two Encode2(9999)). */
 export const DEATH_COORD = 9999;
@@ -154,3 +157,8 @@ export const GAME_CONTEXT_BOX_CAPACITY = 250;
 export const GAME_CONTEXT_BOX_SERIAL_START = 126;
 export const GAME_CONTEXT_BOMB_CAPACITY = 150;
 export const GAME_CONTEXT_DIE_COORDS_PER_SLOT = 2;
+
+/** CGameSession::OnRequestGenerateGhost — slot|0x80 marks a newly spawned ghost (vs transferred). */
+export const GHOST_SLOT_NEW_FLAG = 0x80;
+/** CGameSession::Update trapped-grace multi-die header — event 5 (server die) <<4 | slot 0 = 80. */
+export const BOMBER_EVENT_MULTI_DIE_HEADER = 80;

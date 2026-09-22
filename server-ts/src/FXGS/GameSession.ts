@@ -12,6 +12,9 @@ import { timeGetTime } from "../core/timeGetTime.ts";
 import {
   ACCOUNTING_LOG_CHANNEL_TYPE,
   CHANNEL_TYPE_GUILD,
+  CHANNEL_TYPE_NO_SHOP,
+  GHOST_SLOT_NEW_FLAG,
+  BOMBER_EVENT_MULTI_DIE_HEADER,
   DEATH_COORD,
   GAME_CONTEXT_BOMB_CAPACITY,
   GAME_CONTEXT_BOX_CAPACITY,
@@ -637,7 +640,7 @@ export class CGameSession extends CListSession {
       if (allDown) grace = ALL_PLAYERS_DOWN_GRACE_MS; // everybody down/goal/trapped: the short fuse
     }
     const packet2 = new CSendPacket(S2C_GamePacket.OnBomberEvent, CipherDegree.kPacketEncryptedCRC8);
-    packet2.Encode1(80);
+    packet2.Encode1(BOMBER_EVENT_MULTI_DIE_HEADER);
     packet2.Encode2(0);
     packet2.Encode2(0);
     const countOffset2 = packet2.m_uOffset;
@@ -1291,7 +1294,7 @@ export class CGameSession extends CListSession {
     }
     if (n > 0) {
       const packet = new CSendPacket(S2C_GamePacket.OnBomberEvent, CipherDegree.kPacketEncryptedCRC8);
-      packet.Encode1(80);
+      packet.Encode1(BOMBER_EVENT_MULTI_DIE_HEADER);
       packet.Encode2(0);
       packet.Encode2(0);
       packet.Encode1(n);
@@ -1831,7 +1834,7 @@ export class CGameSession extends CListSession {
         const itemidx = n.Decode1();
         const count = n.Decode1();
         if (count !== 0) {
-          if (CMainSystem.ms_pInstance!.m_nChannelType === 108) {
+          if (CMainSystem.ms_pInstance!.m_nChannelType === CHANNEL_TYPE_NO_SHOP) {
             console.error(`[GS] ${this.m_rgPlayer[slot]?.GetName()} Try to Use ShopItem at NoShopItemServer`);
             return;
           }
@@ -2033,7 +2036,7 @@ export class CGameSession extends CListSession {
         this.m_nGhostCount++;
         const packet = new CSendPacket(S2C_GamePacket.OnGhostGenerate, CipherDegree.kPacketEncryptedCRC8);
         packet.Encode1(ghost);
-        packet.Encode1(slot | 0x80);
+        packet.Encode1(slot | GHOST_SLOT_NEW_FLAG);
         packet.Encode1(tag);
         this.SendPacket(packet);
       }
@@ -2074,7 +2077,7 @@ export class CGameSession extends CListSession {
       const b0 = this.m_rgSlotState[3 * i]!;
       const b2 = this.m_rgSlotState[3 * i + 2]!;
       console.log(
-        `[GS]           . slotidx(${i + 1}) : ${player.GetName()}[${socket.bunSocket?.remoteAddress ?? ""}] (${socket.GetUserCount()}P)   bomber:color:chief:state=${this.m_aBomberIdx[i]}:${b2 & 0x1f}:${(b0 & 2) !== 0 ? 1 : 0}:${(b0 >> 2) & 7}`,
+        `[GS]           . slotidx(${i + 1}) : ${player.GetName()}[${socket.bunSocket?.remoteAddress ?? ""}] (${socket.GetUserCount()}P)   bomber:color:chief:state=${this.m_aBomberIdx[i]}:${b2 & SLOTSTATE_COLOR_MASK}:${(b0 & SLOTSTATE_CHIEF) !== 0 ? 1 : 0}:${(b0 >> 2) & 7}`,
       );
     }
   }

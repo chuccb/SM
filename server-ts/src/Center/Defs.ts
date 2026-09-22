@@ -14,3 +14,5 @@ export const SERVER_STATE_BROADCAST_TICKS = 2;
 export const SERVER_STATE_BROADCAST_BATCH_SIZE = 10;
 export const USER_COUNT_REPORT_TICKS = 750;
 export const CLOCK_REPORT_TICKS = 1_500;
+/** CUser::CheckConnectingToSvr premium gate — server type 41 is the premium channel (enterable only with authencode 1). */
+export const PREMIUM_CHANNEL_TYPE = 41;
