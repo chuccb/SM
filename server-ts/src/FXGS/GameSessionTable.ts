@@ -14,6 +14,7 @@ import {
   SESSION_IDX_NONE,
   SESSION_SERIAL_NONE,
   SESSION_RESULT,
+  SESSION_INFO_DETAIL_RESULT,
 } from "./Defs.ts";
 import { CBomberAttr } from "./BomberAttr.ts";
 import { CPracticeSession } from "./PracticeSession.ts";
@@ -145,7 +146,7 @@ export class CGameSessionTable extends CBaseSessionTable {
       session.OnRequestSessionInfoDetail(socket);
     } else {
       const packet = new CSendPacket(S2C_GamePacket.OnSessionInfoDetailRes, CipherDegree.kPacketEncryptedCRC8);
-      packet.Encode1(0);
+      packet.Encode1(SESSION_INFO_DETAIL_RESULT.NotFound);
       socket.SendPacket(packet);
     }
     CBaseSession.UnlockBaseSessions(idx);

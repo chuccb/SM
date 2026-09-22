@@ -23,6 +23,7 @@ import {
   MAP_IDX_RANDOM,
   MAX_SESSION_SLOTS,
   RETURN_STAGE_DELAY,
+  SESSION_INFO_DETAIL_RESULT,
   SLOTSTATE_CHIEF,
   SLOTSTATE_COLOR_MASK,
   SLOTSTATE_GROUP_CLEAR,
@@ -2425,14 +2426,14 @@ export class CGameSession extends CListSession {
    */
   OnRequestSessionInfoDetail(socket: CClientSocket): void {
     const packet = new CSendPacket(S2C_GamePacket.OnSessionInfoDetailRes, CipherDegree.kPacketEncryptedCRC8);
-    packet.Encode1(1); // the room exists (this branch only runs for a live one)
+    packet.Encode1(SESSION_INFO_DETAIL_RESULT.Found); // the room exists (this branch only runs for a live one)
     for (let slot = 0; slot < MAX_SESSION_SLOTS; slot++) {
       const user = this.m_rgPlayer[slot];
       if (user === null) {
-        packet.Encode1(0);
+        packet.Encode1(SESSION_INFO_DETAIL_RESULT.NotFound);
         continue;
       }
-      packet.Encode1(1);
+      packet.Encode1(SESSION_INFO_DETAIL_RESULT.Found);
       packet.Encode1(0); // user+104 — no writer in FXGS (see the comment above)
       packet.EncodeStr(user.GetName());
       packet.Encode2(user.GetLookLevel());

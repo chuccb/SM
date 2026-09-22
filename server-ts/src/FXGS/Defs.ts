@@ -123,6 +123,12 @@ export const SESSION_RESULT = {
   AlreadySeated: 3,
 } as const;
 
+/** Session info detail (84) existence flag — 0 not found, 1 found (room exists). */
+export const SESSION_INFO_DETAIL_RESULT = {
+  NotFound: 0,
+  Found: 1,
+} as const;
+
 /** The session dimension everywhere: 8 slots / 8 colours / 8 loss-matrix rows
  *  (the original loops the same 8-slot tables with plain do/while). */
 export const MAX_SESSION_SLOTS = 8;
