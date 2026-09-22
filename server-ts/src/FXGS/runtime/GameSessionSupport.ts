@@ -8,7 +8,7 @@
  * dependencies from forming an unsafe JavaScript initialization cycle.  The
  * public source-unit façade remains GameSession.ts.
  */
-import { timeGetTime } from "../core/timeGetTime.ts";
+import { timeGetTime } from "../../core/timeGetTime.ts";
 import {
   GAME_CONTEXT_BOX_CAPACITY,
   GAME_CONTEXT_BOX_SERIAL_START,

@@ -7,7 +7,7 @@ import type { HOSTHANDLE } from "../shared/MTUDP.ts";
 import { S2C_GamePacket, C2S_GameSessionPacket } from "../protocol/PacketIDs.ts";
 import { timeGetTime } from "../core/timeGetTime.ts";
 import { CUserPool } from "./UserPool.ts";
-import { CreateChannelSocketList, SendChannelPacket } from "./ClientSocketRuntime.ts";
+import { CreateChannelSocketList, SendChannelPacket } from "./runtime/ClientSocketRuntime.ts";
 import {
   SESSION_IDX_CONNECTING,
   SESSION_IDX_MAX,
@@ -19,7 +19,7 @@ import { CPracticeSession } from "./PracticeSession.ts";
 import { CGameSession } from "./GameSession.ts";
 import { CBaseSession } from "./BaseSession.ts";
 import { CBaseSessionTable } from "./BaseSessionTable.ts";
-import { RegisterSessionRuntimeTable } from "./SessionTableRuntime.ts";
+import { RegisterSessionRuntimeTable } from "./runtime/SessionTableRuntime.ts";
 import type { CClientSocket } from "./ClientSocket.ts";
 import type { CUser } from "./User.ts";
 

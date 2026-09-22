@@ -16,7 +16,7 @@ import { CLocalUserTable } from "./LocalUserTable.ts";
 import type { CClientSocket } from "./ClientSocket.ts";
 import { CUser } from "./User.ts";
 import { ItemCategory, SLOT_DECORATION_COUNT } from "../shared/Item.ts";
-import { RegisterChannelPool } from "./ClientSocketRuntime.ts";
+import { RegisterChannelPool } from "./runtime/ClientSocketRuntime.ts";
 import { SESSION_IDX_NONE } from "./Defs.ts";
 
 /** Native free function SendGameSlotInfo (0040335B), shared by local and

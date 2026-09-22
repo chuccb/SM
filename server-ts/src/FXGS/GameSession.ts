@@ -33,21 +33,21 @@ import {
 } from "./Defs.ts";
 import { CBanChief } from "./BanChief.ts";
 import { CDynInfoCalculator } from "./DynInfoCalculator.ts";
-import { CGameClock, CGameContext } from "./GameSessionSupport.ts";
+import { CGameClock, CGameContext } from "./runtime/GameSessionSupport.ts";
 import { CSyncGameObjMan } from "./SyncGameObjMan.ts";
 import { CUdpLossRegulator } from "./UdpLossRegulator.ts";
 import { CBomberAttr } from "./BomberAttr.ts";
 import { CGameMapTmplList } from "./GameMapTmplList.ts";
 import { CItemAttr } from "./ItemAttr.ts";
-import { ClearSessionModifiedFlag, DestroySessionPlayer } from "./SessionTableRuntime.ts";
+import { ClearSessionModifiedFlag, DestroySessionPlayer } from "./runtime/SessionTableRuntime.ts";
 import { CGameSessionStrategy } from "./GameSessionStrategy.ts";
 import { CListSession } from "./ListSession.ts";
 import { CGuildSessionStrategy } from "./GuildSessionStrategy.ts";
 import { CMainSystem } from "./MainSystem.ts";
 import type { CClientSocket } from "./ClientSocket.ts";
-import { UpdateChannelRankList } from "./ClientSocketRuntime.ts";
+import { UpdateChannelRankList } from "./runtime/ClientSocketRuntime.ts";
 import type { CUser } from "./User.ts";
-import { SendCenterPacket } from "./CenterProcessRuntime.ts";
+import { SendCenterPacket } from "./runtime/CenterProcessRuntime.ts";
 import { CGuildDynInfoCalculator } from "./GuildDynInfoCalculator.ts";
 import type { HOSTHANDLE } from "../shared/MTUDP.ts";
 import { MC_GameServerSendPacket } from "../protocol/CenterProtocol.ts";
@@ -2582,4 +2582,4 @@ export class CGameSession extends CListSession {
 }
 
 // Native GameSession.cpp classes kept behind a port-only ESM cycle boundary.
-export { CGameClock, CGameContext } from "./GameSessionSupport.ts";
+export { CGameClock, CGameContext } from "./runtime/GameSessionSupport.ts";

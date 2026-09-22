@@ -3,7 +3,7 @@
  * CCenterProcess. Native source units call CCenterProcess::ms_pInstance
  * directly; ESM requires the concrete implementation to be wired at runtime.
  */
-import type { CSendPacket } from "../core/Packet.ts";
+import type { CSendPacket } from "../../core/Packet.ts";
 
 export interface CenterProcessPort {
   SendPacket(packet: CSendPacket): void;

@@ -11,7 +11,7 @@ import {
   DispatchShopConnectResponse,
   DispatchShopEstablishedResponse,
   GetShopMainPool,
-} from "./MainPoolRuntime.ts";
+} from "./runtime/MainPoolRuntime.ts";
 import { CMainSystem } from "./MainSystem.ts";
 
 /** CCenterProcess — the center uplink client (CCenterProcess::Init). */

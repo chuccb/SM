@@ -14,8 +14,8 @@ import { CUser } from "./User.ts";
 import { CCenterProcess } from "./CenterProcess.ts";
 import { CMainSystem } from "./MainSystem.ts";
 import { CLocalUserTable } from "./LocalUserTable.ts";
-import { GetClientSocketPool } from "./ClientSocketRuntime.ts";
-import { DestroySessionPlayer } from "./SessionTableRuntime.ts";
+import { GetClientSocketPool } from "./runtime/ClientSocketRuntime.ts";
+import { DestroySessionPlayer } from "./runtime/SessionTableRuntime.ts";
 import { SESSION_IDX_NONE } from "./Defs.ts";
 
 const INITIAL_IDLE_AGE_MS = 5_000;

@@ -1,7 +1,7 @@
 /** Offline operator CLI. No password/credit/reset endpoint is exposed over TCP. */
 import { join, resolve } from "node:path";
 import { CDBMan } from "../src/db/DBMan.ts";
-import { BillingStore } from "../src/LocalBilling/Store.ts";
+import { BillingStore } from "../src/services/LocalBilling/Store.ts";
 
 const [command, ...args] = process.argv.slice(2).filter(arg => arg !== "--");
 function argument(name: string): string | undefined {

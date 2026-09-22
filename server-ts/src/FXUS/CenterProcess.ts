@@ -5,7 +5,7 @@ import { CLocalSocket } from "../shared/LocalSocket.ts";
 import { CM_UtilServerPacket, SVRCLASS_UTIL } from "../protocol/CenterProtocol.ts";
 import { S2C_UtilPacket } from "../protocol/PacketIDs.ts";
 import { CLocalUserTable } from "./LocalUserTable.ts";
-import { BroadcastUtilPacket, SendUtilUserDetail } from "./MainPoolRuntime.ts";
+import { BroadcastUtilPacket, SendUtilUserDetail } from "./runtime/MainPoolRuntime.ts";
 import { CMainSystem } from "./MainSystem.ts";
 
 /** CCenterProcess — the util's center link (class 99). */

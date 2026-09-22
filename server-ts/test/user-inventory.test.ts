@@ -24,7 +24,7 @@ import { CGameSessionTable } from "../src/FXGS/GameSessionTable.ts";
 import { LoadCAItemBak } from "../src/db/CAItemBak.ts";
 import { SESSION_IDX_MAX } from "../src/FXGS/Defs.ts";
 import { ItemCategory, USER_INVENTORY_LOAD_LIMIT } from "../src/shared/Item.ts";
-import { MAX_LOCAL_INVENTORY_ROWS } from "../src/LocalBilling/Defs.ts";
+import { MAX_LOCAL_INVENTORY_ROWS } from "../src/services/LocalBilling/Defs.ts";
 
 function snapshot() {
   return { cfg: CServerConfig.ms_pInstance, main: CMainSystem.ms_pInstance, items: CUserItemMan.ms_pInstance,

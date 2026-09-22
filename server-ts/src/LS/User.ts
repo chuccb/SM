@@ -1,6 +1,6 @@
 /** Native source unit: CX/CxLogin/User.cpp. */
 import type { CClientSocket } from "./ClientSocket.ts";
-import { AddLoginUser, FreeLoginUser } from "./LoginRuntime.ts";
+import { AddLoginUser, FreeLoginUser } from "./runtime/LoginRuntime.ts";
 
 /** _USERACCOUNT + CUser of CxLogin (0x114 bytes). */
 export class CUser {

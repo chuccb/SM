@@ -16,8 +16,8 @@ import {
   DispatchConnectCenterResponse,
   SendChannelPacket,
   WriteGameSlotInfo,
-} from "./ClientSocketRuntime.ts";
-import { RegisterCenterProcess } from "./CenterProcessRuntime.ts";
+} from "./runtime/ClientSocketRuntime.ts";
+import { RegisterCenterProcess } from "./runtime/CenterProcessRuntime.ts";
 
 /** CCenterProcess — the GS side of the center link. */
 export class CCenterProcess {

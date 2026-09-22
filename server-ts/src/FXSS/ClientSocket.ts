@@ -12,7 +12,7 @@ import {
 } from "../core/PacketSocket.ts";
 import { CUser } from "./User.ts";
 import { CLocalUserTable } from "./LocalUserTable.ts";
-import { DeleteShopSocket, DispatchShopClientPacket } from "./MainPoolRuntime.ts";
+import { DeleteShopSocket, DispatchShopClientPacket } from "./runtime/MainPoolRuntime.ts";
 
 const INITIAL_IDLE_AGE_MS = 5_000;
 

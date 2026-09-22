@@ -13,7 +13,7 @@ import type { CUser } from "./User.ts";
 import { CClientSocket } from "./ClientSocket.ts";
 import { CLocalUserTable } from "./LocalUserTable.ts";
 import type { CCenterProcess } from "./CenterProcess.ts";
-import { RegisterLoginPool } from "./LoginRuntime.ts";
+import { RegisterLoginPool } from "./runtime/LoginRuntime.ts";
 import { CUserPool } from "./UserPool.ts";
 
 /** "현재 게임을 하고 계시는 곳" (byte_47A458, EUC-KR) — the double-login notice. */

@@ -3,9 +3,9 @@
  * CUser, CLoginPool, and CCenterProcess. The C++ units call each other's
  * TSingleton instances directly; this registry keeps their TS modules acyclic.
  */
-import type { CReceivedPacket } from "../core/Packet.ts";
-import type { CClientSocket } from "./ClientSocket.ts";
-import type { CUser } from "./User.ts";
+import type { CReceivedPacket } from "../../core/Packet.ts";
+import type { CClientSocket } from "../ClientSocket.ts";
+import type { CUser } from "../User.ts";
 
 export interface LoginPoolPort {
   OnPacket(packet: CReceivedPacket, socket: CClientSocket): void;

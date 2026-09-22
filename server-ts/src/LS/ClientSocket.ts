@@ -11,7 +11,7 @@ import {
   CLIENTSOCKET_SEQ_DELTA,
 } from "../core/PacketSocket.ts";
 import { CUser } from "./User.ts";
-import { DeleteLoginSocket, DispatchLoginPacket } from "./LoginRuntime.ts";
+import { DeleteLoginSocket, DispatchLoginPacket } from "./runtime/LoginRuntime.ts";
 
 export const MACHINE_ID_BYTES = 16;
 

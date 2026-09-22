@@ -1,5 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
-import { basename, extname, join, resolve } from "node:path";
+import { basename, dirname, extname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 interface ServiceEvidence {
   readonly directory: string;
@@ -8,8 +9,9 @@ interface ServiceEvidence {
   readonly sourcePrefixes: readonly string[];
 }
 
-const PORT_SOURCE_ROOT = resolve(import.meta.dir, "../src");
-const REPOSITORY_ROOT = resolve(import.meta.dir, "../..");
+const currentDir = typeof import.meta.dir === "string" ? import.meta.dir : dirname(fileURLToPath(import.meta.url));
+const PORT_SOURCE_ROOT = resolve(currentDir, "../src");
+const REPOSITORY_ROOT = resolve(currentDir, "../..");
 const HEADER_SCAN_BYTES = 1_600;
 
 const SERVICE_EVIDENCE: readonly ServiceEvidence[] = [
@@ -86,12 +88,12 @@ for (const service of SERVICE_EVIDENCE) {
     await readFile(join(REPOSITORY_ROOT, service.provenanceArtifact), "latin1"),
   ).toLowerCase();
   const claimedNativeUnits = new Map<string, string>();
-  const entries = (await readdir(serviceRoot, { withFileTypes: true }))
+  const entries = (await readdir(serviceRoot, { withFileTypes: true, recursive: true }))
     .filter((entry) => entry.isFile() && extname(entry.name) === ".ts")
     .sort((left, right) => left.name.localeCompare(right.name));
 
   for (const entry of entries) {
-    const file = join(serviceRoot, entry.name);
+    const file = join(entry.parentPath ?? serviceRoot, entry.name);
     const source = await readFile(file, "utf8");
     const header = source.slice(0, HEADER_SCAN_BYTES);
     const nativeMatch = header.match(NATIVE_SOURCE_PATTERN);

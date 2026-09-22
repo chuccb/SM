@@ -10,7 +10,7 @@ import {
   CLIENTSOCKET_SEQ_DELTA,
 } from "../core/PacketSocket.ts";
 import { CUser } from "./User.ts";
-import { DeleteUtilSocket, DispatchUtilClientPacket } from "./MainPoolRuntime.ts";
+import { DeleteUtilSocket, DispatchUtilClientPacket } from "./runtime/MainPoolRuntime.ts";
 
 /** CClientSocket (CxUtil) — one connected admin tool. */
 export class CClientSocket extends CPacketSocket {

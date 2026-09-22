@@ -1,5 +1,5 @@
 /** Native source unit: FX/FxServer/BanChief.cpp. */
-import { CGameClock } from "./GameSessionSupport.ts";
+import { CGameClock } from "./runtime/GameSessionSupport.ts";
 
 const BAN_CHIEF_WARNING_DELAY_MS = 10_000; // GetWarningDelay, 401084
 const BAN_CHIEF_WAIT_FULL_MS = 10_000; // IsBanChief's nonzero flag, 40102F

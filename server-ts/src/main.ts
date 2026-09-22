@@ -22,9 +22,9 @@ import { main as relayMain } from "./Relay/CxRelay.ts";
 import { main as shopMain } from "./FXSS/FxShop.ts";
 import { main as utilMain } from "./FXUS/CxUtil.ts";
 import { CDBMan } from "./db/DBMan.ts";
-import { canUseLocalBilling, loadBillingConfig, registerLocalBilling } from "./LocalBilling/Config.ts";
+import { canUseLocalBilling, loadBillingConfig, registerLocalBilling } from "./services/LocalBilling/Config.ts";
 import { EnsureCAItemCatalog } from "./db/CAItemImport.ts";
-import { startBilling } from "./LocalBilling/Server.ts";
+import { startBilling } from "./services/LocalBilling/Server.ts";
 
 const cleanUpStack: Array<() => void> = [];
 let cleanUpStarted = false;

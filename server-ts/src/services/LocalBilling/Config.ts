@@ -1,7 +1,7 @@
 /** Port-only configuration for the local DigiQ-compatible billing substitute. */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { CDBMan } from "../db/DBMan.ts";
+import type { CDBMan } from "../../db/DBMan.ts";
 import { BillingError, LOCAL_BILLING_MODE, LOCAL_BILLING_MODE_KEY, type BillingConfig } from "./Defs.ts";
 
 export function localBillingMarker(host: string, port: number): string { return `${LOCAL_BILLING_MODE}:${host}:${port}`; }

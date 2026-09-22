@@ -1,6 +1,6 @@
 /** Cross-process writer barrier: isolate settlement races from cold-start IO. */
 import { CDBMan } from "../../src/db/DBMan.ts";
-import { BillingStore } from "../../src/LocalBilling/Store.ts";
+import { BillingStore } from "../../src/services/LocalBilling/Store.ts";
 const db = new CDBMan(process.argv[2]);
 const store = new BillingStore(db);
 process.once("message", () => {

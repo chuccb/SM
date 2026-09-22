@@ -7,7 +7,7 @@ import { S2C_GamePacket } from "../protocol/PacketIDs.ts";
 import { CENTER_VERSION, CONN_HELLO_VERSION, SVRCLASS_GAME } from "../protocol/CenterProtocol.ts";
 import { CONN_PATCH_URL } from "./Defs.ts";
 import type { CClientSocket } from "./ClientSocket.ts";
-import { DispatchClientPacket } from "./ClientSocketRuntime.ts";
+import { DispatchClientPacket } from "./runtime/ClientSocketRuntime.ts";
 
 /** CMainSystem — config-derived globals + the client dispatch hook. */
 export class CMainSystem {

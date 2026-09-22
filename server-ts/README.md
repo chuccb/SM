@@ -28,7 +28,7 @@
 | `src/protocol/` | 由各 binary wire table／dispatch 還原的 typed protocol metadata。 |
 | `src/shared/` | 原版在多個 binary 重複、由 port 明確合併的 transport／常數；檔頭均標示 port-only。 |
 | `src/db/` | 原生 recordset 行為的 Bun SQLite adapter，以及受限且有來源校驗的備份匯入工具。 |
-| `src/LocalBilling/` | 明確的本機替代服務，原版不存在，不冒充 DigiQ backend。 |
+| `src/services/LocalBilling/` | 明確的本機替代服務，原版不存在，不冒充 DigiQ backend。 |
 
 `bun run check:imports` 解析實際 static value imports／re-exports 並拒絕 ESM 強連通循環。`bun run check:boundaries` 另外要求六個服務目錄的每個 TS unit 明示「可證實的 native `.cpp` owner」或「port-only／façade boundary」，拒絕重複 source owner、檔名偏離 source basename、未知 source root；owner path 必須能在該服務 PDB 找到，只有未保留 source records 的 Center／Relay 才退回同 basename 的 OBJ record（含已證實的數字 suffix），exported native class 名稱亦逐一對照同服務的反編譯 `.c`。兩者都已納入完整 `check`，避免後續重構只在檔名表面貼齊原版，卻重新引入隱藏 runtime cycle 或虛構 source ownership。
 

@@ -33,9 +33,9 @@ import { SimpleStreamEncrypt3 } from "../src/core/StreamCipher.ts";
 import { copyFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { Database } from "bun:sqlite";
 import { inflateSync } from "node:zlib";
-import { BillingStore } from "../src/LocalBilling/Store.ts";
-import { BillingServer } from "../src/LocalBilling/Server.ts";
-import { registerLocalBilling } from "../src/LocalBilling/Config.ts";
+import { BillingStore } from "../src/services/LocalBilling/Store.ts";
+import { BillingServer } from "../src/services/LocalBilling/Server.ts";
+import { registerLocalBilling } from "../src/services/LocalBilling/Config.ts";
 import { CUserItemMan as GSItemMan } from "../src/FXGS/ItemMan.ts";
 
 const DIR = import.meta.dir;

@@ -1,6 +1,6 @@
 /** Port-only protocol adapter for the local DigiQ-compatible billing substitute. */
-import { CSendPacket } from "../FXSS/Packet.ts";
-import { Billing2Shop_TwPacket as Reply } from "../protocol/PacketIDs.ts";
+import { CSendPacket } from "../../FXSS/Packet.ts";
+import { Billing2Shop_TwPacket as Reply } from "../../protocol/PacketIDs.ts";
 import { BillingError } from "./Defs.ts";
 
 /** Strict raw Tw body reader; invalid input never becomes zero/success. */

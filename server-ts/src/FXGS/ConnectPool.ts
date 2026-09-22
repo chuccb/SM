@@ -21,7 +21,7 @@ import {
   FxCLIENT_HASH_B,
   MAX_PRE_INVENTORY_ROWS,
 } from "./Defs.ts";
-import { RegisterConnectPool } from "./ClientSocketRuntime.ts";
+import { RegisterConnectPool } from "./runtime/ClientSocketRuntime.ts";
 
 /** CConnectPool — sockets between TCP accept and the channel move. */
 export class CConnectPool extends CUserPool {

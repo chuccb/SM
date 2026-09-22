@@ -14,7 +14,7 @@ import {
   SHOP_PERMANENT_EXPIRY_LEVEL,
   SHOP_PERMANENT_VALIDITY_DAYS,
 } from "./Defs.ts";
-import { BILLING_ERROR } from "../LocalBilling/Defs.ts";
+import { BILLING_ERROR } from "../services/LocalBilling/Defs.ts";
 import { CUser } from "./User.ts";
 import type { CClientSocket } from "./ClientSocket.ts";
 import { CLocalUserTable } from "./LocalUserTable.ts";
@@ -23,7 +23,7 @@ import { CTranxCtrl, TRANSACTION_PAGE_BYTES } from "./TranxCtrl.ts";
 import { CBillingProcess } from "./BillingProcess.ts";
 import { CCenterProcess } from "./CenterProcess.ts";
 import { CMainSystem } from "./MainSystem.ts";
-import { RegisterShopMainPool } from "./MainPoolRuntime.ts";
+import { RegisterShopMainPool } from "./runtime/MainPoolRuntime.ts";
 import type { CWebSocket } from "./WebSocket.ts";
 
 // FxShop.exe @0x47ECA0 — 購買商品時發生錯誤

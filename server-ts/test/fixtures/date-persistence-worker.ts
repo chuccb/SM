@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CDBMan, EncodePassword, GetUserHashNo } from "../../src/db/DBMan.ts";
-import { BillingStore } from "../../src/LocalBilling/Store.ts";
+import { BillingStore } from "../../src/services/LocalBilling/Store.ts";
 
 const directory = mkdtempSync(join(tmpdir(), "sm-date-persistence-"));
 const originalNow = Date.now;

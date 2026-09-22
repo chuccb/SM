@@ -4,9 +4,9 @@
  * the same ownership without making lower-level source units import the pool
  * implementations during ESM initialization.
  */
-import type { CReceivedPacket, CSendPacket } from "../core/Packet.ts";
-import type { CClientSocket } from "./ClientSocket.ts";
-import type { CUser } from "./User.ts";
+import type { CReceivedPacket, CSendPacket } from "../../core/Packet.ts";
+import type { CClientSocket } from "../ClientSocket.ts";
+import type { CUser } from "../User.ts";
 
 export interface ClientSocketPool {
   DeleteSocket(socket: CClientSocket): number;

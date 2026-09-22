@@ -4,7 +4,7 @@
  * keeping that value import out of ListSession.ts lets CPracticeSession safely
  * extend CGameSession during module initialization.
  */
-import type { CClientSocket } from "./ClientSocket.ts";
+import type { CClientSocket } from "../ClientSocket.ts";
 
 export interface SessionRuntimeTable {
   MoveToExchangeSession(socket: CClientSocket, target: number): void;

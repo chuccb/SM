@@ -10,7 +10,7 @@ import { S2C_LoginNoticePacket } from "../protocol/PacketIDs.ts";
 import { MACHINE_ID_BYTES, PeerAddressDword, type CClientSocket } from "./ClientSocket.ts";
 import type { CLoginPool } from "./LoginPool.ts";
 import { CUserPool } from "./UserPool.ts";
-import { RegisterLoginCenter } from "./LoginRuntime.ts";
+import { RegisterLoginCenter } from "./runtime/LoginRuntime.ts";
 
 /** _Advertisement (FxAdvertisement row, 36-byte vector entry): std::string
  *  (12 bytes, no SSO) plus six int slots at +12..+32. UpdateAdvertisement

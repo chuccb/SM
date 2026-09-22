@@ -14,7 +14,7 @@ import {
 import { CBaseSession } from "./BaseSession.ts";
 import type { CClientSocket } from "./ClientSocket.ts";
 import type { CUser } from "./User.ts";
-import { MoveToExchangeSession } from "./SessionTableRuntime.ts";
+import { MoveToExchangeSession } from "./runtime/SessionTableRuntime.ts";
 
 /** CListSession — lobby-visible room state layered over CBaseSession. */
 export class CListSession extends CBaseSession {

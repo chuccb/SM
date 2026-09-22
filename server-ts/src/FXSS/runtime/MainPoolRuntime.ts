@@ -2,9 +2,9 @@
  * Port-only ESM adapter for native CMainPool singleton calls made by the
  * FXSS client socket and center-process source units.
  */
-import type { CReceivedPacket } from "../core/Packet.ts";
-import type { CClientSocket } from "./ClientSocket.ts";
-import type { CUserPool } from "./UserPool.ts";
+import type { CReceivedPacket } from "../../core/Packet.ts";
+import type { CClientSocket } from "../ClientSocket.ts";
+import type { CUserPool } from "../UserPool.ts";
 
 export interface ShopMainPoolPort extends CUserPool {
   OnCenterResConnectToSvr(packet: CReceivedPacket): void;

@@ -13,7 +13,7 @@ import { CMainPool } from "../src/FXSS/MainPool.ts";
 import { PackageMap, ShopItem } from "../src/FXSS/Recordsets.ts";
 import { CTranxCtrl, TRANSACTION_PAGE_BYTES } from "../src/FXSS/TranxCtrl.ts";
 import { CUser } from "../src/FXSS/User.ts";
-import { purchaseReply } from "../src/LocalBilling/Protocol.ts";
+import { purchaseReply } from "../src/services/LocalBilling/Protocol.ts";
 
 const directories: string[] = [];
 let priorTranx: CTranxCtrl | null;

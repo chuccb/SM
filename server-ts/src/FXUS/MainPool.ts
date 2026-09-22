@@ -7,7 +7,7 @@ import { CUser } from "./User.ts";
 import type { CClientSocket } from "./ClientSocket.ts";
 import { CLocalUserTable } from "./LocalUserTable.ts";
 import { CCenterProcess } from "./CenterProcess.ts";
-import { RegisterUtilMainPool } from "./MainPoolRuntime.ts";
+import { RegisterUtilMainPool } from "./runtime/MainPoolRuntime.ts";
 
 /** CMainPool — the tool pool and the whole client-side dispatch. */
 export class CMainPool extends CUserPool {

@@ -1,7 +1,5 @@
-/**
- * Port-only module boundary for the native CUtilServer class.
- * CxCenter.map has no UtilServer.obj entry; the class is nevertheless present
- * in the executable and is kept separate here for readable imports.
+/** Native source unit: CX/CxCenter/UtilServer.cpp.
+ * CxCenter.pdb contains UtilServer.obj record; CUtilServer is the native class.
  */
 import { CReceivedPacket, CSendPacket } from "../core/Packet.ts";
 import { CM_ReceivedPacket, MC_ReceivedPacket } from "../protocol/CenterProtocol.ts";

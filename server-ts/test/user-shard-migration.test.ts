@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
-import { BillingStore } from "../src/LocalBilling/Store.ts";
+import { BillingStore } from "../src/services/LocalBilling/Store.ts";
 import {
   CDBMan,
   EncodePassword,
