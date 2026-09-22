@@ -62,3 +62,7 @@ export const CHANNEL_HASH_MATCH = 0;
 
 /** Advertisement rotation — client 11's trailing 60 (E2 60) is fixed. */
 export const ADVERTISEMENT_TRAILING = 60;
+
+/** ExtraInfo packet limits — native caps guild and NDA lists to 2 entries. */
+export const GUILD_SVR_LIST_MAX = 2;
+export const NDA_LIST_MAX = 2;

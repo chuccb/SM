@@ -11,7 +11,7 @@ import { MACHINE_ID_BYTES, PeerAddressDword, type CClientSocket } from "./Client
 import type { CLoginPool } from "./LoginPool.ts";
 import { CUserPool } from "./UserPool.ts";
 import { RegisterLoginCenter } from "./runtime/LoginRuntime.ts";
-import { ADVERTISEMENT_TRAILING, CONNECT_GATE_RESULT } from "./Defs.ts";
+import { ADVERTISEMENT_TRAILING, CONNECT_GATE_RESULT, GUILD_SVR_LIST_MAX, NDA_LIST_MAX } from "./Defs.ts";
 
 /** _Advertisement (FxAdvertisement row, 36-byte vector entry): std::string
  *  (12 bytes, no SSO) plus six int slots at +12..+32. UpdateAdvertisement
@@ -295,20 +295,20 @@ export class CCenterProcess {
     // guild server list: at most 2 entries, the window start rotates per call
     const guildCount = this.m_vtGuildSvrList.length;
     let guildStart = 0;
-    if (guildCount > 2) {
-      packet.Encode1(2);
-      guildStart = this.m_nGuildSvrCursor % (guildCount - 2);
+    if (guildCount > GUILD_SVR_LIST_MAX) {
+      packet.Encode1(GUILD_SVR_LIST_MAX);
+      guildStart = this.m_nGuildSvrCursor % (guildCount - GUILD_SVR_LIST_MAX);
     } else {
       this.m_nGuildSvrCursor = 0;
       packet.Encode1(guildCount);
     }
     let guildSent = 0;
-    for (let i = guildStart; i < guildCount && guildSent < 2; i++, guildSent++) {
+    for (let i = guildStart; i < guildCount && guildSent < GUILD_SVR_LIST_MAX; i++, guildSent++) {
       const gs = this.m_vtGuildSvrList[i]!;
       packet.Encode4(inet_addr(gs.strIp));
       packet.Encode2(gs.nPort);
     }
-    if (guildCount > 2) this.m_nGuildSvrCursor++;
+    if (guildCount > GUILD_SVR_LIST_MAX) this.m_nGuildSvrCursor++;
     // NDA list: at most 2, round-robin cursor
     if (this.m_nNdaIps.length === 0) {
       const ndaCfg = this.m_cfg ?? CServerConfig.ms_pInstance;
@@ -317,7 +317,7 @@ export class CCenterProcess {
     }
     {
       const ndaCount = this.m_nNdaIps.length;
-      const ndaMax = ndaCount < 2 ? ndaCount : 2;
+      const ndaMax = ndaCount < NDA_LIST_MAX ? ndaCount : NDA_LIST_MAX;
       packet.Encode1(ndaMax);
       for (let j = ndaMax; j !== 0; j--) {
         packet.Encode4(this.m_nNdaIps[this.m_nNdaCursor]!);
