@@ -129,6 +129,16 @@ export const SESSION_INFO_DETAIL_RESULT = {
   Found: 1,
 } as const;
 
+/** CChannelPool rank/guild member paging — 9 per page (packet 70/67). */
+export const RANK_PAGE_SIZE = 9;
+export const GUILD_MEMBER_PAGE_SIZE = 9;
+
+/** CChannelPool::OnEnterChannelStage sentinel threshold — 0x3E6 (998).
+ *  Native checks `if (idx > 0x3E6)` to decide lobby/connecting/invalid messages
+ *  vs trying to dump the room (FxServer.exe.c:6306). Since max valid idx is 254,
+ *  any idx >998 is definitely sentinel or invalid. */
+export const SESSION_IDX_SENTINEL_THRESHOLD = 0x3e6;
+
 /** The session dimension everywhere: 8 slots / 8 colours / 8 loss-matrix rows
  *  (the original loops the same 8-slot tables with plain do/while). */
 export const MAX_SESSION_SLOTS = 8;

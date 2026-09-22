@@ -17,7 +17,14 @@ import type { CClientSocket } from "./ClientSocket.ts";
 import { CUser } from "./User.ts";
 import { ItemCategory, SLOT_DECORATION_COUNT } from "../common/Item.ts";
 import { RegisterChannelPool } from "./runtime/ClientSocketRuntime.ts";
-import { CONNECT_GATE_RESULT, SESSION_IDX_NONE } from "./Defs.ts";
+import {
+  CONNECT_GATE_RESULT,
+  GUILD_MEMBER_PAGE_SIZE,
+  RANK_PAGE_SIZE,
+  SESSION_IDX_CONNECTING,
+  SESSION_IDX_NONE,
+  SESSION_IDX_SENTINEL_THRESHOLD,
+} from "./Defs.ts";
 
 /** Native free function SendGameSlotInfo (0040335B), shared by local and
  * DB-backed remote detail. Category-10 pictures use nAttr1, not ItemSN.
@@ -223,13 +230,13 @@ export class CChannelPool extends CChatPool {
   PutUserSimpleInfoPacket(socket: CClientSocket, n: number): void {
     const packet = new CSendPacket(S2C_GamePacket.OnRequestUserSimpleInfoRes, CipherDegree.kPacketEncryptedCRC8);
     const total = this.m_vtRankList.length;
-    const pages = total <= 0 ? 0 : Math.floor((total - 1) / 9) + 1;
+    const pages = total <= 0 ? 0 : Math.floor((total - 1) / RANK_PAGE_SIZE) + 1;
     let page = n < 0 ? 0 : n;
     if (page > pages - 1) page = pages - 1;
     if (page < 0) page = 0;
     packet.Encode2(page);
-    const from = 9 * page;
-    const to = Math.min(from + 9, total);
+    const from = RANK_PAGE_SIZE * page;
+    const to = Math.min(from + RANK_PAGE_SIZE, total);
     packet.Encode1(to - from);
     for (let i = from; i < to; i++) this.m_vtRankList[i]!.AppendSimpleInfoPacket(packet);
     socket.SendPacket(packet);
@@ -241,13 +248,13 @@ export class CChannelPool extends CChatPool {
     if (!user || user.m_nGuildSN === 0) return;
     const list = this.m_vtGuildMember.get(user.m_nGuildSN) ?? [];
     const packet = new CSendPacket(S2C_GamePacket.OnGuildMemberListRes, CipherDegree.kPacketEncryptedCRC8);
-    const pages = list.length <= 0 ? 0 : Math.floor((list.length - 1) / 9) + 1;
+    const pages = list.length <= 0 ? 0 : Math.floor((list.length - 1) / GUILD_MEMBER_PAGE_SIZE) + 1;
     let page = n < 0 ? 0 : n;
     if (page > pages - 1) page = pages - 1;
     if (page < 0) page = 0;
     packet.Encode2(page);
-    const from = 9 * page;
-    const to = Math.min(from + 9, list.length);
+    const from = GUILD_MEMBER_PAGE_SIZE * page;
+    const to = Math.min(from + GUILD_MEMBER_PAGE_SIZE, list.length);
     packet.Encode1(to - from);
     for (let i = from; i < to; i++) list[i]!.AppendSimpleInfoPacket(packet);
     socket.SendPacket(packet);
@@ -289,10 +296,10 @@ export class CChannelPool extends CChatPool {
       console.error(`[GS] Front-stage user want to enter channel stage. Disconnect. CurrentPoolType=${socket.m_nPoolType} [${name}]`);
       const idx = socket.m_nSessionIdx & 0xffff;
       console.error(`[GS]     User[${name}], Game Session Slot Index: [${idx > 0x7fff ? idx - 0x10000 : idx}]. CurrentPoolType=${socket.m_nPoolType}.`);
-      if (idx > 998) {
+      if (idx > SESSION_IDX_SENTINEL_THRESHOLD) {
         // the seat slot doubles as the stage tag: 0xFFFF lobby, 0xFFFE connecting
         if (idx === SESSION_IDX_NONE) console.error("[GS]     Lobby player sent session packet (OnEnterChannelStage).");
-        else if (idx === 0xfffe) console.error("[GS]     Connecting player sent session packet (OnEnterChannelStage).");
+        else if (idx === SESSION_IDX_CONNECTING) console.error("[GS]     Connecting player sent session packet (OnEnterChannelStage).");
         else console.error("[GS]     Invalid game session slot index (OnEnterChannelStage).");
       } else {
         // a seat still registered: dump the room (CBaseSession vtbl+20) or
@@ -429,7 +436,7 @@ export class CChannelPool extends CChatPool {
       ) === 0
         ? 1
         : 0;
-    if (result === CONNECT_GATE_RESULT.Success) {
+    if (result === 1) {
       // CDBMan::ModifyUserInfo success path: mirror onto the live account
       user.account.strName = strName;
       user.account.Gender = gender;
