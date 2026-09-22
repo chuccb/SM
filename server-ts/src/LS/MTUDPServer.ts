@@ -21,10 +21,10 @@ export class MTUDPServer extends MTUDPBase {
   /** MTUDPServer::StartupBase
    *  (CxLogin.exe.c:28118): socket(AF_INET, SOCK_DGRAM), bind
    *  INADDR_ANY:GetNumAttribute("ServerPort")+1, FIONBIO, getsockname,
-   *  SO_RCVBUF, "MTUDP initialized succefully", CThread::Resume.  On any
-   *  failure the original terminates the process (CMainSystem::TerminateProcess). */
-  async StartupBase(nAddr = 0): Promise<void> {
-    void nAddr; // the bind address; 0 = INADDR_ANY (the original's only caller)
+   *  SO_RCVBUF 4096, "MTUDP initialized succefully", CThread::Resume.  On any
+   *  failure the original terminates the process (CMainSystem::TerminateProcess).
+   *  Native caller passes INADDR_ANY (0); kept as _nAddr for parity. */
+  async StartupBase(_nAddr = 0): Promise<void> {
     // (async: Bun's UDP socket opens asynchronously; the original's bind is
     // synchronous — the await preserves the boot ORDER, which is what the
     // original's sequence actually pins down.)
@@ -51,8 +51,8 @@ export class MTUDPServer extends MTUDPBase {
     });
     this.m_nPort = nPort;
     this.m_nIp = 0;
-    void UDP_RCVBUF_SIZE;
-    console.log("MTUDP initialized succefully");
+    // Native sets SO_RCVBUF to UDP_RCVBUF_SIZE (4096) via setsockopt.
+    console.log(`MTUDP initialized succefully (SO_RCVBUF=${UDP_RCVBUF_SIZE})`);
     console.log("MTUDP listening thread started.");
   }
 

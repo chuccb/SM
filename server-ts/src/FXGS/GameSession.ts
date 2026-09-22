@@ -1441,11 +1441,11 @@ export class CGameSession extends CListSession {
         }
       }
     }
-    for (let slot = 0; slot < MAX_SESSION_SLOTS; slot++) this.m_abDeleted[slot] = this.IsPlayerSet(slot) ? 0 : 1;
     this.SetPlaying(1);
-    // SetCurrentGameContext(0) + CGameContext::Init
+    // SetCurrentGameContext(0) + CGameContext::Init (FxServer.exe.c:37254)
     this.m_pCtx.Init();
     this.m_rgnUsedItem.fill(0); // memset(+11652, 0, 0x20)
+    // FxServer.exe.c:37254 — single init of +11604 after context init.
     for (let slot = 0; slot < MAX_SESSION_SLOTS; slot++) this.m_abDeleted[slot] = this.IsPlayerSet(slot) ? 0 : 1;
     this.m_rgSlotGhost.fill(-1); // memset(+872, -1, 0x20)
     this.m_rgGhostSlot.fill(-1); // memset(+904, -1, 0x20)

@@ -64,7 +64,9 @@ export class CTimerThread {
   private Tick(): void {
     this.OnTimer();
     this.mainPool.OnTimer();
-    void this.billing.OnTimer();
+    // Billing OnTimer is async (Bun.connect loop); fire-and-forget like native,
+    // but surface errors instead of silencing with `void`.
+    this.billing.OnTimer().catch((e) => console.error("[Shop] Billing OnTimer error", e));
     this.FlushLocalSocketSndBuffer();
     this.FlushBillingSocketSndBuffer();
     this.FlushClientSocketSndBuffer();

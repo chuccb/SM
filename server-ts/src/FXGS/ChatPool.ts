@@ -33,10 +33,8 @@ export class CChatPool extends CUserPool {
   /** CChatPool::FlushAll (:7644) — the timer passes 0: per-socket
    *  CServerSocket::Flush (vtbl+64).  TS sockets write through on PutPacket,
    *  so the flush is a no-op here; the fLobbyOnly!=0 zombie sweep lives in
-   *  SendAll. */
-  FlushAll(fLobbyOnly: number): void {
-    void fLobbyOnly;
-  }
+   *  SendAll.  Native only ever calls it with 0, so the a2!=0 branch is dead. */
+  FlushAll(_fLobbyOnly: number): void {}
 
   /** CChatPool::OnPacket — dispatch the same top-level opcode after the
    * derived CChannelPool rewinds it, then rewind again for CUserPool's tail. */

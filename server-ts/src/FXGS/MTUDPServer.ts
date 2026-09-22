@@ -31,9 +31,9 @@ export class MTUDPServer extends MTUDPBase {
     MTUDPServer.ms_pInstance = this;
   }
 
-  /** MTUDPServer::StartupBase — bind INADDR_ANY to ServerPort + 1. */
-  async StartupBase(nAddr = 0): Promise<void> {
-    void nAddr; // the native caller passes INADDR_ANY (zero)
+  /** MTUDPServer::StartupBase — bind INADDR_ANY to ServerPort + 1.
+   *  Native caller passes INADDR_ANY (0); kept as _nAddr for parity. */
+  async StartupBase(_nAddr = 0): Promise<void> {
     const port = this.cfg.GetNumAttribute("ServerPort") + MTUDP_UDP_PORT_OFFSET;
 
     this.m_nSocket = await Bun.udpSocket({

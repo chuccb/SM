@@ -369,7 +369,7 @@ export class CLoginPool extends CUserPool {
     const configDyn = CConfigDyn.ms_pInstance;
     if (configDyn !== null && configDyn.GetNoticeHash() !== 0 && socket.m_nNoticeHash !== configDyn.GetNoticeHash())
       socket.SendPacket(configDyn.GetNoticePacket());
-    void strDes;
+    // Native clears the std::string after use (dtor); keep explicit clear for parity.
     strDes = "";
   }
 
