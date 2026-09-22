@@ -295,9 +295,13 @@ export class CBillingProcess {
 
   private LocalPurchaseError(user: CUser, message: string): void {
     if (user.m_fTranxInProgress !== 0) return;
+    const isGift = user.m_strTranxInfo.length > 0 && user.m_strTranxInfo !== user.GetName();
+    const errCode = isGift ? 5 : 1;
     const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes, CipherDegree.kPacketEncryptedCRC8);
-    p.Encode1(1); p.EncodeStr(message);
+    p.Encode1(errCode);
+    p.EncodeStr(message);
     user.m_pSocket?.SendPacket(p);
+    user.ResetTranxInfo();
   }
 
   private FinishLocalPurchase(serial: number): void {
