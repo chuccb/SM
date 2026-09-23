@@ -125,7 +125,10 @@ export class CSendPacket extends CMemBlock {
   constructor(nPacketType?: number, nCipherDegree: number = CipherDegree.kPacketEncryptedCRC8) {
     super();
     this.Alloc(0x40);
-    this.m_nCipherDegree = IsValidCipherDegree(nCipherDegree) ? nCipherDegree : CipherDegree.kPacketEncryptedCRC8;
+    // CSendPacketBase starts at raw and keeps that when the degree is outside 0..2.
+    // The single-arg wrapper passes 2, so omitting the degree still selects cipher 2.
+    this.m_nCipherDegree = CipherDegree.kPacketRaw;
+    if (IsValidCipherDegree(nCipherDegree)) this.m_nCipherDegree = nCipherDegree;
     if (nPacketType !== undefined) {
       this.m_nPacketType = nPacketType;
       this.Encode1(nPacketType);

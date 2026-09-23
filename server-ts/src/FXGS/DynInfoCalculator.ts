@@ -54,7 +54,7 @@ export class CDynInfoCalculator {
       this.m_nUnk18C[c] = 0; // [eax-60h]
       this.m_vtMyTeamNo[c] = 0; // [eax+20h]
       this.m_vtOtherTeamNo[c] = 0; // [eax+40h]
-      this.m_dwColourWeight[c] = 0; // fldz / [eax-1C0h]
+      this.m_dwColourWeight[c] = 0; // rep stosd of the 8 dwords at +0xC
     }
     this.m_nSaveMatrix.fill(0); // memset(+4Ch, 0, 0x100)
     let firstSocket: CClientSocket | null = null; // var_C
@@ -171,20 +171,30 @@ export class CDynInfoCalculator {
     return CMainSystem.IsPremiumChannel();
   }
 
-  /** CDynInfoCalculator::GetWinExp (40B4CE) — the winning-slot exp (clamped 50..200). */
+  /**
+   * CDynInfoCalculator::GetWinExp (0040B4CE) — winning-slot exp, clamped 50..200.
+   * 0040B50F..0040B52A divides by colourCount * colourWeight. The colour count
+   * is not also in the numerator, so it must not cancel. Kills (+0x16C) are
+   * added before saves (+0x14C); both are * 20. A zero colour count or weight
+   * logs and returns 0. Colour -1 is only written for empty slots, which the
+   * result loop never passes here.
+   */
   GetWinExp(slot: number, pnRewardFlag: number[]): number {
     pnRewardFlag[0] = 0; // mov [eax], edi (edi = 0)
     if (this.m_nInvalidGame !== 0) return 0;
     const colour = this.m_vtColour[slot]!;
-    if (colour < 0 || this.m_vtColourCount[colour] === 0) return 0;
-    if (this.m_dwColourWeight[colour] === 0) return 0;
-    let t =
-      (this.m_nPlayerCount * this.m_dwAvgWeight * 100.0 * this.m_vtColourCount[colour]!) /
-      (this.m_vtColourCount[colour]! * this.m_dwColourWeight[colour]!);
-    t *= this.m_vtSlotWeight[slot]! / this.m_dwColourWeight[colour]!; // fld [+2C+4n] / colourWeight
+    if (colour < 0) return 0;
+    const colourCount = this.m_vtColourCount[colour]!;
+    const colourWeight = this.m_dwColourWeight[colour]!;
+    if (colourCount === 0 || colourWeight === 0) {
+      console.error("Invalid CDynInfoCalculator context");
+      return 0;
+    }
+    let t = (this.m_nPlayerCount * this.m_dwAvgWeight * 100.0) / (colourCount * colourWeight);
+    t *= this.m_vtSlotWeight[slot]! / colourWeight;
     t *= 0.5;
-    t += this.m_vtSaves[slot]! * 20.0;
     t += this.m_vtKills[slot]! * 20.0;
+    t += this.m_vtSaves[slot]! * 20.0;
     let v = Math.trunc(t);
     if (v < 50) v = 50;
     if (v > 200) v = 200;
@@ -192,19 +202,25 @@ export class CDynInfoCalculator {
     return v;
   }
 
-  /** CDynInfoCalculator::GetDrawExp (40B5A0) — the tied-game exp (clamped 0..50). */
+  /**
+   * CDynInfoCalculator::GetDrawExp (0040B5A0) — tied-game exp, clamped 0..50.
+   * Same shape as GetWinExp, but the scale is 10 (41200000) not 100.
+   */
   GetDrawExp(slot: number): number {
     if (this.m_nInvalidGame !== 0) return 0;
     const colour = this.m_vtColour[slot]!;
-    if (colour < 0 || this.m_vtColourCount[colour] === 0) return 0;
-    if (this.m_dwColourWeight[colour] === 0) return 0;
-    let t =
-      (this.m_nPlayerCount * this.m_dwAvgWeight * 10.0 * this.m_vtColourCount[colour]!) /
-      (this.m_vtColourCount[colour]! * this.m_dwColourWeight[colour]!);
-    t *= this.m_vtSlotWeight[slot]! / this.m_dwColourWeight[colour]!;
+    if (colour < 0) return 0;
+    const colourCount = this.m_vtColourCount[colour]!;
+    const colourWeight = this.m_dwColourWeight[colour]!;
+    if (colourCount === 0 || colourWeight === 0) {
+      console.error("Invalid CDynInfoCalculator context");
+      return 0;
+    }
+    let t = (this.m_nPlayerCount * this.m_dwAvgWeight * 10.0) / (colourCount * colourWeight);
+    t *= this.m_vtSlotWeight[slot]! / colourWeight;
     t *= 0.5;
-    t += this.m_vtSaves[slot]! * 20.0;
     t += this.m_vtKills[slot]! * 20.0;
+    t += this.m_vtSaves[slot]! * 20.0;
     let v = Math.trunc(t);
     if (v < 0) v = 0;
     if (v > 50) v = 50;
@@ -213,15 +229,13 @@ export class CDynInfoCalculator {
   }
 
   /**
-   * CDynInfoCalculator::GetKillNSaveExp (40B665) — premium channels only;
-   * a bad context logs ReportError("Invalid CDynInfoCalculator context").
+   * CDynInfoCalculator::GetKillNSaveExp (0040B665) — premium channels only.
+   * A set invalid-game flag returns 0 with no log. A zero colour count or
+   * weight is the ReportError("Invalid CDynInfoCalculator context") path.
    */
   GetKillNSaveExp(slot: number): number {
     if (!CMainSystem.IsPremiumChannel()) return 0;
-    if (this.m_nInvalidGame !== 0) {
-      console.error("Invalid CDynInfoCalculator context");
-      return 0;
-    }
+    if (this.m_nInvalidGame !== 0) return 0;
     const colour = this.m_vtColour[slot]!;
     if (colour < 0 || this.m_vtColourCount[colour] === 0 || this.m_dwColourWeight[colour] === 0) {
       console.error("Invalid CDynInfoCalculator context");

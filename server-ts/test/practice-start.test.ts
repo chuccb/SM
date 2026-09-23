@@ -67,6 +67,8 @@ test("packet 86 reduces each bomber selection modulo native total plus its rando
   wire.Encode1(1);
   wire.Encode1(0xff);
   const received = new CReceivedPacket();
+  // CSendPacket defaults to cipher 2, so the handler must decrypt before Decode1.
+  received.SetCipherDegree(2);
   received.SetRcvPacket(wire.m_pBlock.subarray(0, wire.m_uOffset), wire.m_uOffset);
   expect(received.Decode1()).toBe(86); // channel dispatch consumes the id
   let decoded: number[] = [];
@@ -186,22 +188,21 @@ test("practice event4 -> event6 -> 163 reports the human kill and returns throug
   expect(ids()).toEqual([115, 116, 173, 150, 159, 163]);
   expect([session.m_nGamePhase, session.m_fPlaying]).toEqual([2, 1]);
   const result = packets.at(-1)!;
-  expect(result).toHaveLength(34);
-  // 2004 client layout: flag, winner, ladder, different-team item flag.
-  // There is no 2005 strategy result-view byte between winner and ladder.
-  expect(Array.from({ length: 4 }, (_, i) => e1(result, 1 + i))).toEqual([0, 0, 0, 0]);
+  expect(result).toHaveLength(35);
+  // EXE head: flag, winner, constant 0, ladder, different-team item flag.
+  expect(Array.from({ length: 5 }, (_, i) => e1(result, 1 + i))).toEqual([0, 0, 0, 0, 0]);
 
   // Human row: marker, serial, win, kill=1, save=0, unchanged exp/look.
-  expect(e1(result, 5)).toBe(1);
-  expect(e4(result, 6)).toBe(human.GetGlobalSerialNo());
-  expect([e1(result, 10), e1(result, 11), e1(result, 12)]).toEqual([0, 1, 0]);
-  expect([e2(result, 13), e2(result, 15), e2(result, 17), e1(result, 19), e1(result, 20)])
+  expect(e1(result, 6)).toBe(1);
+  expect(e4(result, 7)).toBe(human.GetGlobalSerialNo());
+  expect([e1(result, 11), e1(result, 12), e1(result, 13)]).toEqual([0, 1, 0]);
+  expect([e2(result, 14), e2(result, 16), e2(result, 18), e1(result, 20), e1(result, 21)])
     .toEqual([0, 0, human.GetLookLevel(), 0, 0]);
 
   // AI row: marker 2, loss, its own calculator counts and native AI level.
-  expect([e1(result, 21), e1(result, 22), e1(result, 23), e1(result, 24), e2(result, 25)])
+  expect([e1(result, 22), e1(result, 23), e1(result, 24), e1(result, 25), e2(result, 26)])
     .toEqual([2, 2, 0, 0, session.m_anAILevel[1]]);
-  expect(Array.from({ length: 7 }, (_, i) => e1(result, 27 + i))).toEqual(Array(7).fill(0));
+  expect(Array.from({ length: 7 }, (_, i) => e1(result, 28 + i))).toEqual(Array(7).fill(0));
 
   // Native return delay emits practice code 3, clears only round state, and
   // keeps the human/AI roster ready for a later 106.
@@ -233,9 +234,9 @@ test("practice serializes an AI killer's and saver's counts in the AI result row
   session.Update();
   const result = packets.at(-1)!;
   expect(ids().at(-1)).toBe(163);
-  expect(e1(result, 2)).toBe(7); // winning colour
-  expect([e1(result, 10), e1(result, 11), e1(result, 12)]).toEqual([2, 0, 0]);
-  expect([e1(result, 21), e1(result, 22), e1(result, 23), e1(result, 24)])
+  expect(e1(result, 2)).toBe(7); // winning colour (byte 2; the inserted zero is byte 3)
+  expect([e1(result, 11), e1(result, 12), e1(result, 13)]).toEqual([2, 0, 0]);
+  expect([e1(result, 22), e1(result, 23), e1(result, 24), e1(result, 25)])
     .toEqual([2, 0, 1, 1]);
 });
 

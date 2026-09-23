@@ -1052,7 +1052,9 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
   });
 
   test("tool 25 (MC 4) → CM 8 → the GS client sees 26 [EStr]", async () => {
-    const p = new CSendPacket(MC_ReceivedPacket.OnAdminNotifyMsg);
+    // CxUtil's one-arg CSendPacket is degree 0 (CxUtil.exe.c:22040). The
+    // center local socket stays raw, so a cipher-2 frame is not this MC packet.
+    const p = new CSendPacket(MC_ReceivedPacket.OnAdminNotifyMsg, CipherDegree.kPacketRaw);
     p.EncodeStr("admin says hi");
     util.SendToCenter(p);
     const got = await entryGsClient!.recv(26);
@@ -1060,7 +1062,7 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
   });
 
   test("tool 31 (MC 10) → CM 13 → the GS client sees 30 [EStr]", async () => {
-    const p = new CSendPacket(MC_ReceivedPacket.OnSystemMsg);
+    const p = new CSendPacket(MC_ReceivedPacket.OnSystemMsg, CipherDegree.kPacketRaw);
     p.EncodeStr("system says");
     util.SendToCenter(p);
     const got = await entryGsClient!.recv(30);
@@ -1068,7 +1070,7 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
   });
 
   test("tool 26 (MC 5, type 10) → CM 8 → the GS client sees 26", async () => {
-    const p = new CSendPacket(MC_ReceivedPacket.OnAdminNotifyGameServerMsg);
+    const p = new CSendPacket(MC_ReceivedPacket.OnAdminNotifyGameServerMsg, CipherDegree.kPacketRaw);
     p.Encode1(10);
     p.EncodeStr("gs-only says");
     util.SendToCenter(p);
@@ -1386,9 +1388,9 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
       e.u16(54);
     });
     const result = await gs.recv(163);
-    expect(result.buf).toHaveLength(34);
-    expect([r1(result), r1(result), r1(result), r1(result)]).toEqual([0, 0, 0, 0]);
-    expect(r1(result)).toBe(1); // human marker immediately follows the four-byte head
+    expect(result.buf).toHaveLength(35);
+    expect([r1(result), r1(result), r1(result), r1(result), r1(result)]).toEqual([0, 0, 0, 0, 0]);
+    expect(r1(result)).toBe(1); // human marker follows the five-byte head
     expect(r4(result)).toBeGreaterThan(0);
     expect([r1(result), r1(result), r1(result)]).toEqual([0, 1, 0]); // win, kill, save
     const expPercentage = r2(result);
@@ -1398,7 +1400,7 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
     expect([r1(result), r1(result), r1(result), r1(result)]).toEqual([2, 2, 0, 0]);
     expect(r2(result)).toBeGreaterThan(0); // AI level
     expect(Array.from({ length: 7 }, () => r1(result))).toEqual(Array(7).fill(0));
-    expect(result.off).toBe(result.buf.length); // exact 34-byte packet body consumed
+    expect(result.off).toBe(result.buf.length); // exact 35-byte packet body consumed
     gs.close();
   });
 
@@ -1440,7 +1442,8 @@ describe("admin broadcast chain (util tool → center → GS client)", () => {
       expect(r1(res)).toBe(0); // the 5/6/7-state flag
       expect(r1(res)).toBe(1); // winTeam — the finisher's colour; the launch re-seats
       // through GetColorForNewComer, which deals 0 to the chief and 1 to the member
-      expect(r1(res)).toBe(0); // session vtbl+156 ladder; no later result-view byte
+      expect(r1(res)).toBe(0); // strategy GetResultViewType (normal room)
+      expect(r1(res)).toBe(0); // session vtbl+156 ladder
       expect(r1(res)).toBe(0); // the diff-team used-item flag
       const serials: number[] = [];
       for (let slot = 0; slot < 8; slot++) {
@@ -1745,8 +1748,8 @@ describe("guild strategy (type 77)", () => {
       main.m_nChannelType = 77;
       const guild = new CGameSession();
       expect(guild.m_pStrategy).toBeInstanceOf(CGuildSessionStrategy);
-      // The hook exists in the 2005 object layout, although the compatible
-      // 2004 packet-163 serializer does not put that later field on the wire.
+      // Packet 163 writes this byte; the wire assertion lives with the other
+      // result-header tests so it does not depend on the live server fixture.
       expect(guild.m_pStrategy.GetResultViewType()).toBe(1);
     } finally {
       main.m_nChannelType = saved;

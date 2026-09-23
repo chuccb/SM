@@ -550,22 +550,19 @@ export class CPracticeSession extends CGameSession {
     this.m_nGamePhase = 2;
   }
 
-  /** CPracticeSession::SendGameResult — the client-compatible practice
-   *  results unit.  FxServer.map maps the 2004 build to lines 697..767 and
-   *  proves its head has four bytes [E1 0][E1 win][E1 0][E1 0].  The exact
-   *  2005 EXE/PDB pair inserts a result-view Encode1 at source line 705,
-   *  making the function ten machine bytes larger and the payload one byte
-   *  longer; that newer field is incompatible with the original client.
-   *  Per seat: a human row [E1 1][E4 serial][E1 n3][E1 GetKillCount]
-   *  [E1 GetSaveCount][E2 exp‰][E2 exp‰][E2 look][E1 0][E1 0], an AI row
-   *  [E1 2][E1 n3][E1 GetKillCount][E1 GetSaveCount][E2 level], or an empty
-   *  [E1 0]; one trailing [E1 0] per human.  No rewards: dyn rows and
-   *  counters stay untouched. */
+  /** CPracticeSession::SendGameResult (FxServer.exe.lst:004260E4) — practice
+   *  results.  After xor edi,edi the head is five Encode1s: [E1 0][E1 win]
+   *  [E1 0][E1 0][E1 0].  This override does not call GetResultViewType;
+   *  the third byte is the same zero the EXE pushes.  Per seat: a human row
+   *  [E1 1][E4 serial][E1 n3][E1 GetKillCount][E1 GetSaveCount][E2 exp‰]
+   *  [E2 exp‰][E2 look][E1 0][E1 0], an AI row [E1 2][E1 n3][E1 GetKillCount]
+   *  [E1 GetSaveCount][E2 level], or an empty [E1 0]; one trailing [E1 0]
+   *  per human.  No rewards: dyn rows and counters stay untouched. */
   override SendGameResult(winTeam: number): void {
     const packet = new CSendPacket(S2C_GamePacket.OnGameResult);
     packet.Encode1(0); // result flag
     packet.Encode1(winTeam);
-    // The matching client predates the later strategy result-view byte.
+    packet.Encode1(0); // lst 00426117, constant zero (not the strategy virtual)
     packet.Encode1(0); // IsLadderGame
     packet.Encode1(0); // different-team used-item flag
     for (let slot = 0; slot < MAX_SESSION_SLOTS; slot++) {

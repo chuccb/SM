@@ -21,8 +21,10 @@ afterEach(() => {
 function body(headerType: number): CReceivedPacket {
   const packet = new CSendPacket(0);
   packet.Encode4(headerType);
-  const bytes = packet.m_pBlock.slice(1, packet.m_uOffset);
   const received = new CReceivedPacket();
+  // Login accept sets cipher 2 before dispatch consumes the type byte.
+  received.SetCipherDegree(packet.m_nCipherDegree);
+  const bytes = packet.m_pBlock.slice(1, packet.m_uOffset);
   received.SetRcvPacket(bytes, bytes.length);
   return received;
 }

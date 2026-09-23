@@ -40,8 +40,8 @@ export class CGameSessionStrategy {
   OnGameResult(_calc: CGuildDynInfoCalculator): void {}
   /** vtbl+40 — one call per seated user inside SendGameResult. */
   SetGameResultPlayer(_calc: CGuildDynInfoCalculator, _slot: number, _value: number, _n3: number): void {}
-  /** vtbl+44 — result-view metadata added to packet 163 by the later 2005
-   *  server build.  The 2004 Taiwan client protocol does not serialize it. */
+  /** vtbl+44 — packet 163's third header byte (FxServer.exe.lst:00420000).
+   *  Base returns 0; CGuildSessionStrategy returns 1. */
   GetResultViewType(): number {
     return 0;
   }

@@ -29,6 +29,17 @@ export const CHARGE_VERIFY_RESULT = {
 export const CART_RECEIPT_CODE = 9;
 export const CART_RECEIPT_RESULT = 0;
 
+/** prGetUserCartList / prAddUserCartList parameter widths.
+ *  @ID is 0x10 (0040A33A / 0040A53F). @StockSN is 0x46 (0040A34B / 0040A554). */
+export const CART_USER_ID_BYTES = 0x10;
+export const CART_LIST_BYTES = 0x46;
+
+/** CDBMan::InitUserCart (0040A399, magic 0x24924925) — strlen(output) / 7. */
+export const CART_LIST_COUNT_DIVISOR = 7;
+
+/** CDBMan::AddCartList (0040A5D7, magic 0xCCCCCCCD) — strlen / 5. */
+export const CART_ADD_COUNT_DIVISOR = 5;
+
 /** Client 204 OnPurchaseRes error codes — native FxShop 204 handler.
  *  1 generic, 3 unregistered, 4 already owned, 5 gift failure,
  *  6 gift limit over, 7 under age, 8 not ready, 11 owned limit reached. */
@@ -47,6 +58,13 @@ export const PURCHASE_RESULT = {
 /** Billing orphan marker used in 321 when user not found or busy (0xFFFFFFFF). */
 export const BILLING_ORPHAN_STOCK = 0xffffffff;
 
+/** Billing 321 result (00404297 / 004042A5 / 00404343). */
+export const PURCHASE_CONFIRM = {
+  Charge: 0,
+  Refuse: 1,
+  Absent: 2,
+} as const;
+
 /** Client 208 OnUseCouponRes codes — native FxShop 208.
  *  0 success, 7 generic coupon failure (local/unsupported/unregistered), 8 billing-side failure. */
 export const COUPON_RESULT = {
@@ -55,14 +73,20 @@ export const COUPON_RESULT = {
   BillingFailure: 8,
 } as const;
 
+/** CDBMan::AddPreInventory @Type 200. Gift purchase (00409041) and coupon present share it. */
+export const PRESENT_PREINVENTORY_TYPE = 200;
+
 /** Coupon grant constants — native OnCheckCoupon 00403150. */
-export const COUPON_PREINVENTORY_TYPE = 200;
+export const COUPON_PREINVENTORY_TYPE = PRESENT_PREINVENTORY_TYPE;
 export const COUPON_STOCK_SN = 10;
 export const COUPON_BILLING_SUCCESS = 0;
 export const COUPON_BILLING_SUCCESS_ALT = 3;
 
 /** Gift pre-inventory cap that surfaces the native -2 path. */
 export const GIFT_PREINVENTORY_LIMIT = 100;
+
+/** prAddPreInventory's gift-cap return. A refused gift stores it in TranxResult; a later 312 reads it. */
+export const GIFT_LIMIT_RESULT = -2;
 
 /** CBillingProcess — native constants from FxShop.exe.c:479 / 1548 / 1780. */
 export const BILLING_GAME = 4;

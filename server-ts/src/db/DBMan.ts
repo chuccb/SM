@@ -18,14 +18,22 @@
  */
 import { Database } from "bun:sqlite";
 import { MakeLowerAscii } from "../core/MakeLower.ts";
-import { EncodeCP950 } from "../core/Encoding.ts";
+import { DecodeCP950, EncodeCP950 } from "../core/Encoding.ts";
 import { AddLocalCalendarDays } from "../core/LocalTime.ts";
 import { INVENTORY_SLOT_NONE } from "../common/Item.ts";
 import { SCHEMA_ITEM } from "./CAItemSchema.ts";
 import { mkdirSync, readFileSync } from "node:fs";
 import { LocateCAConfigBak, ParseCAConfigBak, CA_CONFIG_SEED_IP } from "./CAConfigBak.ts";
 import { join } from "node:path";
-import { GIFT_PREINVENTORY_LIMIT } from "../FXSS/Defs.ts";
+import {
+  CART_ADD_COUNT_DIVISOR,
+  CART_LIST_BYTES,
+  CART_LIST_COUNT_DIVISOR,
+  CART_USER_ID_BYTES,
+  GIFT_LIMIT_RESULT,
+  GIFT_PREINVENTORY_LIMIT,
+} from "../FXSS/Defs.ts";
+import type { CUser } from "../FXSS/User.ts";
 
 /** _USERDYNINFO — money/exp/win/draw/lose (+ the id). */
 export interface _USERDYNINFO {
@@ -39,6 +47,61 @@ export interface _USERDYNINFO {
 
 /** Number of UserInfo/UserInventory shards in the original deployment. */
 export const USER_DB_SHARD_COUNT = 6;
+
+/** prUpdateInventoryVerbose `@Verbose varchar(20)` (UserInventory.bak / 004094F1). */
+const INVENTORY_VERBOSE_BYTES = 0x14;
+
+/** Longest prefix whose CP950 encoding fits in `maxBytes`. A double-byte
+ *  character that would be split is dropped: the column is text, and a
+ *  dangling lead byte cannot round-trip through EncodeStr. */
+function TruncateCp950(text: string, maxBytes: number): string {
+  let used = 0;
+  let end = 0;
+  for (let i = 0; i < text.length; i++) {
+    const width = EncodeCP950(text[i]!).length;
+    if (used + width > maxBytes) break;
+    used += width;
+    end = i + 1;
+  }
+  return end === text.length ? text : text.slice(0, end);
+}
+
+/** SetInParamText measures strlen, so a packet NUL ends the parameter. */
+function cStringHead(text: string): string {
+  const end = text.indexOf("\0");
+  return end < 0 ? text : text.slice(0, end);
+}
+
+function cartParamText(text: string, maxBytes: number): string {
+  return TruncateCp950(cStringHead(text), maxBytes);
+}
+
+/** strlen of a DBTYPE_STR field: stop at the first zero, else the copied size. */
+function cStringLength(field: Uint8Array): number {
+  const end = field.indexOf(0);
+  return end < 0 ? field.length : end;
+}
+
+/** PropOutputParam's fTrim=1 copy of the zeroed `@StockSN` buffer.
+ *  The bind is 71 bytes so a 70-character value can be NUL-terminated; the
+ *  copy width is 70. A short value therefore keeps the trailing zeros. The
+ *  trailing-space walk runs only when byte 69 itself is a space. */
+function cartOutputField(stored: string): Uint8Array {
+  const field = new Uint8Array(CART_LIST_BYTES);
+  const raw = EncodeCP950(cStringHead(stored));
+  field.set(raw.subarray(0, Math.min(raw.length, CART_LIST_BYTES)));
+  if (field[CART_LIST_BYTES - 1] !== 0x20) return field;
+  let skipped = 1;
+  while (skipped <= CART_LIST_BYTES && field[CART_LIST_BYTES - skipped] === 0x20) skipped++;
+  return field.subarray(0, CART_LIST_BYTES - skipped + 1);
+}
+
+/** STL bytes back to the string EncodeStr will emit, including embedded NULs. */
+function ansiFieldToString(field: Uint8Array): string {
+  const nul = field.indexOf(0);
+  const text = DecodeCP950(nul < 0 ? field : field.subarray(0, nul));
+  return nul < 0 ? text : text + "\0".repeat(field.length - nul);
+}
 
 /**
  * CDBMan::GetUserHashNo — the first unsigned ANSI byte, ASCII A–Z folded,
@@ -869,9 +932,8 @@ export class CDBMan {
   /** prAddPreInventory — native prAddPreInventory can return -2 for gift-limit-over
    * (FxShop.exe.c:408D70: `if (return == -2) return -2`). The original stored
    * proc enforces a per-user pre-inventory cap; the exact limit is not
-   * recoverable from the backup, so we enforce a generous cap that still
-   * exercises the 204 6 path. Returns SN (>0) on success, -2 gift-limit-over,
-   * -1 generic failure. */
+   * recoverable from the backup, so we enforce GIFT_PREINVENTORY_LIMIT and
+   * return GIFT_LIMIT_RESULT. Returns SN (>0) on success, or -1 on a generic failure. */
   prAddPreInventory(
     id: string,
     type: number,
@@ -886,7 +948,7 @@ export class CDBMan {
     try {
       const db = this.invDB(id);
       const countRow = db.query("SELECT COUNT(*) AS c FROM FxPreInventory WHERE UserID = ?").get(id) as { c: number } | undefined;
-      if (countRow && countRow.c >= GIFT_PREINVENTORY_LIMIT) return -2;
+      if (countRow && countRow.c >= GIFT_PREINVENTORY_LIMIT) return GIFT_LIMIT_RESULT;
       const info = db
         .query(
           `INSERT INTO FxPreInventory (UserID, Type, ItemSN, StockSN, Slot, Amount, ValidityPeriod, ValidityLevel, strAttr, Description)
@@ -961,30 +1023,66 @@ export class CDBMan {
     return info.changes === 1 ? 0 : -1;
   }
 
-  /** prUpdateInventoryVerbose */
+  /** prUpdateInventoryVerbose — `@Verbose varchar(20)`.
+   *  SetInParamText (004094F1) copies at most this many CP950 bytes. */
   prUpdateInventoryVerbose(userID: string, itemSN: number, verbose: string): number {
     const info = this.invDB(userID)
       .query("UPDATE FxUserInventory SET Verbose = ? WHERE UserID = ? AND ItemSN = ?")
-      .run(verbose, userID, itemSN);
+      .run(TruncateCp950(verbose, INVENTORY_VERBOSE_BYTES), userID, itemSN);
     return info.changes === 1 ? 0 : -1;
   }
 
-  /** prGetUserCartList */
+  /** prGetUserCartList — `@ID varchar(16)`, `@StockSN varchar(70) output`, `return @@rowcount`. */
   prGetUserCartList(id: string): { retval: number; stockSN: string } {
-    const r = this.invDB(id).query("SELECT StockSNList FROM FxCart WHERE UserID = ?").get(id) as
+    const key = cartParamText(id, CART_USER_ID_BYTES);
+    const r = this.invDB(id).query("SELECT StockSNList FROM FxCart WHERE UserID = ?").get(key) as
       | { StockSNList: string }
       | undefined;
     return r ? { retval: 1, stockSN: r.StockSNList } : { retval: 0, stockSN: "" };
   }
 
-  /** prAddUserCartList */
+  /** prAddUserCartList — the EXE binds `@StockSN` at width 70. The procedure body
+   *  is not in the inventory backup, so the row keeps that bound value. */
   prAddUserCartList(id: string, stockSNList: string): number {
     this.invDB(id)
       .query(
         `INSERT INTO FxCart (UserID, StockSNList) VALUES (?,?)
          ON CONFLICT(UserID) DO UPDATE SET StockSNList = excluded.StockSNList`,
       )
-      .run(id, stockSNList);
+      .run(cartParamText(id, CART_USER_ID_BYTES), cartParamText(stockSNList, CART_LIST_BYTES));
+    return 0;
+  }
+
+  /** CDBMan::InitUserCart (0040A280). A failed exec leaves both cache fields
+   *  alone. Otherwise the string is the 70-byte DBTYPE_STR field PropOutputParam
+   *  copies, and +0xB34 is strlen/7 only when @@rowcount is nonzero. */
+  InitUserCart(user: CUser): number {
+    let row: { retval: number; stockSN: string };
+    try {
+      row = this.prGetUserCartList(user.GetName());
+    } catch {
+      return 0;
+    }
+    if (row.retval < 0) return 0;
+    const field = cartOutputField(row.stockSN);
+    user.m_nCartListCount = row.retval !== 0 ? Math.floor(cStringLength(field) / CART_LIST_COUNT_DIVISOR) : 0;
+    user.m_strCartList = ansiFieldToString(field);
+    return 1;
+  }
+
+  /** CDBMan::AddCartList (0040A4B0). Exec failure does not touch the cache.
+   *  Success copies the full C string — not the 70-byte parameter — and sets
+   *  +0xB34 to strlen/5 only when that copy is nonempty. */
+  AddCartList(user: CUser, list: string): number {
+    try {
+      this.prAddUserCartList(user.GetName(), list);
+    } catch {
+      return -1;
+    }
+    const text = cStringHead(list);
+    user.m_strCartList = text;
+    const length = EncodeCP950(text).length;
+    if (length !== 0) user.m_nCartListCount = Math.floor(length / CART_ADD_COUNT_DIVISOR);
     return 0;
   }
 

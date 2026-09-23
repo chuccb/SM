@@ -9,7 +9,7 @@ import {
 import { CipherDegree, CReceivedPacket, CSendPacket as CGameSendPacket, enSocket } from "../src/core/Packet.ts";
 import { CPacketSocket } from "../src/core/PacketSocket.ts";
 import { PacketLog } from "../src/core/PacketLog.ts";
-import { CBillingProcess, CUser, CMainSystem, CClientSocket } from "../src/FXSS/FxShop.ts";
+import { CBillingProcess, CItemMan, CUser, CMainSystem, CClientSocket } from "../src/FXSS/FxShop.ts";
 import { ShopItem } from "../src/FXSS/Recordsets.ts";
 import {
   BILLING_PACKET_LOG_CONTEXT,
@@ -307,6 +307,10 @@ describe("billing builders and four-byte dispatch integration", () => {
     user.m_nSID = 0x11; user.m_nBID = 0x22;
     user.m_pSocket = { m_strPeerAddress: "1.2.3.4" } as CClientSocket;
     const item = new ShopItem(); item.SN = 6; item.Price = 7;
+    const previousItems = CItemMan.ms_pInstance;
+    const items = new CItemMan();
+    items.m_mapShopItem.set(item.SN, item);
+    CItemMan.ms_pInstance = items;
     const mainSystem = new CMainSystem();
     mainSystem.m_nFXAttr = 0;
     const cases: [() => void, string][] = [
@@ -315,16 +319,20 @@ describe("billing builders and four-byte dispatch integration", () => {
       // A17's correlation and response semantics remain separate defects.
       [() => billing.RequestPurchaseTw(user, item), "00000137"],
       [() => billing.RequestDigiQAuthorization("a", "b", "c"), "00000155016101620163"],
-      [() => billing.RequestGift(user, "b", 6, 7), "0007"],
+      [() => billing.RequestGift(user, "b", 6), "0007"],
       [() => billing.RequestCheckCoupon(user), "0100"],
       [() => billing.RequestUseCoupon(user), "0101"],
     ];
-    for (const [send, prefix] of cases) {
-      transport.output.length = 0; send();
-      const raw = Buffer.from(transport.output);
-      expect(raw.readUInt32BE()).toBe(raw.length - 8); expect(raw.readUInt32BE(4)).toBe(7);
-      expect(hex(raw.subarray(8)).startsWith(prefix)).toBe(true);
-      if (prefix.length > 8) expect(hex(raw.subarray(8))).toBe(prefix);
+    try {
+      for (const [send, prefix] of cases) {
+        transport.output.length = 0; send();
+        const raw = Buffer.from(transport.output);
+        expect(raw.readUInt32BE()).toBe(raw.length - 8); expect(raw.readUInt32BE(4)).toBe(7);
+        expect(hex(raw.subarray(8)).startsWith(prefix)).toBe(true);
+        if (prefix.length > 8) expect(hex(raw.subarray(8))).toBe(prefix);
+      }
+    } finally {
+      CItemMan.ms_pInstance = previousItems;
     }
   });
   test("receive dispatch sees full IDs, leaves the body after four bytes, and ignores unknown IDs", () => {

@@ -34,6 +34,7 @@ import {
 
 function receivedFrom(packet: CSendPacket): CReceivedPacket {
   const received = new CReceivedPacket();
+  received.SetCipherDegree(packet.m_nCipherDegree);
   received.SetRcvPacket(packet.m_pBlock.subarray(0, packet.m_uOffset), packet.m_uOffset);
   return received;
 }
@@ -185,10 +186,14 @@ describe("CLocalServerMan class-aware dispatch and monitor wire", () => {
     request.Decode1();
     owner.OnAddNewUser(request, center);
 
+    // 900/101/103 are the packet account SIDs (CUser+80). The serial table and
+    // ExtractUser key CSerialObject::m_nSerialNo (+28), which the ctor assigns
+    // by InterlockedIncrement and never from that SID (CxCenter.exe.c:15235, 21338).
+    expect(resident.nSID).toBe(900);
     expect(center.globalUserTable.userTable.get("taken")).toBe(resident);
     expect(center.globalUserTable.userTable.has("fresh")).toBe(false);
     expect(center.globalUserTable.userTable.has("after")).toBe(false);
-    expect(center.globalUserTable.serialTable.get(900)).toBe(resident);
+    expect(center.globalUserTable.serialTable.get(resident.m_nGlobalSerial)).toBe(resident);
     expect(center.globalUserTable.serialTable.has(101)).toBe(false);
     expect(center.globalUserTable.serialTable.has(103)).toBe(false);
     expect(owner.nConnNo).toBe(1);

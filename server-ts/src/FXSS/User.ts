@@ -6,14 +6,15 @@ import { CDynInfoCalculator_GetLevel } from "../common/LevelTable.ts";
 import { CHARGE_KEY_MIN, CHARGE_KEY_MODULUS, NEXONCLUB_EMAIL_DOMAIN } from "./Defs.ts";
 import type { CClientSocket } from "./ClientSocket.ts";
 import { CMainSystem } from "./MainSystem.ts";
-import type { _USERACCOUNT, _USERDYNINFO, UserInventory, CouponMap } from "./Recordsets.ts";
+import type { _USERACCOUNT, UserInventory, CouponMap } from "./Recordsets.ts";
 
+/** Four dwords copied from the OnPurchaseOKTw stack record.
+ * Rollback reads ItemSN, PreInventorySN, the stack flag, and the amount delta. */
 export interface DBTranxInfo {
   ItemSN: number;
-  Amount: number;
   PreInventorySN: number;
   IsNew: number;
-  ValidityPeriod: number;
+  Amount: number;
 }
 
 // ============================ CUser ============================
@@ -33,8 +34,12 @@ export class CUser {
   m_nSID = -1; // +3108 (dword 777) — CUser::GetSID/SetSID (the account SID); set from the
   // client's p7 second dword (FxShop.exe.c:19013) and echoed in MC 3
   m_nBID = -1; // +3112 (dword 778) — CUser::GetBID/SetBID (the SID pair's second dword)
-  m_nUserAccountHiword = 0; // +152 = _USERACCOUNT+128 — the billing tail E2 (HIWORD)
+  /** user+0x9A. prGetUserInfoShop writes @CommunitySvr at _USERACCOUNT+130;
+   * operator= copies that word here. RequestGift / coupon Encode2 read it
+   * (FxShop.exe.lst 00402D06, 00402F44, 004030E4). */
+  m_nCommunitySvr = 0;
   m_nCash = 0; // cached FxUserDynamic.Money (game currency, NOT billing cash)
+  m_nExp = 0; // +0xAC — dyninfo Exp; CUser::SetLevel and coupon category 101 read it
   m_nBillingCash = 0; // +3104 — CUser::SetCash, independent of FxUserDynamic.Money
   m_nSelectedUserIdx = 0; // socket-side selection
   m_nLevel = 0; // +3100 — CUser::SetLevel (CDynInfoCalculator::GetLevel(Exp))
@@ -99,9 +104,9 @@ export class CUser {
     this.m_nBillingCash = cash | 0;
   }
 
-  /** CUser::SetLevel — CDynInfoCalculator::GetLevel(dyninfo Exp). */
-  SetLevel(dyn: _USERDYNINFO): void {
-    this.m_nLevel = CDynInfoCalculator_GetLevel(dyn.Exp);
+  /** CUser::SetLevel (0041EBB0) — GetLevel of the cached Exp at +0xAC. */
+  SetLevel(): void {
+    this.m_nLevel = CDynInfoCalculator_GetLevel(this.m_nExp);
   }
 
   /** CUser::SetNexonClubId (0041FC60): range-based byte search in Email,
@@ -168,11 +173,16 @@ export class CUser {
     }
   }
 
-  m_fTranxInProgress = 0; // user+20 — the billing-tranx guard (210/214/221/223/verify)
+  m_fTranxInProgress = 0; // user+20 — the billing-tranx guard (207/210/214/221/222/223/verify)
   m_nChargeKey = 0; // user+3044 (0xBE4) — the OnVerifyKey charge key
   m_fRemainCashRequested = 0; // user+3048 (0xBE8) — set by the 214 handler
   m_fCartProcessing = 0; // user+3056 (0xBF0) — set while a cart purchase walks
   m_pPurchaseTranx: object | null = null; // port-side pending-purchase marker, not a native pointer offset
   m_anCart: { stockSN: number; cnt: number }[] = []; // user+2920 (2 dwords per entry)
   m_nCartCount = 0; // user+3052
+  /** user+0xB28 — the cart-list STL string. Not the purchase walk at +2920. */
+  m_strCartList = "";
+  /** user+0xB34 — InitUserCart's strlen/7, or AddCartList's strlen/5.
+   *  Client 214 encodes the low byte; the string is included only when this dword is nonzero. */
+  m_nCartListCount = 0;
 }

@@ -9,7 +9,7 @@ import {
   Shop2Billing_TwPacket,
   S2C_ShopPacket,
 } from "../core/protocol/PacketIDs.ts";
-import type { ShopItem } from "./Recordsets.ts";
+import { CouponMap, type ShopItem } from "./Recordsets.ts";
 import { CSendPacket as CBillingSendPacket, DecodeBillingString } from "./Packet.ts";
 import { EncodeCP950 } from "../core/Encoding.ts";
 import { CBillingSocketTw } from "./BillingSocket.ts";
@@ -26,25 +26,56 @@ import { EncodeVariantTime } from "../core/VariantTime.ts";
 import {
   SHOP_PERMANENT_EXPIRY_LEVEL,
   SHOP_PERMANENT_VALIDITY_DAYS,
-  CART_RECEIPT_CODE,
-  CART_RECEIPT_RESULT,
   PURCHASE_RESULT,
+  PURCHASE_CONFIRM,
   BILLING_ORPHAN_STOCK,
+  PRESENT_PREINVENTORY_TYPE,
   COUPON_PREINVENTORY_TYPE,
   COUPON_STOCK_SN,
+  COUPON_BILLING_SUCCESS,
+  COUPON_BILLING_SUCCESS_ALT,
   COUPON_RESULT,
+  GIFT_LIMIT_RESULT,
   BILLING_GAME,
   BILLING_CONNECT_SLEEP_MS,
   BILLING_TERMINATE_THRESHOLD,
   BILLING_RECONNECT_TICKS,
   BILLING_RTT_TICKS,
 } from "./Defs.ts";
-import { GetShopMainPool } from "./runtime/MainPoolRuntime.ts";
 
 interface BILLINGSVR {
   SN: number;
   ip: string;
   port: number;
+}
+
+/** CDBMan::AddNewInventory(char const *) maps prAddInventory's 10 to 2 (00408C93). */
+const INVENTORY_GRANT_STACKED = 2;
+
+interface ExternalGrant {
+  ok: boolean;
+  /** TranxResult after a refused grant. Only a failed non-premium gift stores its negative proc code. */
+  result: number;
+}
+
+function granted(): ExternalGrant {
+  return { ok: true, result: 0 };
+}
+
+function refused(result = 0): ExternalGrant {
+  return { ok: false, result };
+}
+
+function expiryDays(period: number): number {
+  return period === 0 ? SHOP_PERMANENT_VALIDITY_DAYS : period;
+}
+
+function selfExpiryLevel(level: number, userLevel: number): number {
+  return level === 0 ? SHOP_PERMANENT_EXPIRY_LEVEL : (userLevel + level) | 0;
+}
+
+function giftExpiryLevel(level: number): number {
+  return level === 0 ? SHOP_PERMANENT_EXPIRY_LEVEL : level;
 }
 
 interface LocalPurchase {
@@ -54,6 +85,22 @@ interface LocalPurchase {
   reference: string | null;
   lastSend: number;
   started: number;
+}
+
+/** char const* construction used by RequestGift's EncodeStr temporaries. */
+function cString(text: string): string {
+  const end = text.indexOf("\0");
+  return end < 0 ? text : text.slice(0, end);
+}
+
+function copyCouponMap(entry: CouponMap): CouponMap {
+  const copy = new CouponMap();
+  copy.CouponSN = entry.CouponSN;
+  copy.ItemSN = entry.ItemSN;
+  copy.Units = entry.Units;
+  copy.ValidityPeriod = entry.ValidityPeriod;
+  copy.Validitylevel = entry.Validitylevel;
+  return copy;
 }
 
 export class CBillingProcess {
@@ -249,13 +296,10 @@ export class CBillingProcess {
     user.ResetTranxInfo();
   }
 
-  /** CBillingProcess::OnGiftUnderAge (004018B0) — [E4 serial] → 204 7. */
+  /** CBillingProcess::OnGiftUnderAge (004018B0) — one Decode4, then 204 code 7. */
   OnGiftUnderAge(n: CReceivedPacket): void {
     if (n.m_uLength - n.m_uOffset < 4) return;
     const serial = n.Decode4();
-    // Native also decodes an extra dword? The 004018B0 dump shows only one Decode4,
-    // but legacy gift packets always carry two. Accept both.
-    if (n.m_uLength - n.m_uOffset >= 4) n.Decode4();
     const user = CLocalUserTable.ms_pInstance!.FindUserFromGlobalSerialNo(serial);
     if (!user || user.m_fTranxInProgress !== 0) return;
     const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes);
@@ -264,11 +308,10 @@ export class CBillingProcess {
     user.ResetTranxInfo();
   }
 
-  /** CBillingProcess::OnNotReady (00401970) — [E4 serial] → 204 8. */
+  /** CBillingProcess::OnNotReady (00401970) — one Decode4, then 204 code 8. */
   OnNotReady(n: CReceivedPacket): void {
     if (n.m_uLength - n.m_uOffset < 4) return;
     const serial = n.Decode4();
-    if (n.m_uLength - n.m_uOffset >= 4) n.Decode4();
     const user = CLocalUserTable.ms_pInstance!.FindUserFromGlobalSerialNo(serial);
     if (!user || user.m_fTranxInProgress !== 0) return;
     const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes);
@@ -278,10 +321,11 @@ export class CBillingProcess {
   }
 
   /** CBillingProcess::OnCheckCoupon (00403150) — family 1 opcode 0.
-   *  Wire: [E4 serial][E1 result][E4 couponSN]. Result 0/3 = success, else
-   *  failure. On success, grants via CItemMan::GetCouponMapList and either
-   *  prAddPreInventory (when m_strCouponId non-empty) or direct inventory/
-   *  money/exp/premium. Tracks v18 to chain RequestUseCoupon. */
+   *  [E4 serial][E1 result][E4 couponSN]. Result 0/3 continues; any other
+   *  result, or an empty coupon string, sends that result byte and resets.
+   *  The catalog is appended to the user's list. A still-empty list, or no
+   *  counted grant, sends 208 code 8. Experience is applied but does not
+   *  count. A counted grant chains RequestUseCoupon and sends no 208. */
   OnCheckCoupon(n: CReceivedPacket): void {
     if (n.m_uLength - n.m_uOffset < 9) return;
     const serial = n.Decode4();
@@ -290,124 +334,131 @@ export class CBillingProcess {
     const user = CLocalUserTable.ms_pInstance!.FindUserFromGlobalSerialNo(serial);
     if (!user || user.m_fTranxInProgress !== 0) return;
 
-    // Native failure condition: result !=0 && !=3 OR coupon list empty (752==753)
-    // The second part is evaluated before GetCouponMapList; in our port the
-    // coupon map list is global, so we check emptiness after lookup.
-    if (result !== 0 && result !== 3) {
-      const p = new CSendPacket(S2C_ShopPacket.OnUseCouponRes);
-      p.Encode1(result);
-      user.m_pSocket?.SendPacket(p);
-      user.ResetTranxInfo();
+    const accepted = result === COUPON_BILLING_SUCCESS || result === COUPON_BILLING_SUCCESS_ALT;
+    if (!accepted || user.m_strCoupon.length === 0) {
+      this.sendCouponCode(user, result);
       return;
     }
 
     user.m_nCouponID = couponSN | 0;
     const itemMan = CItemMan.ms_pInstance;
     if (!itemMan) {
-      const p = new CSendPacket(S2C_ShopPacket.OnUseCouponRes);
-      p.Encode1(COUPON_RESULT.BillingFailure);
-      user.m_pSocket?.SendPacket(p);
-      user.ResetTranxInfo();
+      this.sendCouponCode(user, COUPON_RESULT.BillingFailure);
       return;
     }
-    const couponList = itemMan.GetCouponMapList(couponSN);
-    if (couponList.length === 0) {
-      const p = new CSendPacket(S2C_ShopPacket.OnUseCouponRes);
-      p.Encode1(COUPON_RESULT.BillingFailure);
-      user.m_pSocket?.SendPacket(p);
-      user.ResetTranxInfo();
+    for (const entry of itemMan.GetCouponMapList(user.m_nCouponID)) {
+      user.m_listCouponMap.push(copyCouponMap(entry));
+    }
+    if (user.m_listCouponMap.length === 0) {
+      this.sendCouponCode(user, COUPON_RESULT.BillingFailure);
       return;
     }
-    user.m_listCouponMap = couponList;
 
-    let granted = 0;
-    for (const entry of couponList) {
-      const userItem = itemMan.GetUserItem(entry.ItemSN);
-      if (!userItem) continue;
-      const validityPeriod = entry.ValidityPeriod || SHOP_PERMANENT_VALIDITY_DAYS;
-      const expiryLevel = entry.Validitylevel !== 0 ? (user.m_nLevel + entry.Validitylevel) | 0 : SHOP_PERMANENT_EXPIRY_LEVEL;
-      const units = entry.Units | 0;
-
-      if (user.m_strCouponId.length > 0) {
-        // Gift coupon path — prAddPreInventory with Type 200, StockSN 10
-        const preSN = this.db.prAddPreInventory(user.m_strCouponId, COUPON_PREINVENTORY_TYPE, entry.ItemSN, COUPON_STOCK_SN, units, validityPeriod, expiryLevel, user.GetName(), "");
-        if (preSN > 0) granted = 1;
-        // -2 gift-limit-over falls through to 208 8 in native; regular gift path
-        // surfaces 204 6 via GrantExternalPurchase, but coupon path keeps 208.
-      } else {
-        const cat = userItem.Category;
-        if (cat === ItemCategory.PremiumTicket) {
-          // Native uses Validitylevel as ticket duration for coupon
-          const ok = this.db.prSetPremiumTicket(user.GetName(), entry.Validitylevel);
-          if (ok !== 0) {
-            if (user.m_nAuthenCode !== 1) CCenterProcess.ms_pInstance?.SendAuthenCode(user.GetGlobalSerialNo(), 1);
-            granted = 1;
-          }
-        } else if (cat === ItemCategory.Money) {
-          const ok = this.db.prSetMoney(user.GetName(), units);
-          if (ok === 0) granted = 1;
-        } else if (cat === ItemCategory.Experience) {
-          const ok = this.db.prSetFxExp(user.GetName(), units);
-          if (ok === 0) {
-            try {
-              const dyn = this.db.prGetUserDynamic(user.GetName()) as { Exp?: number } | undefined;
-              if (dyn) user.SetLevel({ Exp: dyn.Exp ?? 0, Money: 0, Win: 0, Draw: 0, Lose: 0, PremiumDate: null });
-            } catch {}
-            granted = 1;
-          }
-        } else {
-          const addable = IsInventoryAddable(cat);
-          const res = this.db.prAddInventoryShop(user.GetName(), entry.ItemSN, COUPON_STOCK_SN, units, validityPeriod, expiryLevel, addable);
-          if (res !== 0) granted = 1;
-        }
-      }
+    let granted = false;
+    for (const entry of user.m_listCouponMap) {
+      if (this.grantCouponMapEntry(user, itemMan, entry)) granted = true;
     }
-
-    if (granted !== 0) {
+    if (granted) {
       this.RequestUseCoupon(user);
       return;
     }
-    const p = new CSendPacket(S2C_ShopPacket.OnUseCouponRes);
-    p.Encode1(COUPON_RESULT.BillingFailure);
-    user.m_pSocket?.SendPacket(p);
-    user.ResetTranxInfo();
+    this.sendCouponCode(user, COUPON_RESULT.BillingFailure);
   }
 
   /** CBillingProcess::OnUseCoupon (00403440) — family 1 opcode 1.
-   *  Wire: [E4 serial][E1 result][E4 ignored]. On success (0/3) sends
-   *  client 208 [E1 0][E4 count][count × (E4 ItemSN, E4 Units, E4 ValidityPeriod, E4 ValidityLevel/Level)] */
+   *  [E4 serial][E1 result][E4 ignored]. Success is result 0/3 and a coupon
+   *  id above 0. The count is the stored list size, including entries whose
+   *  UserItem is missing; only entries with a UserItem are encoded. */
   OnUseCoupon(n: CReceivedPacket): void {
     if (n.m_uLength - n.m_uOffset < 9) return;
     const serial = n.Decode4();
     const result = n.Decode1();
-    n.Decode4(); // ignored dword
+    n.Decode4();
     const user = CLocalUserTable.ms_pInstance!.FindUserFromGlobalSerialNo(serial);
     if (!user || user.m_fTranxInProgress !== 0) return;
 
-    if ((result !== 0 && result !== 3) || user.m_nCouponID <= 0) {
-      const p = new CSendPacket(S2C_ShopPacket.OnUseCouponRes);
-      p.Encode1(result);
-      user.m_pSocket?.SendPacket(p);
-      user.ResetTranxInfo();
+    const accepted = result === COUPON_BILLING_SUCCESS || result === COUPON_BILLING_SUCCESS_ALT;
+    if (!accepted || user.m_nCouponID <= 0) {
+      this.sendCouponCode(user, result);
       return;
     }
 
     const itemMan = CItemMan.ms_pInstance;
-    const list = itemMan ? itemMan.GetCouponMapList(user.m_nCouponID) : user.m_listCouponMap;
-    const valid = list.filter((c) => itemMan?.GetUserItem(c.ItemSN) != null);
-    const p = new CSendPacket(S2C_ShopPacket.OnUseCouponRes);
-    p.Encode1(COUPON_RESULT.Success);
-    p.Encode4(valid.length);
-    for (const entry of valid) {
-      const ui = itemMan?.GetUserItem(entry.ItemSN);
-      p.Encode4(entry.ItemSN);
-      p.Encode4(entry.Units);
-      p.Encode4(entry.ValidityPeriod);
-      if (ui && ui.Category === ItemCategory.Experience) p.Encode4(user.m_nLevel);
-      else p.Encode4(entry.Validitylevel);
+    const packet = new CSendPacket(S2C_ShopPacket.OnUseCouponRes);
+    packet.Encode1(COUPON_RESULT.Success);
+    packet.Encode4(user.m_listCouponMap.length);
+    for (const entry of user.m_listCouponMap) {
+      const userItem = itemMan?.GetUserItem(entry.ItemSN);
+      if (!userItem) continue;
+      packet.Encode4(entry.ItemSN);
+      packet.Encode4(entry.Units);
+      packet.Encode4(entry.ValidityPeriod);
+      packet.Encode4(userItem.Category === ItemCategory.Experience ? user.m_nLevel : entry.Validitylevel);
     }
-    user.m_pSocket?.SendPacket(p);
+    user.m_pSocket?.SendPacket(packet);
     user.ResetTranxInfo();
+  }
+
+  /** 208 plus ResetTranxInfo. A missing client socket still resets. */
+  private sendCouponCode(user: CUser, code: number): void {
+    const packet = new CSendPacket(S2C_ShopPacket.OnUseCouponRes);
+    packet.Encode1(code);
+    user.m_pSocket?.SendPacket(packet);
+    user.ResetTranxInfo();
+  }
+
+  /** One stored coupon-map entry. False means this entry does not count,
+   * including the official experience path that still applies the delta. */
+  private grantCouponMapEntry(user: CUser, itemMan: CItemMan, entry: CouponMap): boolean {
+    const userItem = itemMan.GetUserItem(entry.ItemSN);
+    if (!userItem) return false;
+    const units = entry.Units | 0;
+    const validityPeriod = entry.ValidityPeriod !== 0 ? entry.ValidityPeriod : SHOP_PERMANENT_VALIDITY_DAYS;
+    const expiryLevel = entry.Validitylevel !== 0
+      ? (user.m_nLevel + entry.Validitylevel) | 0
+      : SHOP_PERMANENT_EXPIRY_LEVEL;
+
+    if (user.m_strCouponId.length > 0) {
+      const preSN = this.db.prAddPreInventory(
+        user.m_strCouponId,
+        COUPON_PREINVENTORY_TYPE,
+        entry.ItemSN,
+        COUPON_STOCK_SN,
+        units,
+        validityPeriod,
+        expiryLevel,
+        user.GetName(),
+        "",
+      );
+      return preSN > 0;
+    }
+
+    switch (userItem.Category) {
+      case ItemCategory.PremiumTicket:
+        if (this.db.prSetPremiumTicket(user.GetName(), entry.Validitylevel) === 0) return false;
+        if (user.m_nAuthenCode !== 1) CCenterProcess.ms_pInstance?.SendAuthenCode(user.GetGlobalSerialNo(), 1);
+        return true;
+      case ItemCategory.Money:
+        // SetMoney is true when prSetMoney's return is >= 0. This adapter's 0 is that success.
+        return this.db.prSetMoney(user.GetName(), units) === 0;
+      case ItemCategory.Experience:
+        user.m_nExp = (user.m_nExp + units) | 0;
+        user.SetLevel();
+        this.db.prSetFxExp(user.GetName(), units);
+        return false;
+      default: {
+        const added = this.db.prAddInventoryShop(
+          user.GetName(),
+          entry.ItemSN,
+          COUPON_STOCK_SN,
+          units,
+          validityPeriod,
+          expiryLevel,
+          IsInventoryAddable(userItem.Category),
+        );
+        return added !== 0;
+      }
+    }
   }
 
   RequestRemainCashTw(user: CUser): void {
@@ -430,31 +481,43 @@ export class CBillingProcess {
 
   m_nSvrTag = 0;
 
-  RequestGift(user: CUser, _targetId: string, stockSN: number, price: number): void {
+  /** CBillingProcess::RequestGift (00402BA0).
+   *  Price is ShopItem+0x34, not a caller argument. The last string is the
+   *  recipient. A missing ShopItem is an undefined native dereference. */
+  RequestGift(user: CUser, targetId: string, stockSN: number): void {
+    const shopItem = CItemMan.ms_pInstance?.GetShopItem(stockSN);
+    if (!shopItem || shopItem.SN < 0 || this.m_fConnected === 0) return;
     const p = CBillingSendPacket.FromBillingPacket(Shop2Billing_LegacyPacket.RequestGift);
     p.Encode4(user.GetGlobalSerialNo());
     p.Encode4(0);
     p.Encode4(0);
     p.Encode4(stockSN);
-    p.Encode4(price);
+    p.Encode4(shopItem.Price);
     p.EncodeStr(user.GetNexonClubId());
-    p.EncodeStr(user.GetName());
+    p.EncodeStr(cString(user.GetName()));
     p.Encode1(CMainSystem.ms_pInstance!.m_nFXAttr & 0xff);
-    p.Encode2(user.m_nUserAccountHiword);
-    p.EncodeStr(user.m_strTranxInfo);
+    p.Encode2(user.m_nCommunitySvr);
+    p.EncodeStr(cString(user.m_strTranxInfo));
+    p.EncodeStr(cString(targetId));
     this.Send(p);
   }
 
-  RequestCheckCoupon(user: CUser): void {
+  /** 00402E10. Returns 0 when the user is missing or already in a transaction. */
+  RequestCheckCoupon(user: CUser): number {
+    if (!user || user.m_fTranxInProgress !== 0) return 0;
     const p = CBillingSendPacket.FromCouponPacket(Shop2Billing_CouponPacket.RequestCheckCoupon);
     this.EncodeCouponBody(p, user);
     this.Send(p);
+    return 1;
   }
 
-  RequestUseCoupon(user: CUser): void {
+  /** 00402FB0. Same guard and body as RequestCheckCoupon, opcode 1. */
+  RequestUseCoupon(user: CUser): number {
+    if (!user || user.m_fTranxInProgress !== 0) return 0;
     const p = CBillingSendPacket.FromCouponPacket(Shop2Billing_CouponPacket.RequestUseCoupon);
     this.EncodeCouponBody(p, user);
     this.Send(p);
+    return 1;
   }
 
   private EncodeCouponBody(p: CSendPacket, user: CUser): void {
@@ -463,7 +526,7 @@ export class CBillingProcess {
     p.EncodeStr(user.GetNexonClubId());
     p.EncodeStr(user.GetName());
     p.Encode1(CMainSystem.ms_pInstance!.m_nFXAttr & 0xff);
-    p.Encode2(user.m_nUserAccountHiword);
+    p.Encode2(user.m_nCommunitySvr);
   }
 
   RequestDigiQAuthorization(account: string, password: string, name: string): void {
@@ -616,132 +679,180 @@ export class CBillingProcess {
 
       const user = CLocalUserTable.ms_pInstance?.FindUserFromGlobalSerialNo(serial);
       if (!user || user.m_fTranxInProgress !== 0) {
-        if (result === 0) this.Send(this.MakePurchaseConfirmTw(reference, serial, BILLING_ORPHAN_STOCK, 2));
+        if (result === 0) this.Send(this.MakePurchaseConfirmTw(reference, serial, BILLING_ORPHAN_STOCK, PURCHASE_CONFIRM.Absent));
         return;
       }
       if (result !== 0) {
-        const isGift = user.m_strTranxInfo.length > 0;
-        const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes);
-        p.Encode1(isGift ? PURCHASE_RESULT.GiftFailure : PURCHASE_RESULT.GenericFailure);
-        p.EncodeStr(message);
-        user.m_pSocket?.SendPacket(p);
-        user.ResetTranxInfo();
+        this.refuseExternalPurchase(user, message);
         return;
       }
-      const grantRes = this.GrantExternalPurchase(user);
-      const grantOk = grantRes !== 0 && grantRes !== -2;
-      const confirmResult = grantOk ? 0 : 1;
-      if (grantOk) {
-        user.m_nTranxState = 1;
+      // 312 grants and answers 321. It does not tell the client, roll back, or reset.
+      // A later 322 is what commits the receipt or undoes a confirmed grant.
+      const grant = this.grantExternalPurchase(user, serial);
+      if (grant.ok) {
         user.m_nTranxResult = 1;
+        user.m_nTranxState = 1;
       } else {
-        user.m_nTranxResult = grantRes === -2 ? -2 : 0;
+        user.m_nTranxResult = grant.result;
       }
-      this.Send(this.MakePurchaseConfirmTw(reference, serial, user.m_nTranxStockSN, confirmResult));
-      if (!grantOk) {
-        this.RollbackExternalGrant(user);
-        if (grantRes === -2) {
-          // Native OnPurchaseOKTw would send 6 when TranxResult==-2 and category==1,
-          // but for Tw path we surface it directly as 204 6 to match legacy handler.
-          const isGift = user.m_strTranxInfo.length > 0;
-          if (isGift) {
-            const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes);
-            p.Encode1(PURCHASE_RESULT.GiftLimitOver);
-            p.Encode1(0);
-            user.m_pSocket?.SendPacket(p);
-          }
-        }
-        user.ResetTranxInfo();
-      }
+      this.Send(this.MakePurchaseConfirmTw(
+        reference,
+        serial,
+        user.m_nTranxStockSN,
+        grant.ok ? PURCHASE_CONFIRM.Charge : PURCHASE_CONFIRM.Refuse,
+      ));
     } catch {
       console.warn("[Shop] Invalid billing 312; purchase remains pending for retry.");
     }
   }
 
-  private GrantExternalPurchase(user: CUser): number {
-    const itemMan = CItemMan.ms_pInstance;
-    if (!itemMan) return 0;
-    const parentSN = user.m_nTranxStockSN;
-    const parent = itemMan.GetShopItem(parentSN);
-    if (!parent) return 0;
-    const isGift = user.m_strTranxInfo.length > 0;
-    const id = isGift ? user.m_strTranxInfo : user.GetName();
-    if (isGift && this.db.prConfirmUnregisteredId(id) === 0) return 0;
-
-    const packageRows = parent.Category === ItemCategory.Package ? itemMan.GetPackageMapList(parent.SN) : [];
-    const grants: { shopItem: ShopItem; units: number }[] = [];
-    if (parent.Category === ItemCategory.Package) {
-      for (const pkg of packageRows) {
-        const child = itemMan.GetShopItem(pkg.StockSN);
-        if (!child) return 0;
-        grants.push({ shopItem: child, units: pkg.Units * child.Unit });
-      }
-      if (grants.length === 0) return 0;
-    } else {
-      grants.push({ shopItem: parent, units: parent.Unit });
-    }
-
-    const validityPeriod = parent.ValidityPeriod;
-    const validityLevel = parent.ValidityLevel;
-    const expiryDays = validityPeriod || SHOP_PERMANENT_VALIDITY_DAYS;
-    const expiryLevel = validityLevel === 0 ? SHOP_PERMANENT_EXPIRY_LEVEL : (user.m_nLevel + validityLevel) | 0;
-
-    let ok = 1;
-    let giftLimitOver = false;
-    for (const g of grants) {
-      const child = g.shopItem;
-      const units = g.units;
-      user.m_nTranxItemSN = child.ItemSN;
-      user.m_nTranxAmount = units;
-
-      if (isGift) {
-        const preSN = this.db.prAddPreInventory(id, 0, child.ItemSN, child.SN, units, validityPeriod, validityLevel, "", "");
-        if (preSN === -2) { giftLimitOver = true; ok = 0; break; }
-        if (preSN < 0) { ok = 0; break; }
-        user.m_listTranxInfo.push({ ItemSN: child.ItemSN, Amount: units, PreInventorySN: preSN, IsNew: 0, ValidityPeriod: validityPeriod });
+  /** 312 result != 0 (00403DB4). A gift whose last proc returned -2 uses the shop category, not UserItem. */
+  private refuseExternalPurchase(user: CUser, message: string): void {
+    if (user.m_strTranxInfo.length === 0) {
+      this.sendPurchaseResult(user, PURCHASE_RESULT.GenericFailure, message);
+    } else if (user.m_nTranxResult === GIFT_LIMIT_RESULT) {
+      const parent = CItemMan.ms_pInstance?.GetShopItem(user.m_nTranxStockSN) ?? null;
+      if (parent?.Category === ItemCategory.Consumable) {
+        this.sendPurchaseResult(user, PURCHASE_RESULT.GiftLimitOver, message, 1);
       } else {
-        if (child.Category === ItemCategory.PremiumTicket) {
-          const res = this.db.prSetPremiumTicket(id, validityPeriod);
-          if (res === 0) { ok = 0; break; }
-          CCenterProcess.ms_pInstance?.SendAuthenCode(user.GetGlobalSerialNo(), 1);
-          user.m_listTranxInfo.push({ ItemSN: child.ItemSN, Amount: units, PreInventorySN: 0, IsNew: 1, ValidityPeriod: validityPeriod });
-        } else {
-          const addable = IsInventoryAddable(child.Category);
-          const res = this.db.prAddInventoryShop(id, child.ItemSN, child.SN, units, expiryDays, expiryLevel, addable);
-          if (res === 0) { ok = 0; break; }
-          user.m_listTranxInfo.push({ ItemSN: child.ItemSN, Amount: units, PreInventorySN: 0, IsNew: res, ValidityPeriod: validityPeriod });
-        }
+        // A missing shop item would fault the category compare. Refuse as already owned.
+        this.sendPurchaseResult(user, PURCHASE_RESULT.AlreadyOwned, message);
       }
+    } else {
+      this.sendPurchaseResult(user, PURCHASE_RESULT.GiftFailure, message);
     }
-    if (!ok) return giftLimitOver ? -2 : 0;
-    return 1;
+    user.ResetTranxInfo();
   }
 
-  private RollbackExternalGrant(user: CUser): void {
-    const isGift = user.m_strTranxInfo.length > 0;
-    const id = isGift ? user.m_strTranxInfo : user.GetName();
+  /** Grant the purchase prepared by OnReqPurchaseStockItem / OnRequestPresent.
+   * Package children overwrite the item and amount; the stock stays the parent. */
+  private grantExternalPurchase(user: CUser, serial: number): ExternalGrant {
+    const itemMan = CItemMan.ms_pInstance;
+    const parent = itemMan?.GetShopItem(user.m_nTranxStockSN) ?? null;
+    if (!itemMan || !parent) return refused();
+    const gift = user.m_strTranxInfo.length > 0;
+    if (parent.Category !== ItemCategory.Package) return this.grantExternalLine(user, parent, gift, serial);
+    if (this.externalPackageRefused(user, parent, gift)) return refused();
+
+    for (const mapping of itemMan.GetPackageMapList(parent.SN)) {
+      const child = itemMan.GetShopItem(mapping.StockSN);
+      if (!child) return refused();
+      user.m_nTranxItemSN = child.ItemSN;
+      user.m_nTranxAmount = Math.imul(child.Unit, mapping.Units);
+      const step = this.grantExternalLine(user, parent, gift, serial);
+      if (!step.ok) return step;
+    }
+    return granted();
+  }
+
+  /** Owned category 15 refuses the package. Every other owned category continues.
+   * A missing child makes official return without 321; billing would then retry and grant again, so this port refuses the charge. */
+  private externalPackageRefused(user: CUser, parent: ShopItem, gift: boolean): boolean {
+    const itemMan = CItemMan.ms_pInstance;
+    if (!itemMan) return true;
+    const owner = gift ? user.m_strTranxInfo : user.GetName();
+    for (const mapping of itemMan.GetPackageMapList(parent.SN)) {
+      const child = itemMan.GetShopItem(mapping.StockSN);
+      if (!child) return true;
+      const owned = this.db.prIsValidPreInventory(owner, child.ItemSN) !== 0
+        || this.db.prIsValidInventory(owner, child.ItemSN) !== 0;
+      if (owned && child.Category === ItemCategory.StackableItem) return true;
+    }
+    return false;
+  }
+
+  private grantExternalLine(user: CUser, parent: ShopItem, gift: boolean, serial: number): ExternalGrant {
+    if (parent.Category === ItemCategory.PremiumTicket) {
+      return gift ? this.grantGift(user, parent, false) : this.grantPremiumTicket(user, parent, serial);
+    }
+    return gift ? this.grantGift(user, parent, true) : this.grantInventory(user, parent);
+  }
+
+  private grantPremiumTicket(user: CUser, parent: ShopItem, serial: number): ExternalGrant {
+    if (this.db.prSetPremiumTicket(user.GetName(), parent.ValidityPeriod) === 0) return refused();
+    CCenterProcess.ms_pInstance?.SendAuthenCode(serial, 1);
+    user.m_listTranxInfo.push({
+      ItemSN: user.m_nTranxItemSN,
+      PreInventorySN: 0,
+      IsNew: 0,
+      Amount: parent.ValidityPeriod,
+    });
+    return granted();
+  }
+
+  /** AddNewInventory's 0 leaves the official success flag set and would confirm a missing row. Refuse that charge. */
+  private grantInventory(user: CUser, parent: ShopItem): ExternalGrant {
+    const item = CItemMan.ms_pInstance?.GetUserItem(user.m_nTranxItemSN) ?? null;
+    if (!item) return refused();
+    const added = this.db.prAddInventoryShop(
+      user.GetName(),
+      user.m_nTranxItemSN,
+      user.m_nTranxStockSN,
+      user.m_nTranxAmount,
+      expiryDays(parent.ValidityPeriod),
+      selfExpiryLevel(parent.ValidityLevel, user.m_nLevel),
+      IsInventoryAddable(item.Category),
+    );
+    if (added === 0) return refused();
+    user.m_listTranxInfo.push({
+      ItemSN: user.m_nTranxItemSN,
+      PreInventorySN: 0,
+      IsNew: added === INVENTORY_GRANT_STACKED ? 1 : 0,
+      Amount: user.m_nTranxAmount,
+    });
+    return granted();
+  }
+
+  /** Premium gift failure does not keep the proc code. Every other gift failure does. */
+  private grantGift(user: CUser, parent: ShopItem, keepFailureCode: boolean): ExternalGrant {
+    const preSN = this.addGiftInventory(user, parent);
+    if (preSN < 0) return refused(keepFailureCode ? preSN : 0);
+    user.m_listTranxInfo.push({
+      ItemSN: 0,
+      PreInventorySN: preSN,
+      IsNew: 0,
+      Amount: parent.Category === ItemCategory.PremiumTicket ? parent.ValidityPeriod : 0,
+    });
+    return granted();
+  }
+
+  /** AddPreInventory(CUser *): type 200, parent stock, sender name, and no user-level add. */
+  private addGiftInventory(user: CUser, parent: ShopItem): number {
+    return this.db.prAddPreInventory(
+      user.m_strTranxInfo,
+      PRESENT_PREINVENTORY_TYPE,
+      user.m_nTranxItemSN,
+      user.m_nTranxStockSN,
+      user.m_nTranxAmount,
+      expiryDays(parent.ValidityPeriod),
+      giftExpiryLevel(parent.ValidityLevel),
+      user.GetName(),
+      "",
+    );
+  }
+
+  /** 322 failure walks the grant list only after a confirmed charge (TranxState != 0). */
+  private rollbackExternalGrant(user: CUser): void {
+    if (user.m_strTranxInfo.length > 0) {
+      for (const entry of user.m_listTranxInfo) {
+        this.db.prLoadInventory(entry.PreInventorySN, user.m_strTranxInfo, 0, 0, 0, 0, 0, 0, 1);
+      }
+      return;
+    }
+    const itemMan = CItemMan.ms_pInstance;
     for (const entry of user.m_listTranxInfo) {
-      if (isGift) {
-        try {
-          const shard = this.db.GetUserHashNo(id);
-          (this.db as unknown as { inventory: { [k: number]: { query: (s: string) => { run: (...a: unknown[]) => unknown } } } }).inventory[shard]?.query("DELETE FROM FxPreInventory WHERE SN = ?").run(entry.PreInventorySN);
-        } catch {}
+      const item = itemMan?.GetUserItem(entry.ItemSN) ?? null;
+      if (!item) break;
+      if (item.Category === ItemCategory.PremiumTicket) {
+        // Adding zero days does not revoke a future ticket. Official still notifies center.
+        this.db.prSetPremiumTicket(user.GetName(), 0);
+        CCenterProcess.ms_pInstance?.SendAuthenCode(user.GetGlobalSerialNo(), 0);
+      } else if (entry.IsNew !== 0) {
+        this.db.prUpdateInventoryAmountDelta(user.GetName(), entry.ItemSN, -entry.Amount);
       } else {
-        const itemMan = CItemMan.ms_pInstance;
-        const ui = itemMan?.GetUserItem(entry.ItemSN);
-        if (ui && ui.Category === ItemCategory.PremiumTicket) {
-          try {
-            this.db.prSetPremiumTicket(id, 0);
-            CCenterProcess.ms_pInstance?.SendAuthenCode(user.GetGlobalSerialNo(), 0);
-          } catch {}
-        } else if (entry.IsNew === 2) {
-          try { this.db.prUpdateInventoryAmountDelta(id, entry.ItemSN, -entry.Amount); } catch {}
-        } else {
-          try { this.db.prDeleteInventory(id, entry.ItemSN); } catch {}
-        }
+        this.db.prDeleteInventory(user.GetName(), entry.ItemSN);
       }
     }
-    user.m_listTranxInfo = [];
   }
 
   private RecordPurchaseTransaction(user: CUser, stockSN: number): void {
@@ -796,79 +907,9 @@ export class CBillingProcess {
 
       const user = CLocalUserTable.ms_pInstance?.FindUserFromGlobalSerialNo(serial);
       if (!user || user.m_fTranxInProgress !== 0) return;
-      if (result !== 0) {
-        if (user.m_nTranxStockSN !== 0) this.RollbackExternalGrant(user);
-        const isGift = user.m_strTranxInfo.length > 0;
-        const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes);
-        p.Encode1(isGift ? PURCHASE_RESULT.GiftFailure : PURCHASE_RESULT.GenericFailure);
-        p.EncodeStr(message);
-        user.m_pSocket?.SendPacket(p);
-        user.ResetTranxInfo();
-        return;
-      }
-
-      const isCart = user.m_fCartProcessing !== 0;
-      if (!isCart) {
-        const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes);
-        p.Encode1(PURCHASE_RESULT.Success);
-        p.EncodeBuffer(EncodeVariantTime(new Date()));
-        user.m_pSocket?.SendPacket(p);
-      }
-      const itemMan = CItemMan.ms_pInstance;
-      if (itemMan) {
-        const parent = itemMan.GetShopItem(user.m_nTranxStockSN);
-        if (parent) {
-          let itemSN = parent.ItemSN;
-          let amount = parent.Unit;
-          if (parent.Category === ItemCategory.Package) {
-            for (const mapping of itemMan.GetPackageMapList(parent.SN)) {
-              const child = itemMan.GetShopItem(mapping.StockSN);
-              if (!child) continue;
-              itemSN = child.ItemSN;
-              amount = mapping.Units * child.Unit;
-            }
-          }
-          CTranxCtrl.ms_pInstance?.AddTranx({
-            kind: Number(user.m_strTranxInfo.length !== 0),
-            stockSN: user.m_nTranxStockSN,
-            itemSN,
-            amount,
-            price: parent.Price,
-          });
-        }
-      }
-      user.ResetTranxInfo();
-
-      if (isCart) {
-        const pool = GetShopMainPool() as unknown as { PurchaseCartList?: (u: CUser) => void; m_fCartProcessing?: number } | null;
-        const purchaseCartList = (pool as { PurchaseCartList?: (u: CUser) => void } | null)?.PurchaseCartList;
-        if (typeof purchaseCartList === "function") {
-          const idx = user.m_nCartCount;
-          const entry = user.m_anCart[idx];
-          if (entry) {
-            if (entry.cnt <= 0) user.m_nCartCount--;
-            if (user.m_nCartCount < 0) {
-              user.m_fCartProcessing = 0;
-              if (user.m_pSocket) {
-                const p215 = new CSendPacket(S2C_ShopPacket.OnPurchaseCartListRes);
-                p215.Encode1(CART_RECEIPT_CODE);
-                p215.Encode1(CART_RECEIPT_RESULT);
-                p215.EncodeBuffer(EncodeVariantTime(new Date()));
-                user.m_pSocket.SendPacket(p215);
-              }
-              user.ResetTranxInfo();
-            } else {
-              const next = user.m_anCart[user.m_nCartCount];
-              if (next) next.cnt = (next.cnt - 1) | 0;
-              purchaseCartList.call(pool, user);
-            }
-          } else {
-            user.m_fCartProcessing = 0;
-          }
-        } else {
-          user.m_fCartProcessing = 0;
-        }
-      }
+      // Native 322 never resumes PurchaseCartList. A billing cart entry stays paused.
+      if (result !== 0) this.cancelExternalPurchase(user, message);
+      else this.confirmExternalPurchase(user);
     } catch {
       console.warn("[Shop] Invalid billing 322; purchase remains pending for retry.");
     }
@@ -897,6 +938,42 @@ export class CBillingProcess {
       user.m_pSocket?.SendPacket(p);
       this.RequestRemainCashTw(user);
     }
+  }
+
+  /** 322 success: client 204, then the receipt, then reset. The log uses the post-grant item and amount. */
+  private confirmExternalPurchase(user: CUser): void {
+    this.sendPurchaseSuccess(user);
+    const parent = CItemMan.ms_pInstance?.GetShopItem(user.m_nTranxStockSN) ?? null;
+    CTranxCtrl.ms_pInstance?.AddTranx({
+      kind: user.m_strTranxInfo.length === 0 ? 0 : 1,
+      stockSN: user.m_nTranxStockSN,
+      itemSN: user.m_nTranxItemSN,
+      amount: user.m_nTranxAmount,
+      price: parent === null ? -1 : parent.Price,
+    });
+    user.ResetTranxInfo();
+  }
+
+  private cancelExternalPurchase(user: CUser, message: string): void {
+    if (user.m_nTranxState !== 0) this.rollbackExternalGrant(user);
+    const code = user.m_strTranxInfo.length === 0 ? PURCHASE_RESULT.GenericFailure : PURCHASE_RESULT.GiftFailure;
+    this.sendPurchaseResult(user, code, message);
+    user.ResetTranxInfo();
+  }
+
+  private sendPurchaseSuccess(user: CUser): void {
+    const packet = new CSendPacket(S2C_ShopPacket.OnPurchaseRes);
+    packet.Encode1(PURCHASE_RESULT.Success);
+    packet.EncodeBuffer(EncodeVariantTime(new Date()));
+    user.m_pSocket?.SendPacket(packet);
+  }
+
+  private sendPurchaseResult(user: CUser, code: number, message: string, extra?: number): void {
+    const packet = new CSendPacket(S2C_ShopPacket.OnPurchaseRes);
+    packet.Encode1(code);
+    packet.EncodeStr(message);
+    if (extra !== undefined) packet.Encode1(extra);
+    user.m_pSocket?.SendPacket(packet);
   }
 
   Send(p: CSendPacket): void {

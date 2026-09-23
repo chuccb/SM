@@ -8,7 +8,7 @@ import { CDBMan } from "../src/db/DBMan.ts";
 import { EnsureCAItemCatalog } from "../src/db/CAItemImport.ts";
 import { CItemMan } from "../src/FXSS/ItemMan.ts";
 import { PackageMap, ShopItem, UserItem } from "../src/FXSS/Recordsets.ts";
-import { CMainPool, CUser, CClientSocket, CBillingProcess, CCenterProcess } from "../src/FXSS/FxShop.ts";
+import { CMainPool, CUser, CClientSocket, CBillingProcess, CCenterProcess, CLocalUserTable, CMainSystem } from "../src/FXSS/FxShop.ts";
 import { CReceivedPacket, CSendPacket, CipherDegree, enSocket } from "../src/core/Packet.ts";
 
 let dir: string, db: CDBMan, pool: CMainPool, billing: CBillingProcess, items: CItemMan, user: CUser;
@@ -151,7 +151,7 @@ test("low-level stack return2 preserves old expiry, stock and equipment; nonadda
 test("nonaddable insert rechecks pending row existence even if its amount is zero", () => {
   stock(12); pre(100, 0); expect(purchase().code).toBe(1); expect(rows()).toEqual([]); expect(money()).toBe(200000);
 });
-test("external billing runs the category matrix; local points route still delegates to the atomic store", () => {
+test("billing purchase runs the category matrix before RequestPurchaseTw, local or not", () => {
   const s = stock(12); s.MoneyType = 0;
   const request = spyOn(billing, "RequestPurchaseTw").mockImplementation(() => {});
   try {
@@ -160,8 +160,9 @@ test("external billing runs the category matrix; local points route still delega
     // Reset to test the category matrix independently of the busy guard.
     user.ResetTranxInfo();
     own(100); pool.OnReqPurchaseStockItem(user, 5000); expect(result().code).toBe(4); expect(request).toHaveBeenCalledTimes(1);
+    // 004160B4 is before the MoneyType 0 call. Local billing does not skip it.
     packets.length = 0; user.ResetTranxInfo(); billing.m_fLocalBilling = true; pool.OnReqPurchaseStockItem(user, 5000);
-    expect(request).toHaveBeenCalledTimes(2); expect(packets).toEqual([]); expect(money()).toBe(200000);
+    expect(result().code).toBe(4); expect(request).toHaveBeenCalledTimes(1); expect(money()).toBe(200000);
   } finally { request.mockRestore(); }
 });
 test("native in-progress guard is silent; a pending local purchase prevents an overlapping cash purchase", () => {
@@ -230,6 +231,150 @@ test("gift purchase: already owned non-stackable item returns opcode 204 error 4
   const res = result();
   expect(res.code).toBe(4);
   expect(res.message).toBe("對方已經持有的物品");
+});
+
+test("gift replies for a missing stock before the selected user or user+20 is read", () => {
+  const sock = {
+    GetUser: () => { throw new Error("selected user is not read for a missing stock"); },
+    m_nSelectedUserIdx: 0,
+    SendPacket: (p: CSendPacket) => user.m_pSocket!.SendPacket(p),
+  };
+  user.m_fTranxInProgress = 1;
+  const p = new CSendPacket(undefined, CipherDegree.kPacketRaw);
+  p.Encode2(5000);
+  p.EncodeStr("nobody");
+  const recv = new CReceivedPacket();
+  recv.SetCipherDegree(CipherDegree.kPacketRaw);
+  recv.SetRcvPacket(p.m_pBlock.subarray(0, p.m_uOffset), p.m_uOffset);
+  pool.OnRequestPresent(recv, sock as any);
+  expect(result()).toEqual({ code: 5, message: "購買商品時發生錯誤" });
+  expect(user.m_nTranxStockSN).toBe(0);
+});
+
+test("gift replies unregistered before user+20 can swallow it", () => {
+  stock(12);
+  user.m_fTranxInProgress = 1;
+  const p = new CSendPacket(undefined, CipherDegree.kPacketRaw);
+  p.Encode2(5000);
+  p.EncodeStr("nonexistent_user");
+  const recv = new CReceivedPacket();
+  recv.SetCipherDegree(CipherDegree.kPacketRaw);
+  recv.SetRcvPacket(p.m_pBlock.subarray(0, p.m_uOffset), p.m_uOffset);
+  pool.OnRequestPresent(recv, user.m_pSocket as any);
+  expect(result()).toEqual({ code: 3, message: "未登錄的玩家" });
+  expect(user.m_nTranxStockSN).toBe(0);
+});
+
+test("a busy gift of a registered stock is silent and does not start billing", () => {
+  const targetId = "busy_target";
+  db.prCreateUser(targetId, targetId, "fixture", "", 0, 0, "", "", 0, "", "", "", "", "");
+  stock(12).MoneyType = 0;
+  billing.m_fConnected = 1;
+  user.m_fTranxInProgress = 1;
+  const request = spyOn(billing, "RequestPurchaseTw").mockImplementation(() => {});
+  try {
+    const p = new CSendPacket(undefined, CipherDegree.kPacketRaw);
+    p.Encode2(5000);
+    p.EncodeStr(targetId);
+    const recv = new CReceivedPacket();
+    recv.SetCipherDegree(CipherDegree.kPacketRaw);
+    recv.SetRcvPacket(p.m_pBlock.subarray(0, p.m_uOffset), p.m_uOffset);
+    pool.OnRequestPresent(recv, user.m_pSocket as any);
+    expect(packets).toEqual([]);
+    expect(request).not.toHaveBeenCalled();
+    expect(user.m_nTranxStockSN).toBe(0);
+  } finally { request.mockRestore(); }
+});
+
+test("game-money gifts are refused on the request socket and clear TranxInfo", () => {
+  const targetId = "cash_target";
+  db.prCreateUser(targetId, targetId, "fixture", "", 0, 0, "", "", 0, "", "", "", "", "");
+  stock(12);
+  billing.m_fConnected = 1;
+  const p = new CSendPacket(undefined, CipherDegree.kPacketRaw);
+  p.Encode2(5000);
+  p.EncodeStr(targetId);
+  const recv = new CReceivedPacket();
+  recv.SetCipherDegree(CipherDegree.kPacketRaw);
+  recv.SetRcvPacket(p.m_pBlock.subarray(0, p.m_uOffset), p.m_uOffset);
+  pool.OnRequestPresent(recv, user.m_pSocket as any);
+  expect(result()).toEqual({ code: 5, message: "購買商品時發生錯誤" });
+  expect(user.m_nTranxStockSN).toBe(0);
+  expect(user.m_strTranxInfo).toBe("");
+  expect(money()).toBe(200000);
+});
+
+test("local billing still reports an owned gift before refusing the billing dispatch", () => {
+  const targetId = "local_owned";
+  db.prCreateUser(targetId, targetId, "fixture", "", 0, 0, "", "", 0, "", "", "", "", "");
+  db.inventory[db.GetUserHashNo(targetId)].query("INSERT INTO FxUserInventory(UserID,ItemSN,Amount,DateCreated,LevelCreated) VALUES(?,?,?,'2099-01-01T00:00:00Z',2000)").run(targetId, 100, 1);
+  stock(12).MoneyType = 0;
+  billing.m_fConnected = 1;
+  billing.m_fLocalBilling = true;
+  const p = new CSendPacket(undefined, CipherDegree.kPacketRaw);
+  p.Encode2(5000);
+  p.EncodeStr(targetId);
+  const recv = new CReceivedPacket();
+  recv.SetCipherDegree(CipherDegree.kPacketRaw);
+  recv.SetRcvPacket(p.m_pBlock.subarray(0, p.m_uOffset), p.m_uOffset);
+  pool.OnRequestPresent(recv, user.m_pSocket as any);
+  expect(result()).toEqual({ code: 4, message: "對方已經持有的物品" });
+  expect(user.m_nTranxStockSN).toBe(0);
+});
+
+test("center connect copies CommunitySvr onto user+0x9A, not ShopCardNo, and coupon billing encodes that word", () => {
+  const priorUsers = CLocalUserTable.ms_pInstance;
+  const priorSystem = CMainSystem.ms_pInstance;
+  const users = new CLocalUserTable();
+  const system = new CMainSystem();
+  system.m_nFXAttr = 3;
+  let closed = false;
+  const socket = {
+    m_apUser: [user],
+    m_nUserCount: 1,
+    m_nSelectedUserIdx: 0,
+    SendPacket: () => enSocket.kioOk,
+    Close: () => { closed = true; },
+  } as unknown as CClientSocket;
+  user.m_pSocket = socket;
+  user.SetGlobalSerialNo(0x123);
+  user.m_nCommunitySvr = 99;
+  user.m_strCoupon = "coupon";
+  const frames: CSendPacket[] = [];
+  billing.m_fConnected = 1;
+  billing.m_pSocket = { SendPacket: (packet: CSendPacket) => { frames.push(packet); return enSocket.kioOk; } } as CBillingProcess["m_pSocket"];
+  try {
+    expect(users.Insert(user)).toBe(1);
+    expect(pool.AddNewSocket(socket)).toBe(1);
+    db.userInfo[db.GetUserHashNo(ID)]!.query("UPDATE FxUserAccount SET CommunitySvr = ?, ShopCardNo = ? WHERE ID = ?").run(0xbeef, 7, ID);
+    const packet = new CSendPacket(undefined, CipherDegree.kPacketRaw);
+    packet.Encode1(1);
+    packet.Encode4(0x123);
+    packet.Encode1(0);
+    packet.Encode1(0);
+    packet.Encode1(1);
+    const received = new CReceivedPacket();
+    received.SetCipherDegree(CipherDegree.kPacketRaw);
+    received.SetRcvPacket(packet.m_pBlock.subarray(0, packet.m_uOffset), packet.m_uOffset);
+    pool.OnCenterResConnEstablished(received);
+    expect(closed).toBe(false);
+    expect(user.m_nCommunitySvr).toBe(0xbeef);
+    expect(billing.RequestCheckCoupon(user)).toBe(1);
+    expect(frames).toHaveLength(1);
+    const body = new CReceivedPacket();
+    body.SetRcvPacket(frames[0]!.m_pBlock.subarray(0, frames[0]!.m_uOffset), frames[0]!.m_uOffset);
+    expect([body.Decode1(), body.Decode1()]).toEqual([1, 0]);
+    expect(body.Decode4()).toBe(0x123);
+    expect(body.DecodeStr()).toBe("coupon");
+    expect(body.DecodeStr()).toBe("");
+    expect(body.DecodeStr()).toBe(ID);
+    expect([body.Decode1(), body.Decode2()]).toEqual([3, 0xbeef]);
+    expect(body.m_uOffset).toBe(body.m_uLength);
+  } finally {
+    billing.m_pSocket = null;
+    CLocalUserTable.ms_pInstance = priorUsers;
+    CMainSystem.ms_pInstance = priorSystem;
+  }
 });
 
 test("gift purchase: valid gift request dispatches RequestPurchaseTw when MoneyType==0", () => {

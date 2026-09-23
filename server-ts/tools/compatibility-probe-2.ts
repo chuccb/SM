@@ -7,7 +7,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CReceivedPacket, CSendPacket, enSocket } from "../src/core/Packet.ts";
+import { CipherDegree, CReceivedPacket, CSendPacket, enSocket } from "../src/core/Packet.ts";
 import { CDBMan, GetLegacyPortUserHashNo, GetUserHashNo } from "../src/db/DBMan.ts";
 import { CServerConfig } from "../src/core/ServerConfig.ts";
 import {
@@ -24,7 +24,9 @@ import { CMainSystem } from "../src/FXGS/MainSystem.ts";
 import { CCenterProcess } from "../src/FXGS/CenterProcess.ts";
 
 function body(write: (p: CSendPacket) => void): CReceivedPacket {
-  const p = new CSendPacket(0);
+  // Billing 302's payload, after the Tw frame, is raw. Cipher 2 would XOR the
+  // serial before this handler's raw Decode4 and make a correct lookup look missed.
+  const p = new CSendPacket(0, CipherDegree.kPacketRaw);
   write(p);
   const n = new CReceivedPacket();
   const bytes = p.m_pBlock.slice(1, p.m_uOffset);

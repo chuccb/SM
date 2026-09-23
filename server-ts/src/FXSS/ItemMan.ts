@@ -233,7 +233,7 @@ export class CItemMan {
     return this.m_ltPackageMap.filter((p) => p.PackageSN === stockSN);
   }
 
-  /** CItemMan::GetCouponMapList — the coupon entries for a user + coupon SN. */
+  /** Catalog matches for a coupon SN. Official appends these into the caller's list. */
   GetCouponMapList(couponSN: number): CouponMap[] {
     return this.m_ltCouponMap.filter((c) => c.CouponSN === couponSN);
   }

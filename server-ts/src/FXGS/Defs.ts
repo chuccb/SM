@@ -98,10 +98,9 @@ export const SUPREME_ROOM_SWAP_COUNT = 0x2710;
 export const UDP_REGULATE_DELAY = 0x1f40;
 /** CGameSession::DeferReturnPrepareStage (:31979) — 8 s after the end screen. */
 export const RETURN_STAGE_DELAY = 0x1f40;
-/** CGameSession::IsLadderGame (4209A6: xor eax,eax) — the SendGameResult head
- *  byte is hardwired 0 in this build.  This is the third header byte in the
- *  client-compatible four-byte layout (the later result-view byte is not
- *  part of that protocol). */
+/** CGameSession::IsLadderGame (4209A6: xor eax,eax) — hardwired 0.
+ *  Packet 163 writes it as the fourth header byte, after strategy
+ *  GetResultViewType (FxServer.exe.lst:00420011). */
 export const IS_LADDER_GAME = 0;
 /** asc_48F568 (EUC-KR) — "[\xbe\xcb\xb8\xb2] %s ..." = "[Notification] %s has obtained 100x the luck of experience in the premium channel."
  *  (SendGameResult → SendBigLuckMsg; GetWinExp never sets the trigger flag). */

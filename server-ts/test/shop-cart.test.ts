@@ -62,6 +62,8 @@ function body(write: (packet: CSendPacket) => void): CReceivedPacket {
   const packet = new CSendPacket(0);
   write(packet);
   const received = new CReceivedPacket();
+  // Client 223 is decoded on the socket cipher. The type byte is already consumed by dispatch.
+  received.SetCipherDegree(packet.m_nCipherDegree);
   const bytes = packet.m_pBlock.slice(1, packet.m_uOffset);
   received.SetRcvPacket(bytes, bytes.length);
   return received;

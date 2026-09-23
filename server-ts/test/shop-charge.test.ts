@@ -2,7 +2,7 @@
  * evidence: FxShop 004200E8, 0041EE90, 00415520, and 004158E0. */
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { RAND_MAX } from "../src/core/CRand.ts";
-import { CReceivedPacket, CSendPacket, enSocket } from "../src/core/Packet.ts";
+import { CipherDegree, CReceivedPacket, CSendPacket, enSocket } from "../src/core/Packet.ts";
 import type { CDBMan } from "../src/db/DBMan.ts";
 import { CClientSocket } from "../src/FXSS/ClientSocket.ts";
 import { CLocalUserTable } from "../src/FXSS/LocalUserTable.ts";
@@ -121,10 +121,16 @@ test("web verification is reusable, little-endian, and gated only by user+20", (
       return enSocket.kioOk;
     },
   } as CWebSocket;
-  const verify = (serial: number, key: number) => pool.OnVerifyKey(body((packet) => {
+  // Web accept does not raise the cipher. OnVerifyKey starts at the serial, with no type byte.
+  const verify = (serial: number, key: number) => {
+    const packet = new CSendPacket(undefined, CipherDegree.kPacketRaw);
     packet.Encode4(serial);
     packet.Encode4(key);
-  }), web);
+    const received = new CReceivedPacket();
+    received.SetCipherDegree(CipherDegree.kPacketRaw);
+    received.SetRcvPacket(packet.m_pBlock.subarray(0, packet.m_uOffset), packet.m_uOffset);
+    pool.OnVerifyKey(received, web);
+  };
 
   verify(123, 321);
   verify(123, 321);

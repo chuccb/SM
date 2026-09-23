@@ -85,9 +85,11 @@ const EXPLODED_BOMB_FUSE_MS = 2_000;
 const NEW_BOMB_FUSE_MS = 2_800;
 const TRAPPED_PLAYER_GRACE_MS = 10_000;
 const ALL_PLAYERS_DOWN_GRACE_MS = 6_000;
-const BIG_LUCK_RAMP_START_MS = 15_000;
-const BIG_LUCK_RAMP_END_MS = 45_000;
+const BIG_LUCK_RAMP_START_MS = 15_000; // 0x3A98
+const BIG_LUCK_RAMP_END_MS = 45_000; // 0xAFC8
 const BIG_LUCK_RAMP_DURATION_MS = BIG_LUCK_RAMP_END_MS - BIG_LUCK_RAMP_START_MS;
+// FxServer.exe.lst:0041FFA5 fmul __real@380bcf65.  float32(1/30000), not a double divide.
+const BIG_LUCK_RAMP_SCALE = Math.fround(1 / BIG_LUCK_RAMP_DURATION_MS);
 const MAP_TEAM_COLORS = [0, 3, 5, 6] as const;
 const LADDER_AIRPLANE_PROBABILITY_CAP = 30_000;
 const AIRPLANE_COOLDOWN_MS = 7_000;
@@ -597,10 +599,10 @@ export class CGameSession extends CListSession {
     }
     this.m_UdpLossRegulator.DeferRegulateConnection(this);
     const ctx = this.m_pCtx;
-    // epoch-domain guard: the official runs on timeGetTime (bounded since
-    // boot); Date.now() needs the 0 sentinel so the very first tick of a
-    // process contributes no delta.
-    const elapsed = prevTick === 0 ? 0 : (time - prevTick) >>> 0;
+    // 0041DD03: delta is timeGetTime() - [session+3104h], including a zero
+    // marker. Phase 0/2 ticks also store that marker, so a started game's
+    // first bomb tick is one timer interval, not time since boot.
+    const elapsed = (time - prevTick) >>> 0;
     let exploded = 0;
     if (ctx.m_nBombCount > 0) {
       // 152 — the bomb clock: every armed bomb counts down by the elapsed ms
@@ -898,12 +900,11 @@ export class CGameSession extends CListSession {
   /**
    * CGameSession::SendGameResult (vtbl+216) — the results unit.
    *
-   * The Taiwan client-compatible (2004-08-06 map) head is four bytes:
-   * [E1 flag][E1 winTeam][E1 ladder][E1 diff-team item flag].  The matching
-   * 2005-01-04 EXE added a strategy result-view byte between winTeam and
-   * ladder; that newer five-byte head shifts every row for the original
-   * client and makes it fail while decoding 163, so it is deliberately not
-   * emitted here.  Per user: [E1 1][E4 serial][E1 result]
+   * Head, FxServer.exe.lst:0041FFE2..00420069 (PE 2005-01-04, the binary
+   * this port tracks): [E1 flag][E1 winTeam][E1 strategy.GetResultViewType]
+   * [E1 IsLadderGame][E1 diff-team item flag].  The 2004-08-06 map is a
+   * different build — its SendGameResult VA does not match this EXE — so
+   * it is not the wire format.  Per user: [E1 1][E4 serial][E1 result]
    * [E1 GetKillCount][E1 GetSaveCount][E2 exp‰][E2 exp‰ re-read]
    * [E2 look-level][E1 got-exp][E1 detail]; empty slots send [E1 0].
    * IncDecExp feeds the DB dyn rows, IncWin/IncLose/IncDraw the same
@@ -919,10 +920,8 @@ export class CGameSession extends CListSession {
     }
     packet.Encode1(flag);
     packet.Encode1(winTeam & 0xff);
-    // FxServer.map's client-compatible build goes straight from winTeam to
-    // IsLadderGame.  The later EXE's m_pStrategy->GetResultViewType() byte is
-    // the one-byte protocol insertion that the original client cannot parse.
-    packet.Encode1(IS_LADDER_GAME); // session vtbl+156
+    packet.Encode1(this.m_pStrategy.GetResultViewType()); // strategy vtbl+44, lst 00420000
+    packet.Encode1(this.IsLadderGame()); // session vtbl+156
     let diffTeamUsedItem = 0; // v47
     for (let i = 0; i < MAX_SESSION_SLOTS; i++) {
       if (this.m_rgPlayer[i] !== null && this.m_rgnUsedItem[i] !== 0 && (this.GetColor(i) & SLOTSTATE_COLOR_MASK) !== winTeam) diffTeamUsedItem = 1;
@@ -961,7 +960,8 @@ export class CGameSession extends CListSession {
             let premiumWinners = 0;
             for (let k = 0; k < MAX_SESSION_SLOTS; k++) {
               const w = this.m_rgPlayer[k]!;
-              if (w !== null && (this.GetColor(k) & SLOTSTATE_COLOR_MASK) === winTeam && w.m_fPremiumTicket === 1) premiumWinners++;
+              // lst 004201D0 compares the Init snapshot at calculator+0x1CC, not the live slot byte.
+              if (w !== null && this.m_DynInfoCalculator.GetTeamColor(k) === winTeam && w.m_fPremiumTicket === 1) premiumWinners++;
             }
             if (premiumWinners >= 2) boost += 0.1;
           }
@@ -1013,9 +1013,9 @@ export class CGameSession extends CListSession {
   /** SendGameResult's time factor (the 41FE83 ladder). */
   private GetGameExpTimeFactor(): number {
     const elapsed = this.m_GameClock.ElapsedTime();
-    if (elapsed < BIG_LUCK_RAMP_START_MS) return 0.0;
+    if (elapsed <= BIG_LUCK_RAMP_START_MS) return 0.0; // cmp 3A98h / ja
     if (elapsed <= BIG_LUCK_RAMP_END_MS) {
-      return (elapsed - BIG_LUCK_RAMP_START_MS) / BIG_LUCK_RAMP_DURATION_MS;
+      return (elapsed - BIG_LUCK_RAMP_START_MS) * BIG_LUCK_RAMP_SCALE;
     }
     return 1.0;
   }

@@ -11,6 +11,7 @@ import { canUseLocalBilling, registerLocalBilling, usesLocalBilling } from "../s
 import { CSendPacket as BillingPacket } from "../src/FXSS/Packet.ts";
 import { CReceivedPacket, CSendPacket, enSocket } from "../src/core/Packet.ts";
 import { CCenterProcess, CMainPool, CClientSocket, CLocalUserTable, CBillingProcess, CBillingSocketTw } from "../src/FXSS/FxShop.ts";
+import { CItemMan } from "../src/FXSS/ItemMan.ts";
 import { ShopItem } from "../src/FXSS/Recordsets.ts";
 import { PacketLog } from "../src/core/PacketLog.ts";
 
@@ -415,7 +416,23 @@ test("operator CLI credits once across processes and reports actual persisted ba
   expect(store.inspect("alice").balance).toBe(250); expect(store.inspect("alice").ledger).toHaveLength(1);
 });
 test("unsupported local gift/coupon/cart paths reject before any billing or currency mutation", () => {
-  const f = shopFixture(); f.billing.m_fLocalBilling = true;
+  const f = shopFixture();
+  f.billing.m_fLocalBilling = true;
+  // Gift reaches the billing call only after the official catalog, registration,
+  // and connected checks. Coupon and cart refuse their billing calls earlier.
+  f.billing.m_fConnected = 1;
+  const previousItems = CItemMan.ms_pInstance;
+  const items = new CItemMan();
+  const stock = new ShopItem();
+  stock.SN = 5000;
+  stock.Category = 1;
+  stock.ItemSN = 300;
+  stock.Unit = 2;
+  stock.Price = 100;
+  stock.MoneyType = 0;
+  items.m_mapShopItem.set(stock.SN, stock);
+  CItemMan.ms_pInstance = items;
+  cleanup.push(() => { CItemMan.ms_pInstance = previousItems; });
   for (const id of [218, 219, 223]) {
     const p = new CSendPacket(id, 2);
     if (id === 218) { p.Encode2(5000); p.EncodeStr("bob"); }

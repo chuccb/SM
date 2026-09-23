@@ -68,6 +68,8 @@ function body(write: (packet: CSendPacket) => void): CReceivedPacket {
   const packet = new CSendPacket(0);
   write(packet);
   const received = new CReceivedPacket();
+  // Client 225 is decoded on the socket's cipher, not as raw bytes.
+  received.SetCipherDegree(packet.m_nCipherDegree);
   const bytes = packet.m_pBlock.slice(1, packet.m_uOffset);
   received.SetRcvPacket(bytes, bytes.length);
   return received;
@@ -180,6 +182,28 @@ test("client 225 receives page bytes and the updated cursor, not its request cur
   response.m_uOffset += page.length;
   expect(page).toEqual(bytes.subarray(0, 500));
   expect(response.Decode4()).toBe(500);
+  expect(response.m_uOffset).toBe(response.m_uLength);
+});
+
+test("client 225 answers the request socket when no user is selected, and a missing date keeps the cursor", () => {
+  const root = directory();
+  new CTranxCtrl(root, () => new Date(2026, 8, 21)).Init();
+  const pool = new CMainPool({} as CDBMan);
+  const sent: CSendPacket[] = [];
+  const socket = {
+    GetUser: () => null,
+    SendPacket: (packet: CSendPacket) => { sent.push(packet); return enSocket.kioOk; },
+  } as unknown as CClientSocket;
+
+  pool.OnRequestTranxData(body((packet) => {
+    packet.Encode2(2026); packet.Encode2(9); packet.Encode2(19); packet.Encode4(40);
+  }), socket);
+
+  expect(sent).toHaveLength(1);
+  const response = decode(sent[0]!);
+  expect(response.Decode1()).toBe(211);
+  expect(response.Decode2()).toBe(0);
+  expect(response.Decode4()).toBe(40);
   expect(response.m_uOffset).toBe(response.m_uLength);
 });
 

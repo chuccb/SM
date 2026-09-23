@@ -3,7 +3,7 @@
  * Inputs are raw-byte strings, not an invented Unicode email policy.
  */
 import { describe, expect, test } from "bun:test";
-import { CBillingProcess, CUser, CMainSystem, type _USERACCOUNT } from "../src/FXSS/FxShop.ts";
+import { CBillingProcess, CItemMan, CUser, CMainSystem, ShopItem, type _USERACCOUNT } from "../src/FXSS/FxShop.ts";
 import { CBillingSocketTw } from "../src/FXSS/BillingSocket.ts";
 import { DecodePacketTw } from "../src/FXSS/Packet.ts";
 import { CReceivedPacket } from "../src/core/Packet.ts";
@@ -71,19 +71,26 @@ describe("derived ID in complete Tw gift/coupon request frames", () => {
     test(label, () => {
       const oldBilling = CBillingProcess.ms_pInstance;
       const oldMainSystem = CMainSystem.ms_pInstance;
+      const oldItems = CItemMan.ms_pInstance;
       const billing = new CBillingProcess({} as CDBMan);
       const mainSystem = new CMainSystem();
       mainSystem.m_nFXAttr = 3;
+      const items = new CItemMan();
+      const stock = new ShopItem();
+      stock.SN = 456;
+      stock.Price = 789; // ShopItem+0x34, the dword RequestGift encodes
+      items.m_mapShopItem.set(stock.SN, stock);
+      CItemMan.ms_pInstance = items;
       const socket = new CBillingSocketTw(false);
       const frames: Uint8Array[] = [];
       socket.m_bConnected = true;
       socket.bunSocket = { write: (bytes: Uint8Array) => { frames.push(bytes.slice()); return bytes.length; }, end: () => {} } as unknown as Bun.Socket;
       billing.m_pSocket = socket; billing.m_fConnected = 1;
       const user = new CUser(null); user.SetName("player"); user.SetGlobalSerialNo(123);
-      user.m_strCoupon = "coupon"; user.m_nUserAccountHiword = 9; user.m_strTranxInfo = "transaction";
+      user.m_strCoupon = "coupon"; user.m_nCommunitySvr = 9; user.m_strTranxInfo = "transaction";
       user.SetNexonClubId(account(email));
       try {
-        billing.RequestGift(user, "recipient", 456, 789);
+        billing.RequestGift(user, "recipient", 456);
         billing.RequestCheckCoupon(user); billing.RequestUseCoupon(user);
         expect(frames).toHaveLength(3);
         for (const [index, frame] of frames.entries()) {
@@ -95,7 +102,10 @@ describe("derived ID in complete Tw gift/coupon request frames", () => {
           expect(p.DecodeStr()).toBe(wireId);
           expect(p.DecodeStr()).toBe("player");
           expect([p.Decode1(), p.Decode2()]).toEqual([3, 9]);
-          if (index === 0) expect(p.DecodeStr()).toBe("transaction");
+          if (index === 0) {
+            expect(p.DecodeStr()).toBe("transaction");
+            expect(p.DecodeStr()).toBe("recipient");
+          }
           expect(p.m_uOffset).toBe(p.m_uLength);
         }
         expect(user.m_strNexonClubId).toBe(stored);
@@ -103,7 +113,61 @@ describe("derived ID in complete Tw gift/coupon request frames", () => {
         socket.Close();
         CBillingProcess.ms_pInstance = oldBilling;
         CMainSystem.ms_pInstance = oldMainSystem;
+        CItemMan.ms_pInstance = oldItems;
       }
     });
   }
+
+  test("a missing stock, a negative SN, or a down billing link sends no gift frame", () => {
+    const oldBilling = CBillingProcess.ms_pInstance;
+    const oldMainSystem = CMainSystem.ms_pInstance;
+    const oldItems = CItemMan.ms_pInstance;
+    const billing = new CBillingProcess({} as CDBMan);
+    new CMainSystem();
+    const items = new CItemMan();
+    CItemMan.ms_pInstance = items;
+    const socket = new CBillingSocketTw(false);
+    const frames: Uint8Array[] = [];
+    socket.m_bConnected = true;
+    socket.bunSocket = { write: (bytes: Uint8Array) => { frames.push(bytes.slice()); return bytes.length; }, end: () => {} } as unknown as Bun.Socket;
+    billing.m_pSocket = socket;
+    billing.m_fConnected = 1;
+    const user = new CUser(null);
+    user.SetName("player");
+    try {
+      billing.RequestGift(user, "recipient", 456);
+      const negative = new ShopItem();
+      negative.SN = -1;
+      negative.Price = 1;
+      items.m_mapShopItem.set(negative.SN, negative);
+      billing.RequestGift(user, "recipient", negative.SN);
+      const stock = new ShopItem();
+      stock.SN = 456;
+      stock.Price = 789;
+      items.m_mapShopItem.set(stock.SN, stock);
+      billing.m_fConnected = 0;
+      billing.RequestGift(user, "recipient", stock.SN);
+      expect(frames).toEqual([]);
+      billing.m_fConnected = 1;
+      user.SetName("pl\0ayer");
+      user.m_strTranxInfo = "tx\0tail";
+      user.SetGlobalSerialNo(123);
+      billing.RequestGift(user, "re\0cipient", stock.SN);
+      expect(frames).toHaveLength(1);
+      const sent = new CReceivedPacket();
+      expect(DecodePacketTw(sent, frames[0]!, frames[0]!.length)).toBe(true);
+      expect([sent.Decode1(), sent.Decode1(), sent.Decode4()]).toEqual([0, 7, 123]);
+      sent.Decode4(); sent.Decode4(); sent.Decode4(); sent.Decode4();
+      expect(sent.DecodeStr()).toBe("");
+      expect(sent.DecodeStr()).toBe("pl");
+      sent.Decode1(); sent.Decode2();
+      expect([sent.DecodeStr(), sent.DecodeStr()]).toEqual(["tx", "re"]);
+      expect(sent.m_uOffset).toBe(sent.m_uLength);
+    } finally {
+      socket.Close();
+      CBillingProcess.ms_pInstance = oldBilling;
+      CMainSystem.ms_pInstance = oldMainSystem;
+      CItemMan.ms_pInstance = oldItems;
+    }
+  });
 });

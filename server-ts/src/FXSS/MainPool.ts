@@ -289,13 +289,16 @@ export class CMainPool extends CUserPool {
       return;
     }
 
-    // _USERACCOUNT::operator= + the dyninfo copy; SetLevel / SetNexonClubId;
+    // Selected account and dyninfo. Exp is cached at +0xAC before SetLevel.
     // user+3116 = the authencode of the selected user
     const account = accounts[sel] ?? accounts[0]!;
     const dyn = dyns[sel] ?? dyns[0]!;
     target.m_nCash = dyn.Money;
-    target.SetLevel(dyn);
+    target.m_nExp = dyn.Exp | 0;
+    target.SetLevel();
     target.SetNexonClubId(account);
+    // user+0x9A. operator= copies _USERACCOUNT+130 (@CommunitySvr), not ShopCardNo.
+    target.m_nCommunitySvr = account.CommunitySvr & 0xffff;
     target.m_nAuthenCode = authencodes[sel] ?? 0;
 
     // client 18 OnInitialInfo
@@ -377,10 +380,9 @@ export class CMainPool extends CUserPool {
     user.m_nTranxItemSN = shopItem.ItemSN;
     user.m_nTranxState = 0;
 
-    if (this.billingProcess.m_fLocalBilling && shopItem.MoneyType === 0) {
-      this.billingProcess.RequestPurchaseTw(user, shopItem);
-      return;
-    }
+    // 004160B4 validates the stock category before MoneyType 0 reaches
+    // RequestPurchaseTw. Local billing is only the transport under that call;
+    // it must not skip the already-owned / limit replies.
     // A port-side purchase is already in flight → error 1.
     if (user.m_pPurchaseTranx !== null) {
       this.PurchaseError(user, PURCHASE_RESULT.GenericFailure, ERR_PURCHASE);
@@ -498,13 +500,14 @@ export class CMainPool extends CUserPool {
     user.m_pSocket?.SendPacket(p);
   }
 
-  /** CMainPool::OnRequestDeleteItem — client 207 [E4 itemSN] (>= 0):
-   *  CDBMan::DeleteInventory.  No client reply. */
+  /** CMainPool::OnRequestDeleteItem — client 207 [E4 itemSN].
+   *  DeleteInventory (00409060) writes nothing when the signed SN is
+   *  negative, the user is null, or user+0x14 is set. No reply. */
   OnRequestDeleteItem(n: CReceivedPacket, socket: CClientSocket): void {
-    const itemSN = n.Decode4();
+    const itemSN = n.Decode4() | 0;
     if (itemSN < 0) return;
     const user = socket.GetUser(socket.m_nSelectedUserIdx);
-    if (!user) return;
+    if (!user || user.m_fTranxInProgress !== 0) return;
     this.db.prDeleteInventory(user.GetName(), itemSN);
   }
 
@@ -522,15 +525,19 @@ export class CMainPool extends CUserPool {
     }
   }
 
-  /** CMainPool::OnRequestModifyItemVerbose — client 212
-   *  [E1 slot][E4 itemSN][EStr verbose] → prUpdateInventoryVerbose. */
+  /** CMainPool::OnRequestModifyItemVerbose — client 212 (004169B0).
+   *  [E1 count][count × (E4 itemSN, EStr verbose)]. No reply.
+   *  UpdateInventoryVerbose (0040943B) skips the write while user+0x14 is set. */
   OnRequestModifyItemVerbose(n: CReceivedPacket, socket: CClientSocket): void {
-    n.Decode1(); // slot
-    const itemSN = n.Decode4();
-    const verbose = n.DecodeStr();
+    const count = n.Decode1();
     const user = socket.GetUser(socket.m_nSelectedUserIdx);
     if (!user) return;
-    this.db.prUpdateInventoryVerbose(user.GetName(), itemSN, verbose);
+    for (let i = 0; i < count; i++) {
+      const itemSN = n.Decode4();
+      const verbose = n.DecodeStr();
+      if (user.m_fTranxInProgress !== 0) continue;
+      this.db.prUpdateInventoryVerbose(user.GetName(), itemSN, verbose);
+    }
   }
 
   /** CMainPool::OnRequestCharge — client 214, nothing decoded. Guards on
@@ -555,41 +562,33 @@ export class CMainPool extends CUserPool {
     socket.SendPacket(p);
   }
 
-  /** CMainPool::OnRequestPresent (00416F90) — client 218 [E2 stockSN][EStr targetId]:
-   *  Verifies recipient exists (CDBMan::ConfirmRegisteredId), sets up transaction info,
-   *  validates package/inventory constraints for recipient, then triggers Taiwan billing. */
+  /** CMainPool::OnRequestPresent (00416F90) — client 218 [E2 stockSN][EStr targetId].
+   *  Missing stock (204/5) and an unregistered target (204/3) are sent on this
+   *  socket before the selected user is read. user+20 then returns with no
+   *  reply. The +0xBF4 lock is a process critical section, not packet state. */
   OnRequestPresent(n: CReceivedPacket, socket: CClientSocket): void {
     const stockSN = n.Decode2();
     const targetId = n.DecodeStr();
-    const user = socket.GetUser(socket.m_nSelectedUserIdx);
-    if (!user) return;
-    if (user.m_fTranxInProgress !== 0) return;
-
-    if (this.billingProcess.m_fLocalBilling) {
-      this.PurchaseError(user, PURCHASE_RESULT.GenericFailure, BILLING_ERROR.unsupported);
-      return;
-    }
-
     const itemMan = CItemMan.ms_pInstance;
     const shopItem = itemMan ? itemMan.GetShopItem(stockSN) : null;
-    if (!shopItem) {
-      const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes);
-      p.Encode1(PURCHASE_RESULT.GiftFailure);
-      p.EncodeStr(ERR_PURCHASE);
-      socket.SendPacket(p);
+    // 00417017: a missing stock answers before ConfirmRegisteredId and before
+    // the selected-user / user+20 gates.
+    if (!shopItem || !itemMan) {
+      sendPurchaseOnSocket(socket, PURCHASE_RESULT.GiftFailure, ERR_PURCHASE);
       return;
     }
-
     if (this.db.prConfirmUnregisteredId(targetId) === 0) {
-      const p = new CSendPacket(S2C_ShopPacket.OnPurchaseRes);
-      p.Encode1(PURCHASE_RESULT.UnregisteredUser);
-      p.EncodeStr(ERR_UNREGISTERED_USER);
-      socket.SendPacket(p);
+      sendPurchaseOnSocket(socket, PURCHASE_RESULT.UnregisteredUser, ERR_UNREGISTERED_USER);
       return;
     }
 
+    const user = socket.GetUser(socket.m_nSelectedUserIdx);
+    if (!user || user.m_fTranxInProgress !== 0) return;
+
+    // 00417242 / 00417248: billing is down, or user+0xB40 is already set.
+    // 0041787F answers on the request socket. TranxInfo is still clear.
     if (!this.billingProcess.IsConnected() || user.m_nTranxStockSN !== 0) {
-      this.PurchaseError(user, PURCHASE_RESULT.GiftFailure, ERR_PURCHASE);
+      sendPurchaseOnSocket(socket, PURCHASE_RESULT.GiftFailure, ERR_PURCHASE);
       return;
     }
 
@@ -601,10 +600,10 @@ export class CMainPool extends CUserPool {
     user.m_nTranxState = 0;
     user.m_strTranxInfo = targetId;
 
-    const packages = shopItem.Category === ItemCategory.Package ? itemMan!.GetPackageMapList(shopItem.SN) : [];
+    const packages = shopItem.Category === ItemCategory.Package ? itemMan.GetPackageMapList(shopItem.SN) : [];
     if (shopItem.Category === ItemCategory.Package) {
       for (const pkg of packages) {
-        const sub = itemMan!.GetShopItem(pkg.StockSN);
+        const sub = itemMan.GetShopItem(pkg.StockSN);
         if (!sub) {
           this.PurchaseError(user, PURCHASE_RESULT.GiftFailure, ERR_PURCHASE);
           user.ResetTranxInfo();
@@ -616,7 +615,7 @@ export class CMainPool extends CUserPool {
           user.ResetTranxInfo();
           return;
         }
-        const ui = itemMan!.GetUserItem(sub.ItemSN);
+        const ui = itemMan.GetUserItem(sub.ItemSN);
         if (ui && sub.Category === ItemCategory.LimitedItem && owned >= ui.nAttr1) {
           this.PurchaseError(user, PURCHASE_RESULT.OwnedLimitReached, formatLimit(ui.nAttr1));
           user.ResetTranxInfo();
@@ -647,27 +646,40 @@ export class CMainPool extends CUserPool {
     }
 
     if (shopItem.MoneyType !== 0) {
-      this.PurchaseError(user, PURCHASE_RESULT.GiftFailure, ERR_PURCHASE);
+      // 00417232's sibling at the MoneyType byte: request socket, then reset.
+      sendPurchaseOnSocket(socket, PURCHASE_RESULT.GiftFailure, ERR_PURCHASE);
       user.ResetTranxInfo();
-    } else {
-      this.billingProcess.RequestPurchaseTw(user, shopItem);
-    }
-  }
-
-  /** CMainPool::OnRequestUseCoupon — client 219 [EStr coupon][EStr id]. */
-  OnRequestUseCoupon(n: CReceivedPacket, socket: CClientSocket): void {
-    const coupon = n.DecodeStr();
-    const id = n.DecodeStr();
-    const user = socket.GetUser(socket.m_nSelectedUserIdx);
-    if (!user) return;
-    if (this.billingProcess.m_fLocalBilling) {
-      const p = new CSendPacket(S2C_ShopPacket.OnUseCouponRes);
-      p.Encode1(COUPON_RESULT.Invalid); // existing client-visible coupon refusal, no claim that it was redeemed
-      socket.SendPacket(p);
       return;
     }
+    // Official always calls RequestPurchaseTw here. Local billing's 322
+    // confirms the charge without granting the gift, so only that dispatch
+    // is refused — after the official ownership replies above.
+    if (this.billingProcess.m_fLocalBilling) {
+      this.PurchaseError(user, PURCHASE_RESULT.GenericFailure, BILLING_ERROR.unsupported);
+      user.ResetTranxInfo();
+      return;
+    }
+    this.billingProcess.RequestPurchaseTw(user, shopItem);
+  }
+
+  /** CMainPool::OnRequestUseCoupon (00417950) — client 219 [EStr coupon][EStr id].
+   *  A missing user or user+20 returns before either string is read. An empty
+   *  id, or a registered id, is stored at +3008/+3032 and sent to billing.
+   *  Anything else is 208 code 7. */
+  OnRequestUseCoupon(n: CReceivedPacket, socket: CClientSocket): void {
+    const user = socket.GetUser(socket.m_nSelectedUserIdx);
+    if (!user || user.m_fTranxInProgress !== 0) return;
+    const coupon = n.DecodeStr();
+    const id = n.DecodeStr();
     if (id.length === 0 || this.db.prConfirmUnregisteredId(id) !== 0) {
-      // CMainPool::OnRequestUseCoupon stores the pair on the user (+3008/+3032)
+      // Local billing has no coupon exchange. Refuse only the billing call,
+      // after the official user+20 gate, and do not store the pair.
+      if (this.billingProcess.m_fLocalBilling) {
+        const refused = new CSendPacket(S2C_ShopPacket.OnUseCouponRes);
+        refused.Encode1(COUPON_RESULT.Invalid);
+        socket.SendPacket(refused);
+        return;
+      }
       user.m_strCoupon = coupon;
       user.m_strCouponId = id;
       CBillingProcess.ms_pInstance?.RequestCheckCoupon(user);
@@ -678,27 +690,26 @@ export class CMainPool extends CUserPool {
     socket.SendPacket(p);
   }
 
-  /** CMainPool::OnRequestCartList — client 221, guarded by user+20:
-   *  CDBMan::InitUserCart then client 214 [E1 count(user+2868)]
-   *  [count != 0: EStr list]. */
+  /** CMainPool::OnRequestCartList (004157C0) — client 221. A missing user or
+   *  user+0x14 returns before any reply. InitUserCart reloads +0xB28/+0xB34;
+   *  client 214 is [E1 low byte of +0xB34] and, only when that dword is
+   *  nonzero, the cached string. */
   OnRequestCartList(_n: CReceivedPacket, socket: CClientSocket): void {
     const user = socket.GetUser(socket.m_nSelectedUserIdx);
     if (!user || user.m_fTranxInProgress !== 0) return;
-    const cart = this.db.prGetUserCartList(user.GetName());
-    const list = cart.stockSN;
-    const count = list ? list.split(",").filter((x) => x.length > 0).length : 0;
-    const p = new CSendPacket(S2C_ShopPacket.OnCartList);
-    p.Encode1(count);
-    if (count !== 0) p.EncodeStr(list);
-    socket.SendPacket(p);
+    this.db.InitUserCart(user);
+    const packet = new CSendPacket(S2C_ShopPacket.OnCartList);
+    packet.Encode1(user.m_nCartListCount);
+    if (user.m_nCartListCount !== 0) packet.EncodeStr(user.m_strCartList);
+    socket.SendPacket(packet);
   }
 
-  /** CMainPool::OnRequestAddCartList — client 222 [EStr list] → prAddUserCartList. */
+  /** CMainPool::OnRequestAddCartList (00416AB0) — client 222 [EStr list].
+   *  A missing user or user+0x14 returns before DecodeStr. No reply. */
   OnRequestAddCartList(n: CReceivedPacket, socket: CClientSocket): void {
-    const list = n.DecodeStr();
     const user = socket.GetUser(socket.m_nSelectedUserIdx);
-    if (!user) return;
-    this.db.prAddUserCartList(user.GetName(), list);
+    if (!user || user.m_fTranxInProgress !== 0) return;
+    this.db.AddCartList(user, n.DecodeStr());
   }
 
   /** CMainPool::OnReqPurchaseCartList — client 223
@@ -795,20 +806,19 @@ export class CMainPool extends CUserPool {
     CBillingProcess.ms_pInstance?.RequestDigiQAuthorization(account, password, name);
   }
 
-  /** CMainPool::OnRequestTranxData — client 225 [E2 year][E2 month][E2 day][E4 offset]
-   *  → CTranxCtrl::GetData → 211 [E2 len][bytes][E4 nextOffset]. */
+  /** CMainPool::OnRequestTranxData (00415610) — client 225
+   *  [E2 year][E2 month][E2 day][E4 offset]. No selected-user gate.
+   *  211 is [E2 len][bytes if len != 0][E4 nextOffset], sent on this socket. */
   OnRequestTranxData(n: CReceivedPacket, socket: CClientSocket): void {
     const year = n.Decode2();
     const month = n.Decode2();
     const day = n.Decode2();
     const offset = n.Decode4();
-    const user = socket.GetUser(socket.m_nSelectedUserIdx);
-    if (!user) return;
     const buf = new Uint8Array(TRANSACTION_PAGE_BYTES);
     const page = CTranxCtrl.ms_pInstance!.GetData(year, month, day, buf, offset);
     const p = new CSendPacket(S2C_ShopPacket.OnTranxData);
     p.Encode2(page.length);
-    p.EncodeBuffer(buf.subarray(0, page.length), page.length);
+    if (page.length !== 0) p.EncodeBuffer(buf.subarray(0, page.length), page.length);
     p.Encode4(page.nextOffset);
     socket.SendPacket(p);
   }
@@ -861,4 +871,12 @@ const LIMIT_FORMAT_TAIL =
 
 function formatLimit(limit: number): string {
   return LIMIT_FORMAT_HEAD + String(limit) + LIMIT_FORMAT_TAIL;
+}
+
+/** 204 body OnRequestPresent sends on the request socket (vtbl+0x44). */
+function sendPurchaseOnSocket(socket: CClientSocket, code: number, message: string): void {
+  const packet = new CSendPacket(S2C_ShopPacket.OnPurchaseRes);
+  packet.Encode1(code);
+  packet.EncodeStr(message);
+  socket.SendPacket(packet);
 }
