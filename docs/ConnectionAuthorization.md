@@ -6,7 +6,7 @@
 
 本輪開始時可見程式為890項tests／17份C++模型的owned-inventory read-side階段。前文曾報告的pre-inventory／calendar／composite初始化新增檔，本輪開始時並不在checkout；它們**不列為這份工作樹已實作／已驗證項目**，也不直接沿用先前1020項數字。以程式、fixtures與本輪重新執行的結果為準。
 
-**後續更新：** 本版已重新推導[PreInventory](PreInventory.md)純觀測投影／CUser讀取端207並將pre generation加入lease source fingerprint；同值reinstall／empty或changed ABA均會失效。這不表示舊缺失檔案已找回，也不表示financial effects／calendar／composite或whole-group207已完成。
+**後續更新：** 本版已重新推導[PreInventory](PreInventory.md)純觀測投影／CUser讀取端207並將pre generation加入lease source fingerprint；同值reinstall／empty或changed ABA均會失效。這不表示舊缺失檔案已找回，也不表示financial effects／calendar／composite已完成。後續[整組讀取端207handoff](InventoryHandoff.md)已接正式GS，並新增下列lease-bound pre DTO API；它不是native SQL／給付完成。
 
 已接線的是**現有legacy GS handler在讀取前先驗證、準備期間持有exclusive lease、成功後才消耗pending**。不是聲稱缺少的native財務流程已恢復或完成。
 
@@ -48,6 +48,8 @@ AuthorizeConnection(socket, identities)
   → 全組驗證成功，取得exclusive、non-consuming lease
 CheckConnectionAuthorization(socket, lease)
   → 再驗clock、owner／group／source state
+CaptureAuthorizedPreInventory(socket, lease)
+  → 同guard持續涵蓋讀取、前後全組再驗，只回傳frozen identity／revision／pre row DTOs
 ConfirmAuthorizedConnection(socket, lease)
   → 最後全組檢查 → 原子logical consumption／owner切換
 ReleaseConnectionAuthorization(socket, lease)
@@ -76,9 +78,9 @@ fence是**現代in-process hardening**，不是任意JS monkeypatch／任意外�
 2. 每個DB read前後Check lease；處理既有account availability／ban檢查。
 3. loaded account／legacy inventory必須重新對上authorized ID，不能把trusted adapter誤回的另一個row授予此user。
 4. capture detached account／inventory primitives，另備live mutable copies；之後codec不能修改adapter回傳reference而偷換已編201與待發布值。
-5. 按原有legacy條件預先完成210／202／201，每個body後再Check；initialized不編未選中的202／201。
+5. 捕獲一份catalog generation，預先完成210／conditional202／conditional ALL-local207／conditional201，每個body後再Check；initialized且沒有pre才不編202／201。pre來自新的lease-bound DTO讀取，讀前後整組再驗且getter期間不能nested capture／consume／release。
 6. Confirm lease、整組重綁live values／SetLevel／legacy mode，再rank／發送。source detach／close發生在全組owner切換後。
-7. `finally`釋放preparation；read／encoding error不消耗pending。重試仍是同期限的transfer，不新增native grant或虛構207。
+7. `finally`釋放preparation；read／encoding error不消耗pending。重試仍是同期限的transfer；207只發布可信pre清單，不新增native grant或SQL效果。
 
 source transport close exception在logical commit之後，以generic事件報告，不改成可再次消耗。rank／send失敗也**沒有handoff後rollback／exactly-once TCP保證**；已消耗的transfer不能因沒收到包而重播。
 
@@ -86,7 +88,7 @@ source transport close exception在logical commit之後，以generic事件報告
 
 lease只處理Center身份／ownership。不證明SQL current ban／premium／stock／價格，不消費native rows、不實作stored procedures、不提供durable effects idempotency。即使identity合法，**Release後另開lease也不能當成可以重跑已發生money／XP／LoadOn的依據**。
 
-目前native pre／calendar／composite檔不在這個checkout，沒有把legacy SN／ItemID／Unix expiry換成native ItemSn／StockSn／DATE。正式初始化仍legacy，沒有207、billing或native paid成功。後續還需恢復／重建相關核心、native provider／SQL／calendar證據、detached native candidate到live user的rebind、不可逆effects的durable replay／recovery策略與原版client測試。
+目前已有重新推導的[pre觀測投影](PreInventory.md)與[整組read-side207發布](InventoryHandoff.md)，但沒有把legacy SN／ItemID／Unix expiry換成native ItemSn／StockSn／DATE。正式account／owned初始化仍legacy；不執行native pre效果、billing或native paid成功。後續還需native provider／SQL／calendar證據、完整pre→owned candidate到live user的rebind、不可逆effects的durable replay／recovery策略與原版client測試。
 
 ## 驗證與重建
 

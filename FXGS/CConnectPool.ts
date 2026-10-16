@@ -55,6 +55,22 @@ export class CConnectPool {
     try {
       const check = () =>
         this.center.CheckConnectionAuthorization(socket, authorization);
+      // Read ONLY pre rows already installed by a trusted service-local caller.
+      // This is NOT FxPreInventory SQL / InitPreInventory effects / an award.
+      const preRows = this.center.CaptureAuthorizedPreInventory(
+        socket,
+        authorization,
+      );
+      if (
+        preRows.length !== n ||
+        preRows.some(
+          (r, i) =>
+            NormalizeID(r.ID) !== NormalizeID(ids[i]!.ID) ||
+            r.GlobalSerialNo !== ids[i]!.GlobalSerialNo ||
+            r.GuildSn !== ids[i]!.GuildSn,
+        )
+      )
+        throw new CProtocolError("Pre-inventory owner mismatch");
       const accounts = ids.map((id) => {
         check();
         const raw = this.db.GetUserInfo(id.ID);
@@ -97,32 +113,54 @@ export class CConnectPool {
           rows.map((r) => ({ ...r })),
         );
       check();
-      const info = new CSendPacket(
-        ServerResponse.UserSlotInfo,
-        undefined,
-        socket.text,
-      ).Encode1(this.gameAttr);
-      let catalog: CSendPacket | undefined, inventory: CSendPacket | undefined;
+      // ONE immutable catalog generation is shared by202 and EVERY207 local,
+      // even if a codec callback reloads the live manager during preflight.
+      const definitions = this.items.CaptureSnapshot(),
+        candidates = ids.map((id, i) => {
+          const user = new CUser({ ...accounts[i]! }, id.GlobalSerialNo);
+          user.m_aInventory = inventories[i]!.map((r) => ({ ...r }));
+          user.InstallPreInventory(preRows[i]!.Rows, socket.text);
+          check();
+          return user;
+        }),
+        info = new CSendPacket(
+          ServerResponse.UserSlotInfo,
+          undefined,
+          socket.text,
+        ).Encode1(this.gameAttr);
+      let catalog: CSendPacket | undefined,
+        pre: CSendPacket | undefined,
+        inventory: CSendPacket | undefined;
       if (!initialized) {
         catalog = new CSendPacket(
           ServerResponse.UserItemList,
           undefined,
           socket.text,
         );
-        this.items.PutUserItemList(catalog);
+        this.items.PutUserItemList(catalog, definitions);
         check();
+      }
+      //004089A0..00408A06: ANY pre local =>207 for ALL locals (including empty),
+      // and207 forces201 even when the first client was already initialized.
+      if (candidates.some((user) => user.GetPreInventoryCount() > 0)) {
+        pre = new CSendPacket(
+          ServerResponse.PreInventory,
+          undefined,
+          socket.text,
+        ).Encode1(n);
+        for (const user of candidates) {
+          user.MakePreInventoryPacket(pre, definitions);
+          check();
+        }
+      }
+      if (catalog || pre) {
         inventory = new CSendPacket(
           ServerResponse.UserInventory,
           undefined,
           socket.text,
         ).Encode1(n);
-        for (const [i, rows] of inventories.entries()) {
-          const detached = new CUser(
-            { ...accounts[i]! },
-            ids[i]!.GlobalSerialNo,
-          );
-          detached.m_aInventory = rows.map((r) => ({ ...r }));
-          detached.MakeUserInventoryPacket(inventory);
+        for (const user of candidates) {
+          user.MakeUserInventoryPacket(inventory);
           check();
         }
       }
@@ -140,6 +178,7 @@ export class CConnectPool {
       this.onUsersAttached(socket);
       socket.SendPacket(info);
       if (catalog) socket.SendPacket(catalog);
+      if (pre) socket.SendPacket(pre);
       if (inventory) socket.SendPacket(inventory);
       this.sessions.PutAllSessionInfo(socket);
     } finally {

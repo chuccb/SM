@@ -148,6 +148,11 @@ export interface UserItemSnapshot {
   readonly Count: number;
   readonly GetUserItem: (sn: number) => Readonly<UserItem> | undefined;
 }
+/** Enumeration of the SAME immutable generation for joint202/207 preflight.
+ * Rows are already detached/frozen by CUserItemMan; not a mutable Map or loader. */
+export interface UserItemPacketSnapshot extends UserItemSnapshot {
+  readonly Rows: readonly Readonly<UserItem>[];
+}
 export function UserItemKey(sn: number): number {
   if (
     !Number.isInteger(sn) ||

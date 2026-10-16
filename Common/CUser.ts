@@ -303,7 +303,8 @@ export class CUser extends CSafeObject {
   }
   /**00416CA9: caller supplies an explicit immutable native catalog generation.
    * Capture the level/vector ONCE before user-supplied codecs can reload them.
-   * This does NOT wire the legacy GS SQL handoff to native207 or grant items. */
+   * The GS read-side handoff supplies ALL locals; this body grants NO items
+   * and does NOT execute native SQL/premium/financial initialization. */
   MakePreInventoryPacket(
     packet: CSendPacketBase,
     catalog: UserItemSnapshot,

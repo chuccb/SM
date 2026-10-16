@@ -5,7 +5,7 @@ import type { UserItem } from "../Common/DB/Rows.ts";
 import {
   CopyUserItem,
   UserItemKey,
-  type UserItemSnapshot,
+  type UserItemPacketSnapshot,
 } from "../Common/UserItem.ts";
 import { IntegerRange } from "../Common/OfficialValues.ts";
 import { RuntimePolicy } from "../Common/RuntimePolicy.ts";
@@ -61,11 +61,13 @@ export class CUserItemMan {
   GetUserItem(sn: number): Readonly<UserItem> | undefined {
     return this.m_mapUserItem.get(UserItemKey(sn));
   }
-  CaptureSnapshot(): UserItemSnapshot {
-    const map = this.m_mapUserItem;
+  CaptureSnapshot(): UserItemPacketSnapshot {
+    const map = this.m_mapUserItem,
+      rows = this.m_aUserItem;
     return Object.freeze({
       Revision: this.m_nRevision,
-      Count: this.m_aUserItem.length,
+      Count: rows.length,
+      Rows: rows,
       GetUserItem: (sn: number) => map.get(UserItemKey(sn)),
     });
   }
@@ -77,11 +79,14 @@ export class CUserItemMan {
       Count: this.m_aUserItem.length,
     });
   }
-  PutUserItemList(packet: CSendPacketBase): void {
+  PutUserItemList(
+    packet: CSendPacketBase,
+    snapshot: UserItemPacketSnapshot = this.CaptureSnapshot(),
+  ): void {
     // Capture ONE generation and build with the CALLER'S codepage/cipher.
     // Append once only; even oversized/unrepresentable output cannot leave a
     // half-count/half-row in the caller, or re-query SQL midway through202.
-    const rows = this.m_aUserItem,
+    const rows = snapshot.Rows,
       out = new CSendPacketBase(
         undefined,
         packet.GetCipherDegree(),

@@ -1,3 +1,4 @@
+import type { PreInventory } from "../Common/PreInventory.ts";
 import { CProtocolError } from "../Common/CProtocolError.ts";
 import { NormalizeID } from "../Common/CIDCompare.ts";
 import {
@@ -10,6 +11,12 @@ export interface ConnectionIdentity {
   readonly ID: string;
   readonly GlobalSerialNo: number;
   readonly GuildSn: number;
+}
+/** Detached read-side data for ONE authorized local. Not an award, an SQL ACK
+ * or a CUser reference; the issuer must revalidate before/after capture. */
+export interface ConnectionPreInventory extends ConnectionIdentity {
+  readonly Revision: number;
+  readonly Rows: readonly Readonly<PreInventory>[];
 }
 declare const authorizationBrand: unique symbol;
 /** Modern IN-PROCESS capability, not an original Center packet, bearer token,

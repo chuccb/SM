@@ -35,6 +35,17 @@ export class CCenterProcess {
   ): void {
     this.center.CheckConnectionAuthorization(socket, this.server, lease);
   }
+  /** Read-side DTOs only; does not consume the lease or grant inventory. */
+  CaptureAuthorizedPreInventory(
+    socket: CClientSocket,
+    lease: ConnectionAuthorization,
+  ) {
+    return this.center.CaptureAuthorizedPreInventory(
+      socket,
+      this.server,
+      lease,
+    );
+  }
   ConfirmAuthorizedConnection(
     socket: CClientSocket,
     lease: ConnectionAuthorization,

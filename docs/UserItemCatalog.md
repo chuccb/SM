@@ -143,3 +143,7 @@ for each definition, ascending unsigned SN:
 ```
 
 最新全套、重複測試、原始98檔完整性與證據界線見 [Coverage](Coverage.md)。
+
+## 整組207讀取端後續更新
+
+[InventoryHandoff](InventoryHandoff.md)已將conditional ALL-local207／forced201接進正式GS preflight。`UserItemPacketSnapshot.Rows`與lookup指向相同immutable generation，`PutUserItemList(packet,snapshot)`可綁定同代202；codec在候選驗證／202／第一個207後reload，也不混用不同定義。這沒有完成native SQL／pre給付／owned persistence或原client驗證。

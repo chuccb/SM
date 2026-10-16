@@ -19,7 +19,7 @@ export const UnportedFeatures = [
   "waiting-chief recovery/remaining battle events/special-mode launch/result restart recovery",
   "full GS MTUDP host/queue/clock synchronization",
   "practice/ladder/mission/guild",
-  "native pre-inventory durable effects/billing and whole-group207 handoff; SQL-backed equipment loading",
+  "native pre-inventory durable effects/billing; SQL-backed pre/owned initialization",
   "native owned-inventory SQL persistence/CTime calendar adapter; inventory flush/collector",
   "FXSS stock/pricing/billing/transactions",
   "FXUS account utility",

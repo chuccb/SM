@@ -136,7 +136,7 @@ Bun1.4.3的multi-statement exec已重現中間ALTER衝突被後續成功掩蓋�
 
 `Common/UserInventory.ts`／`FXGS/UserInventory.ts` 已實作原生 read-side row與載入投影，`CUser`／201／105可消費可信 immutable generation；不會自動從這個 SQLite schema 推導它。正式 `LoadInventory`／handoff 仍用 legacy layout；schema6、logical export v2與四類version1 receipts不變。
 
-原生 DateCreated 是已觀測的 raw OLE DATE；不是這個schema的Unix expiry。projection的DeleteAttempts只描述native loader會嘗試的UserID＋ItemSN刪除，完全不執行SQL／不確認刪除。正quantity native row在legacy paid CAS前明確拒絕；同值reload／native mode ABA也會凍結pending plans。native pre-inventory有premium／Exp／Money等副作用，不能以純SELECT取代；目前新增[pre純觀測投影／單人207](PreInventory.md)，只描述先效果後LoadOn的順序，不執行callbacks、不將After套用live／legacy表或新增receipt，也尚未接全組207。Windows calendar轉換、隔離的DB clock adapter、原生paid／flush／collector與native SQL key仍待設計。來源、72 anchors／1768 models與測試界線見[UserInventory](UserInventory.md)。
+原生 DateCreated 是已觀測的 raw OLE DATE；不是這個schema的Unix expiry。projection的DeleteAttempts只描述native loader會嘗試的UserID＋ItemSN刪除，完全不執行SQL／不確認刪除。正quantity native row在legacy paid CAS前明確拒絕；同值reload／native mode ABA也會凍結pending plans。native pre-inventory有premium／Exp／Money等副作用，不能以純SELECT取代；目前新增[pre純觀測投影／單人207](PreInventory.md)，只描述先效果後LoadOn的順序，不執行callbacks、不將After套用live／legacy表或新增receipt；後續[整組讀取端207發布](InventoryHandoff.md)已接正式GS，但不代表pre／owned SQL初始化已完成。Windows calendar轉換、隔離的DB clock adapter、原生paid／flush／collector與native SQL key仍待設計。來源、72 anchors／1768 models與測試界線見[UserInventory](UserInventory.md)。
 
 ## GS轉服授權先於DB讀取
 

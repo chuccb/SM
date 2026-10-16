@@ -9,6 +9,8 @@ import type { ServerConfig } from "../Common/CServerConfig.ts";
 import { CProtocolError } from "../Common/CProtocolError.ts";
 import {
   ChannelType,
+  IntegerRange,
+  PreInventoryRule,
   UserCount,
   SessionLimit,
 } from "../Common/OfficialValues.ts";
@@ -16,8 +18,11 @@ import { RuntimePolicy } from "../Common/RuntimePolicy.ts";
 import {
   CaptureConnectionIdentities,
   type ConnectionIdentity,
+  type ConnectionPreInventory,
   type ConnectionAuthorization,
 } from "./ConnectionAuthorization.ts";
+
+import { CapturePreInventory } from "../Common/PreInventory.ts";
 
 type Phase = "active" | "released" | "invalidated" | "consumed";
 interface OwnerCapture {
@@ -443,7 +448,12 @@ export class CCenterServer {
     if (this.m_activeSocket.get(state.Socket) === state)
       this.m_activeSocket.delete(state.Socket);
   }
-  private CheckAuthorization(state: AuthorizationState): void {
+  private CheckAuthorization(state: AuthorizationState): void;
+  private CheckAuthorization<T>(state: AuthorizationState, read: () => T): T;
+  private CheckAuthorization<T>(
+    state: AuthorizationState,
+    read?: () => T,
+  ): T | undefined {
     if (state.Phase !== "active")
       throw new CProtocolError(
         "Stale connection authorization",
@@ -459,6 +469,16 @@ export class CCenterServer {
       const now = this.ReadClock();
       this.ExpireConnectionsAt(now);
       this.ValidateState(state, now);
+      if (read) {
+        // Keep the same exclusive Checking guard during all read-side getters.
+        // A callback cannot consume/release this lease halfway through a group.
+        const result = read(),
+          after = this.ReadClock();
+        this.ExpireConnectionsAt(after);
+        this.ValidateState(state, after);
+        return result;
+      }
+      return undefined;
     } catch (error) {
       this.Retire(state, "invalidated");
       throw error;
@@ -472,6 +492,40 @@ export class CCenterServer {
     lease: ConnectionAuthorization,
   ): void {
     this.CheckAuthorization(this.FindAuthorization(socket, server, lease));
+  }
+  /** Modern in-process READ ONLY. Exact issuer/socket/server/group authority
+   * is checked BEFORE and AFTER taking detached pre rows. No live CUser escapes,
+   * no default codepage is imposed here, and no financial effect is authorized. */
+  CaptureAuthorizedPreInventory(
+    socket: CClientSocket,
+    server: CLocalServer,
+    lease: ConnectionAuthorization,
+  ): readonly Readonly<ConnectionPreInventory>[] {
+    const state = this.FindAuthorization(socket, server, lease);
+    return this.CheckAuthorization(state, () =>
+      Object.freeze(
+        state.Owners.map((owner, i) => {
+          const { Revision, Rows } = owner.User.CapturePreInventory();
+          if (
+            !Number.isInteger(Revision) ||
+            Revision < 0 ||
+            Revision > IntegerRange.UInt32Maximum ||
+            Revision !== owner.User.GetPreInventoryGeneration() ||
+            !Array.isArray(Rows) ||
+            Rows.length > PreInventoryRule.SuccessfulLoadLimit
+          )
+            throw new CProtocolError(
+              "Invalid authorized pre-inventory snapshot",
+              "invalid-transfer",
+            );
+          return Object.freeze({
+            ...state.Identities[i]!,
+            Revision,
+            Rows: Object.freeze([...Rows].map(CapturePreInventory)),
+          });
+        }),
+      ),
+    );
   }
   /** Releasing/cancelling preparation DOES NOT cancel the pending transfer or
    * extend its TTL. Known retired handles release idempotently; forged ones fail. */

@@ -5,7 +5,7 @@
 - `FXGS/PreInventory.ts:PlanInitPreInventory`：**純觀測投影**。輸入明示的 rowset／premium／procedure 回傳，輸出 immutable 動態狀態投影、按順序的效果描述與成功清單。
 - `Common/PreInventory.ts`、`Common/CUser.ts`：可信 service-local 清單替換、獨立 generation、`MakePreInventoryPacket` 的**單一使用者 body**。
 - **不執行** premium、Center auth、金錢／經驗、flush 或 SQL callbacks；沒有把 `After` 套用到 live user 的 API，也沒有 Apply／Retry 財務入口。
-- **未接線**：正式 GS 仍走明示 legacy SQLite account／inventory bridge 與 210→202→201；尚未加入 native 207 的 conditional／whole-local-group publication，更沒有原 SQL loader／計費／耐久恢復。`completeOfficialRewrite`、`officialClientVerified` 仍為 `false`。
+- **後續已接線**：[整組讀取端handoff](InventoryHandoff.md)依原條件發布210／202／ALL-local207／forced201，空local仍保留。正式account／owned仍採legacy SQLite bridge，207只取可信既有resident清單，不讀取legacy pre表或執行原SQL loader／計費／durable effects。`completeOfficialRewrite`、`officialClientVerified` 仍為 `false`。
 
 ## 來源與欄位
 
@@ -99,7 +99,7 @@ repeat count:
 
 native missing definition 會保留原 count 卻跳過 body；我們**明確拒絕**這個 malformed image。全 body detached 成功才 append一次；missing／identity mismatch、wrong encoding、整個 body 或 caller prefix overflow 都不留半個 count／第一筆。
 
-**完整 native network 尚未接線：** 原手順為210→conditional202→若任何 local 有pre則207（包含**所有 locals**，空者仍有 count0）→conditional201。新 API 沒有 opcode／local-count prefix，不能把一人的 builder 誤稱為全組預備、網路已送達或已給付。client request207是delete，與server response207分開。
+**後續整組發布已接線：** 原手順為210→conditional202→若任何 local 有pre則207（包含**所有 locals**，空者仍有 count0）→conditional201。[CConnectPool整組preflight](InventoryHandoff.md)現在補上opcode／local-count prefix、同catalog snapshot及全部packets預備後才consume。此處的CUser API仍只是單人body，發布不是native SQL載入／給付或durable送達證明。client request207是delete，與server response207分開。
 
 ## 現代授權與 pending fences
 
@@ -128,4 +128,4 @@ pre generation 已加入 Center source fingerprint 與 game result／world froze
 
 builder需要g++，只在明確執行時編譯／執行**我們的 C++**；一般測試消費已版本化的 JSON。沒有執行所附 EXE／DAT／carved SQL／Windows API，沒有更動主機時間或連線至舊官方／收費端點。獨立模型與共用 codec TCP peer 都不是原 client／原程式相容性證明。
 
-完整整合與重複驗證數字見 [Coverage](Coverage.md)。仍需補 native SQL schema／procedure parity、隔離的 Windows calendar／DB clock、premium／financial effect 的 durable idempotency／recovery、完整 pre→owned initialization、whole-local207 handoff、paid／flush／collector／restart 與原 client 實測。
+完整整合與重複驗證數字見 [Coverage](Coverage.md)。仍需補 native SQL schema／procedure parity、隔離的 Windows calendar／DB clock、premium／financial effect 的 durable idempotency／recovery、完整 pre→owned initialization、整組read-side發布後的native初始化與durable送達／重啟策略、paid／flush／collector／restart 與原 client 實測。
