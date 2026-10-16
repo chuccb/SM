@@ -83,7 +83,7 @@ raw pure投影／36PE anchors／3444 cases與256個native inner-loop組合是我
 
 ## 未知欄位與不做的推論
 
-opaque BYTE／WORD、catalog nAttr依Category／handler解讀，不自行當價錢／duration／flags；SID／BID／global serial／guild serial／stock SN／storage SN分開。raw OLE DATE不猜成永久item／UTC／Unix，也不執行SetLocalTime。FXSS／FXUS／Center TCP、native pre-inventory／billing／Windows calendar與完整native SQL仍未完成；沒有以新JSON API或固定成功ack掩蓋缺口。
+opaque BYTE／WORD、catalog nAttr依Category／handler解讀，不自行當價錢／duration／flags；SID／BID／global serial／guild serial／stock SN／storage SN分開。raw OLE DATE不猜成永久item／UTC／Unix，也不執行SetLocalTime。[pre-inventory的單人207 body](PreInventory.md)已可在可信附掛後編碼，但尚未接conditional whole-local-group handoff；其opcode207與client delete207方向分離。FXSS／FXUS／Center TCP、native pre正式effects／billing／Windows calendar與完整native SQL仍未完成；沒有以新JSON API或固定成功ack掩蓋缺口。
 
 ## 原生持有道具／equipment consumers（可信read-side附掛）
 

@@ -529,6 +529,21 @@ export const UserInventoryRule = {
   CharDecorationPositions: 5,
 } as const;
 
+/** InitPreInventory0040ACF4 / MakePreInventoryPacket00416CA9.
+ * Category is the FxItem definition's BYTE, NOT PreInventory.Type or CItemAttr.
+ * 100000 gates only the displayed ValidityPeriod WORD, not SQL expiry. */
+export const PreInventoryRule = {
+  SuccessfulLoadLimit: 30,
+  PremiumTicketCategory: 9,
+  MoneyCategory: 100,
+  ExperienceCategory: 101,
+  HiddenValidityPeriodThreshold: 100_000,
+  PremiumAuthencode: 1,
+} as const;
+export const PreInventoryFormat = {
+  NativeRecordBytes: 56,
+} as const;
+
 /** MakeUserInventoryPacket00416C0C. Inventory Amount is NOT ItemID. The native
  * description precedes eight RAW x86 f64 VariantTime bytes, not scalar coding. */
 export const UserInventoryFormat = {

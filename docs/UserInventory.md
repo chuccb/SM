@@ -4,16 +4,18 @@
 
 ## 已接線與未接線
 
-| 範圍                                                                          | 現況                                                                                                   |
-| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| 已觀測到的 rowset／`CTime::GetVariantTime` 輸入 → detached 原生載入投影       | `FXGS/UserInventory.ts:PlanInitUserInventory`，無 SQL 或主機時鐘副作用                                 |
-| 原生 resident row、不可變安裝／snapshot、原名查詢、trusted Amount／dirty 操作 | `Common/UserInventory.ts`、`Common/CUser.ts`                                                           |
-| 原生 201、category WORD list、accessories、self／nonself 105                  | 實際 production builders；需**明確可信原生附掛**，不是自動授予／裝備                                   |
-| inventory request **209** → 201                                               | 真正 `CChannelPool.OnPacket` 已以兩個 local users 測試；不是 request 50，也不只是直接呼叫純 serializer |
-| pending money／house／legacy paid／result 的原生 generation drift fence       | 納入現代 frozen-plan 檢查，含同值重載／ABA／storage 回呼後再檢查                                       |
-| 原生 SQL → GS loader、pre-inventory、SQL timestamp → Windows calendar／DATE   | **未接線／未完成**；不以純投影充當此流程                                                               |
-| 原生正 quantity 的 paid durability                                            | **明確拒絕**，不送進既有 legacy SQLite CAS；quantity0 原生 relay 保留                                  |
-| native deferred flush／collector、shop billing、crash recovery、原 client     | **未完成／未驗證**                                                                                     |
+| 範圍                                                                                  | 現況                                                                                                   |
+| ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| 已觀測到的 rowset／`CTime::GetVariantTime` 輸入 → detached 原生載入投影               | `FXGS/UserInventory.ts:PlanInitUserInventory`，無 SQL 或主機時鐘副作用                                 |
+| 原生 resident row、不可變安裝／snapshot、原名查詢、trusted Amount／dirty 操作         | `Common/UserInventory.ts`、`Common/CUser.ts`                                                           |
+| 原生 201、category WORD list、accessories、self／nonself 105                          | 實際 production builders；需**明確可信原生附掛**，不是自動授予／裝備                                   |
+| inventory request **209** → 201                                                       | 真正 `CChannelPool.OnPacket` 已以兩個 local users 測試；不是 request 50，也不只是直接呼叫純 serializer |
+| pending money／house／legacy paid／result 的原生 generation drift fence               | 納入現代 frozen-plan 檢查，含同值重載／ABA／storage 回呼後再檢查                                       |
+| 原生 SQL → GS loader、pre正式effects／全組207、SQL timestamp → Windows calendar／DATE | **未接線／未完成**；不以純投影充當此流程                                                               |
+| 原生正 quantity 的 paid durability                                                    | **明確拒絕**，不送進既有 legacy SQLite CAS；quantity0 原生 relay 保留                                  |
+| native deferred flush／collector、shop billing、crash recovery、原 client             | **未完成／未驗證**                                                                                     |
+
+pre-inventory另有[獨立純觀測投影／CUser讀取端207](PreInventory.md)，不執行financial／SQL效果、不套用plan.After；它已加入Center與pending world／result的generation fences，但不是這裡缺少的完整pre→owned SQL／calendar／network initialization。
 
 ## 原程式來源
 

@@ -28,6 +28,12 @@ import {
   type UserInventoryEquipment,
 } from "./UserInventory.ts";
 import { g_nLevel2ExpTable } from "./Protocol/OfficialTables.ts";
+import {
+  CopyPreInventoryRows,
+  PutPreInventoryList,
+  type PreInventory,
+} from "./PreInventory.ts";
+import type { UserItemSnapshot } from "./UserItem.ts";
 
 /** Modern detached audit snapshot, NOT the native object or a client format. */
 export interface UserDynamicSnapshot {
@@ -255,6 +261,56 @@ export class CUser extends CSafeObject {
         ),
       )
     );
+  }
+  private m_aPreInventory: readonly Readonly<PreInventory>[] = Object.freeze(
+    [],
+  );
+  private m_nPreInventoryRevision = 0;
+  private m_bInstallingPreInventory = false;
+  /** TRUSTED service-local read-side replacement, NOT an award/load procedure
+   * or financial ACK. It mutates NO dynamic/owned inventory/legacy SQL field. */
+  InstallPreInventory(
+    source: readonly Readonly<PreInventory>[],
+    text: CTextCodec = DefaultTextCodec,
+  ): void {
+    if (this.m_bInstallingPreInventory)
+      throw new CProtocolError("Reentrant pre-inventory install");
+    if (this.m_nPreInventoryRevision >= IntegerRange.UInt32Maximum)
+      throw new CProtocolError("Pre-inventory revision exhausted");
+    this.m_bInstallingPreInventory = true;
+    try {
+      const rows = CopyPreInventoryRows(source, text);
+      this.m_nPreInventoryRevision++;
+      this.m_aPreInventory = rows;
+    } finally {
+      this.m_bInstallingPreInventory = false;
+    }
+  }
+  GetPreInventoryCount(): number {
+    return this.m_aPreInventory.length;
+  }
+  CapturePreInventory(): Readonly<{
+    Revision: number;
+    Rows: readonly Readonly<PreInventory>[];
+  }> {
+    return Object.freeze({
+      Revision: this.m_nPreInventoryRevision,
+      Rows: this.m_aPreInventory,
+    });
+  }
+  GetPreInventoryGeneration(): number {
+    return this.m_nPreInventoryRevision;
+  }
+  /**00416CA9: caller supplies an explicit immutable native catalog generation.
+   * Capture the level/vector ONCE before user-supplied codecs can reload them.
+   * This does NOT wire the legacy GS SQL handoff to native207 or grant items. */
+  MakePreInventoryPacket(
+    packet: CSendPacketBase,
+    catalog: UserItemSnapshot,
+  ): void {
+    const rows = this.m_aPreInventory,
+      level = this.GetLevel();
+    PutPreInventoryList(packet, rows, catalog, level);
   }
   m_bClientInitialized = true;
   // Native +1976..+2000. These are logical fields, NOT native locks/DB queues.

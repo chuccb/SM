@@ -56,6 +56,11 @@ export const RuntimePolicy = {
   // Native expired rows do NOT count toward400. Bound trusted read-side
   // projection work explicitly; not a recovered SQL LIMIT/rowset capacity.
   MaxNativeInventoryLoadRows: 65_536,
+  // Native30 counts successful loads, not fetched rows. Bound pure projection
+  // work separately; these strings/work limits are NOT recovered SQL widths.
+  MaxNativePreInventoryLoadRows: 65_536,
+  MaxPreInventoryDescriptionBytes: 4096,
+  MaxPreInventoryAttributeBytes: 4096,
   SchemaVersion: 6,
 } as const;
 

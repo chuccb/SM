@@ -49,6 +49,7 @@ function fingerprint(user: CUser): string {
     SessionSerial: user.GetSessionSerialNo(),
     Slot: user.m_nSlotIdx,
     InventoryGeneration: user.GetUserInventoryGeneration(),
+    PreInventoryGeneration: user.GetPreInventoryGeneration(),
     Inventory: user.GetInventoryStateSnapshot(),
   });
 }

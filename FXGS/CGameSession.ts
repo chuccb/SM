@@ -2204,6 +2204,7 @@ export class CGameSession extends CListSession {
               u.GetAuthencode(),
               u.GetDynamicInfoSnapshot(),
               u.GetUserInventoryGeneration(),
+              u.GetPreInventoryGeneration(),
             ]
           : null,
       ),

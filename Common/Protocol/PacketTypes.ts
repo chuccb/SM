@@ -133,6 +133,9 @@ export const ServerResponse = {
   GameTypeNormal: 93,
   UserItemList: 202,
   UserInventory: 201,
+  // OnCenterResConnEstablished207 maker @004089BC: conditional pre-inventory response;
+  // directionally DISTINCT from client207 RequestDeleteItem.
+  PreInventory: 207,
   UserSlotInfo: 210,
   CreateSession: 80,
   JoinSession: 81,

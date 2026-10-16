@@ -19,7 +19,8 @@
     "vectors:special-item-use": "bun run Tools/BuildSpecialItemUseVectors.ts",
     "vectors:user-item-catalog": "bun run Tools/BuildUserItemCatalogVectors.ts",
     "vectors:user-inventory": "bun run Tools/BuildUserInventoryVectors.ts",
-    "vectors:center-connection": "bun run Tools/BuildCenterConnectionVectors.ts"
+    "vectors:center-connection": "bun run Tools/BuildCenterConnectionVectors.ts",
+    "vectors:pre-inventory": "bun run Tools/BuildPreInventoryVectors.ts"
   },
   "dependencies": {
     "iconv-lite": "0.7.2"
