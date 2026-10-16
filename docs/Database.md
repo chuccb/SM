@@ -132,6 +132,10 @@ interface FxItemExport {
 
 Bun1.4.3的multi-statement exec已重現中間ALTER衝突被後續成功掩蓋；`SQLiteScript`先正確識別quote／comment／trigger／CASE邊界，再逐條prepare／run／finalize。所有六份migrations與初始pragmas共用這個executor；錯誤傳回原root IMMEDIATE，避免「半套欄名＋新schema version」。不是執行BAK中的SQL，也不是通用untrusted-SQL parser。schema5→6 late failure／repair retry、舊帳號／inventory／四種receipt原值及真兩程序migration競爭均有測試。
 
+## pre→owned 觀測協調不等於 SQL 初始化
+
+[InventoryInitialization](InventoryInitialization.md)新增實際`CDBMan.PlanInitUserInventory`，只吃明示opened／row／procedure observations，使用真catalog owner／單一snapshot與隔離clock generation；保留pre XP prefix先於失敗LoadOn、after-prefix cached level供owned expiry。owned-open失敗不抹去已觀測pre trace，**不執行／retry financial effects，也不把trace當durable ACK**。`CUser.InstallUserInventoryInitialization`只成對更新可信resident清單／各revision及明示equipment，不套用After、不碰SQL／legacy pre／四種receipt。正式GS／schema6／export v2不變。
+
 ## 原生 owned inventory：本輪沒有新 migration／receipt 格式
 
 `Common/UserInventory.ts`／`FXGS/UserInventory.ts` 已實作原生 read-side row與載入投影，`CUser`／201／105可消費可信 immutable generation；不會自動從這個 SQLite schema 推導它。正式 `LoadInventory`／handoff 仍用 legacy layout；schema6、logical export v2與四類version1 receipts不變。

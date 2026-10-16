@@ -68,7 +68,7 @@ Microsoft固定版本 [SystemTimeToVariantTime API文件](https://github.com/Mic
 6. bad replacement日期／欄位或getter失敗在sample前保留舊valid anchor；monotonic invalid／backwards／throw或civil overflow則清anchor、更新generation。clock數值恢復不會自動復活舊anchor，必須新明示可信sync。
 7. reentry拒絕，revision最大值不wrap；range／safe-integer overflow不clip成看似有效日期。default monotonic來源僅`floor(performance.now())`，不讀或修改host wall clock。
 
-這個profile不跟隨Windows本機DST／timezone跳轉，不提供DB freshness／身份／billing／durable replay保證，也不自動取消或授權Center lease。正式使用前仍需真native provider與clock-generation fence／初始化recovery設計。
+這個profile不跟隨Windows本機DST／timezone跳轉，不提供DB freshness／身份／billing／durable replay保證，也不自動取消或授權Center lease。後續[InventoryInitialization](InventoryInitialization.md)已有觀測協調層的clock-generation fence／per-known-row captured time，仍未自動接正式GS。真正native provider／SQL與financial initialization recovery仍需獨立設計。
 
 ## 既有 inventory 的整合邊界
 

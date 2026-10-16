@@ -9,12 +9,14 @@ import {
   UserDynamicRule,
   UserInventoryFormat,
   UserInventoryRule,
+  PreInventoryRule,
 } from "./OfficialValues.ts";
 import { InventoryDateBridge } from "./RuntimePolicy.ts";
 import { CProtocolError } from "./CProtocolError.ts";
 import { DefaultTextCodec, type CTextCodec } from "./CTextCodec.ts";
 import {
   CopyUserInventory,
+  CaptureUserInventory,
   FindUserInventory,
   FindUserInventoryFromAll,
   FindInventoryLoaded,
@@ -30,6 +32,7 @@ import {
 import { g_nLevel2ExpTable } from "./Protocol/OfficialTables.ts";
 import {
   CopyPreInventoryRows,
+  CapturePreInventory,
   PutPreInventoryList,
   type PreInventory,
 } from "./PreInventory.ts";
@@ -127,6 +130,99 @@ export class CUser extends CSafeObject {
     } finally {
       this.m_bInstallingUserInventory = false;
     }
+  }
+  /** MODERN TRUSTED paired read-side replacement. Preflight BOTH lists and
+   * both generation budgets before publishing either. Never applies a pre
+   * projection's After/financial effects, runs SQL, or authorizes a grant.
+   * No callback occurs between the two vector/revision publications. */
+  InstallUserInventoryInitialization(
+    ownedSource: readonly Readonly<UserInventory>[],
+    preSource: readonly Readonly<PreInventory>[],
+    equipment: Readonly<UserInventoryEquipment> = {},
+    text: CTextCodec = DefaultTextCodec,
+  ): void {
+    if (this.m_bInstallingUserInventory || this.m_bInstallingPreInventory)
+      throw new CProtocolError("Reentrant inventory initialization install");
+    if (
+      this.m_nUserInventoryRevision >= IntegerRange.UInt32Maximum ||
+      this.m_nPreInventoryRevision >= IntegerRange.UInt32Maximum
+    )
+      throw new CProtocolError("Inventory initialization revision exhausted");
+    this.m_bInstallingUserInventory = true;
+    this.m_bInstallingPreInventory = true;
+    try {
+      if (
+        !Array.isArray(ownedSource) ||
+        !Array.isArray(preSource) ||
+        ownedSource.length > UserInventoryRule.LoadCountLimit ||
+        preSource.length > PreInventoryRule.SuccessfulLoadLimit ||
+        this.m_vInventory.length
+      )
+        throw new CProtocolError(
+          "Cannot mix native/legacy inventory or exceed resident capacity",
+        );
+      const ownedInput = [...ownedSource],
+        preInput = [...preSource],
+        fake = equipment.FakeLevel,
+        icon = equipment.LevelIconSN;
+      if (fake !== undefined) this.AssertInt32(fake);
+      if (icon !== undefined) UserInventoryKey(icon);
+      // Capture ALL rows before the FIRST codec callback can mutate sources.
+      const capturedOwned = ownedInput.map(CaptureUserInventory),
+        capturedPre = preInput.map(CapturePreInventory),
+        owned = Object.freeze(
+          capturedOwned.map((r) => CopyUserInventory(r, text)),
+        ),
+        pre = CopyPreInventoryRows(capturedPre, text),
+        legacy: _USERINVENTORY[] = [];
+      Object.freeze(legacy);
+      if (this.m_vInventory.length)
+        throw new CProtocolError(
+          "Legacy inventory changed during initialization preflight",
+        );
+      // No fallible port/getter/copy below: one synchronous publication.
+      this.m_nUserInventoryRevision++;
+      this.m_nPreInventoryRevision++;
+      this.m_vUserInventory = owned;
+      this.m_aPreInventory = pre;
+      this.m_vInventory = legacy;
+      this.m_userInventoryText = text;
+      if (fake !== undefined) this.m_nFakeLevel = fake;
+      if (icon !== undefined) {
+        this.m_bLevelIcon = 1;
+        this.m_nLevelIconSn = icon | 0;
+      }
+      this.m_setModifiedInventory.clear();
+    } finally {
+      this.m_bInstallingUserInventory = false;
+      this.m_bInstallingPreInventory = false;
+    }
+  }
+  /** Atomic detached read-side pair only; null Owned means legacy mode. Neither
+   * this DTO nor its revisions prove SQL/financial initialization or freshness. */
+  CaptureUserInventoryInitialization(): Readonly<{
+    Owned: Readonly<{
+      Revision: number;
+      Rows: readonly Readonly<UserInventory>[];
+    }> | null;
+    Pre: Readonly<{
+      Revision: number;
+      Rows: readonly Readonly<PreInventory>[];
+    }>;
+  }> {
+    return Object.freeze({
+      Owned:
+        this.m_vUserInventory === undefined
+          ? null
+          : Object.freeze({
+              Revision: this.m_nUserInventoryRevision,
+              Rows: this.m_vUserInventory,
+            }),
+      Pre: Object.freeze({
+        Revision: this.m_nPreInventoryRevision,
+        Rows: this.m_aPreInventory,
+      }),
+    });
   }
   /**00417B7B: append a detached native row with clean dirty flag; no equipment
    * mutation or SQL grant. Unlike the original, do NOT dirty the caller's row. */

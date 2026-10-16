@@ -21,6 +21,8 @@
 
 原game constants／layouts集中`Common/OfficialValues.ts`，操作上限／TTL／receipt版本在`RuntimePolicy.ts`，packet方向在`Protocol/PacketTypes.ts`。未證實的attrs／opaque bytes保留角色，不改叫通用價格／flags。原普通strategy部分no-op是PE return／vtable已核對的例外，不等於可以用placeholder補未讀程式。
 
+另有[InventoryInitialization](InventoryInitialization.md)：真CDBMan的pre→owned觀測協調使用同catalog snapshot與DB clock revision fence，after-prefix level不能回退成initial level；CUser可成對preflight／發布兩清單，second-list失敗不先換owned。兩者都不套用pre After、不執行給付／SQL／replay，不改正式GS的legacy bridge。
+
 ## 啟動與清理
 
 ```text

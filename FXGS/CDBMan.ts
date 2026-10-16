@@ -41,6 +41,14 @@ import { ServerResponse } from "../Common/Protocol/PacketTypes.ts";
 import { g_nLevel2ExpTable } from "../Common/Protocol/OfficialTables.ts";
 import { RuntimePolicy } from "../Common/RuntimePolicy.ts";
 
+import type { CDBClock } from "../Common/DB/CDBClock.ts";
+import type { CUserItemMan } from "./CUserItemMan.ts";
+import {
+  PlanUserInventoryInitialization,
+  type InventoryInitializationObservation,
+  type InventoryInitializationPlan,
+} from "./InventoryInitialization.ts";
+
 /** Modern durable submission, NEVER a client request or native struct layout. */
 export interface GameResultChange extends UserDynamicChange {
   readonly Slot: number;
@@ -161,6 +169,27 @@ type RoundDescriptor = Pick<
 >;
 
 export class CDBMan extends CDBManBase {
+  private m_bPlanningUserInventory = false;
+  /** Observed native pre -> owned ordering ONLY. No SQL calls or live After
+   * installation. Actual instance guard covers input/codec/clock reentry. */
+  PlanInitUserInventory(
+    input: Readonly<InventoryInitializationObservation>,
+    items: CUserItemMan,
+    clock: CDBClock,
+  ): InventoryInitializationPlan {
+    if (this.m_bPlanningUserInventory)
+      throw new CProtocolError("Reentrant inventory initialization projection");
+    this.m_bPlanningUserInventory = true;
+    try {
+      if (items.db !== this)
+        throw new CProtocolError(
+          "Inventory initialization catalog owner mismatch",
+        );
+      return PlanUserInventoryInitialization(input, items, clock, this.text);
+    } finally {
+      this.m_bPlanningUserInventory = false;
+    }
+  }
   /** SQLite-only extension. Exact same round key + canonical payload is a
    * duplicate even after account values change back (ABA) or nobody gets XP.
    * A different payload for an existing key is rejected, not silently accepted.

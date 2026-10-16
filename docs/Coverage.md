@@ -4,7 +4,28 @@
 
 **尚未滿足「完整官方伺服器」的驗收條件；沒有原版客戶端端到端驗證。** `Main.ts` 與診斷端點也會明確顯示此限制。
 
-## 本輪：原生 timestamp／CTime 嚴格支援子集與隔離clock（2026-10-17）
+## 本輪：pre→owned 觀測協調與成對讀取端發布（2026-10-17）
+
+從已推送`13be3558259b7ddbdd8b86e0646a2b68f0a451d0`繼續；368個tracked檔／98原始供給檔。編輯前重跑compiler＋**1047 pass／0 fail／669694 assertions／55檔、98.50s**。本輪是重新推導的observed composite，不是找回歷史缺檔／沿用1020，不是native SQL／financial effects或完整server完成。
+
+- 新[InventoryInitialization](InventoryInitialization.md)與實際`CDBMan.PlanInitUserInventory`：明示Pre／Owned rowset-open及row／procedure observations，同一real manager catalog snapshot、owner identity與DB clock synchronization／revision fence；instance guard涵蓋input／codec／clock reentry。兩個reached stage全部primitive先latch，不讓pre codec修改尚未捕獲的owned資料。
+- 來源`0040AF6D`先pre，pre失敗不讀owned或clock；owned-open失敗仍保留已觀測pre prefix／After。**XP prefix即使LoadOn失敗，owned expiry也使用after-prefix cached level**；30 successes與400 counted rows分開，missing／expired與額外fetched row不混為SQL LIMIT。
+- 每個有definition的processed owned row獨立sample隔離clock，即使level-invalid；missing不sample。CTime explicit captured time避免多sample，strict rawDATE >及負DATE chronology quirk保留。empty／missing-only可以沒有clock anchor，revision0不代表時間或financial authority。
+- 新CUser可信`InstallUserInventoryInitialization`／atomic frozen pair snapshot：兩份vector／各revision budget／equipment全preflight，second-list失敗不半換owned；無callback穿插成對publication，兩epochs即使empty／同值也各＋1。非空legacy拒絕，不重解釋SN／ItemID／StockSn；不套用pre After、不改Money／XP／auth／flush或執行SQL。
+- `CaptureUserInventoryRecord`／`CaptureUserInventory`使DATE／derived getters單讀且早於codec；修補validation後被換成NaN／未驗證attrs的資料一致性缺口，不宣稱對任意JS／外部SQL有全域隔離。
+- 第**22份**獨立人工C++ reference：**24固定PE anchors／131 cases**，另獨立讀取並核對LS-GS450項level inputs；對照stage／After／events／call UserLevel／selected與deleted rows／counter／equipment。35個complete候選以真CUser paired install比對**非空201與207、plain／scalar完整bytes**；C++不是native SQL／DLL／financial／client oracle。
+- 新**33項／2781 assertions、2檔、2.25s**通過，含兩local真channel209、closed observations不解碼、owner錯配、catalog／clock同值ABA、per-row fault退役、row getters／array length／nested installs、two-generation exhaustion、legacy拒絕、成對來源capture與immutable DTO。
+- 五種TS controls先red→exact source restored後green：誤用initial level **0／1→1／0**、移除catalog fence **0／2→2／0**、移除clock fence **0／1→1／0**、把pair改成兩次sequential installs **0／2→2／0**、跳過primitive capture **0／1→1／0**。不是執行original程式。
+- 真Center已issued lease遇paired second-local ABA整組拒絕；invalid second-list preflight不換epoch，原lease仍可single-use整組consume。真ordinary launch後的money／house／legacy paid／result frozen plans皆在SQL／clock／random前拒絕paired ABA；**COMMIT後**paired drift保留durable receipt／SQL，但擋live After／success packets、不重付或假rollback。native positive paid仍fail-closed，qty0 relay不lookup stock／pre且無receipt。
+- `bun run verify` compiler通過，**1080 pass／0 fail／672475 assertions／57檔、105.19s**；原1047項保留。正式GS account／owned仍legacy，210202207201條件與whole-group preflight不改；不執行pre SQL／effects、不新增receipt／清空pre，不以Stage complete或revision宣稱durable initialization／grant／送達。
+- 原36核心＋新兩檔，共**38檔重複2輪**，每輪**606 pass／0 fail／630814 assertions**（95.32／88.39s）。四項真TCP／UDP另**重複3輪**，每輪**4 pass／0 fail／1222 assertions**（11.02／11.12／11.12s）；共用codec peer不是original-client相容證明。
+- **22份builders各重建2輪**（78.89／83.85s），全部22份fixture hash一致，原21份逐一與編輯前相同。只編譯／執行我們的C++，不執行supplied EXE／DAT／carved SQL／Windows API，不改host clock、不連舊官方／billing端點。
+- `format:check`通過；98個original blob＋mode不變、原21份fixtures未改、260個local links／fragments有效、changed／new檔secret patterns無命中。real fresh狀態為schema6、五個空catalog各Revision1、drivers stopped、maintenance0、completion／client flags false。
+- Bun **1.4.3**／TypeScript **7.1.0-dev.20261014.1**／SQLite **3.53.4**；dependencies／兩lockfiles、schema6／export v2／四類version1 receipts與legacy owned-pre schema不變。完整native provider／SQL初始化、financial durable replay／recovery、完整Windows calendar／DST、paid／flush／collector／restart／特殊模式／原client仍未完成，flags保持false。
+
+ignored `.analysis/tests/initialization-*`保留baseline／focused／full、五類controls、reference stability／core／network repetition logs與manifests。推送前另確認98個original blob＋mode、舊21份fixtures、links／fragments／secrets／locks、real schema6／五個empty catalog Revision1／stopped drivers／falseflags，再以**exact staged tree**乾淨匯出／fresh安裝、format／compiler／完整suite與new builder驗證，逐一核對exported blobs／modes。這些是可重建checkpoint的驗證，不是移植完成率、原client／native SQL oracle或正式部署宣告。
+
+## 前一個已推送checkpoint：timestamp／CTime嚴格子集與隔離clock（2026-10-17，保留紀錄）
 
 從已推送`214a2bc493fad7b23a853fbb84dffb733aff16e0`繼續；編輯前357個tracked檔、98原始供給檔，先重跑compiler與**1010 pass／0 fail／639153 assertions／53檔、118.99s**。以下是重新推導的calendar核心，**不是找回歷史缺檔、不沿用曾報過的1020，也不是native SQL／完整Windows相容或完整server**。
 

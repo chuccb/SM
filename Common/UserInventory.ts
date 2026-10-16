@@ -61,13 +61,64 @@ function scalar(
     throw new CProtocolError(`Invalid native inventory ${name}`);
   return value;
 }
+/** Latch every primitive before ANY codec callout; these are detached data
+ * captures, not SQL/identity authority or a defense against arbitrary JS. */
+export function CaptureUserInventoryRecord(
+  input: unknown,
+): Readonly<UserInventoryRecord> {
+  if (!input || typeof input !== "object" || Array.isArray(input))
+    throw new CProtocolError("Invalid native inventory row");
+  const { ItemSn, Slot, Amount, DateCreated, LevelCreated, StockSn, Verbose } =
+    input as UserInventoryRecord;
+  return Object.freeze({
+    ItemSn,
+    Slot,
+    Amount,
+    DateCreated,
+    LevelCreated,
+    StockSn,
+    Verbose,
+  });
+}
+export function CaptureUserInventory(input: unknown): Readonly<UserInventory> {
+  if (!input || typeof input !== "object" || Array.isArray(input))
+    throw new CProtocolError("Invalid native inventory row");
+  const {
+    ItemSn,
+    Slot,
+    Amount,
+    DateCreated,
+    LevelCreated,
+    StockSn,
+    Verbose,
+    Category,
+    strAttr,
+    nAttr1,
+    nAttr2,
+    nAttr3,
+    Modified,
+  } = input as UserInventory;
+  return Object.freeze({
+    ItemSn,
+    Slot,
+    Amount,
+    DateCreated,
+    LevelCreated,
+    StockSn,
+    Verbose,
+    Category,
+    strAttr,
+    nAttr1,
+    nAttr2,
+    nAttr3,
+    Modified,
+  });
+}
 export function CopyUserInventoryRecord(
   input: unknown,
   text: CTextCodec = DefaultTextCodec,
 ): Readonly<UserInventoryRecord> {
-  if (!input || typeof input !== "object" || Array.isArray(input))
-    throw new CProtocolError("Invalid native inventory row");
-  const r = input as Record<string, unknown>;
+  const r = CaptureUserInventoryRecord(input);
   const ItemSn =
     scalar(r.ItemSn, 0, IntegerRange.UInt32Maximum, "ItemSn") >>> 0;
   const StockSn =
@@ -114,8 +165,8 @@ export function CopyUserInventory(
   input: unknown,
   text: CTextCodec = DefaultTextCodec,
 ): Readonly<UserInventory> {
-  const row = CopyUserInventoryRecord(input, text),
-    r = input as Record<string, unknown>;
+  const r = CaptureUserInventory(input),
+    row = CopyUserInventoryRecord(r, text);
   const Category =
     scalar(r.Category, 0, IntegerRange.UInt8Maximum, "Category") | 0;
   const nAttr1 =

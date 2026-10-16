@@ -13,6 +13,8 @@
 
 本輪新增[原生日期／CTime／隔離DB clock](docs/Calendar.md)：分清DB converter的ms0與rowset未寫weekday／ms，明示clock／API ports、嚴格Gregorian DATE子集及monotonic generation snapshot；不讀JS Date、不改host clock、不自動接入正式GS／SQLite日期或授權financial replay。第21份獨立模型30 anchors／2773 cases，另1680組clock advances；仍不是完整Windows API／native SQL初始化。
 
+新增[pre→owned觀測協調／成對讀取端發布](docs/InventoryInitialization.md)：真CDBMan以同catalog／clock generation串接兩段投影，保留failed LoadOn後的XP前綴對owned level判斷；CUser兩清單全preflight後才一起換revision，不把After當Money／XP／premium給付。第22份模型24 anchors／131 cases，尚未接正式native SQL初始化。
+
 ## 安裝與執行
 
 從儲存庫根目錄執行；需要能安裝 npm 套件的 Node/npm，或已安裝的相同版本 Bun：
@@ -133,9 +135,11 @@ HTTP 的 `processReady` 只代表這批已實作的 listener 已啟動，**不�
 ./node_modules/.bin/bun run vectors:inventory-handoff
 # Timestamp／CTime支援子集與隔離clock；不執行Windows API／SetLocalTime
 ./node_modules/.bin/bun run vectors:calendar
+# pre→owned觀測順序／獨立30與400計數／非空201207；不執行給付
+./node_modules/.bin/bun run vectors:inventory-initialization
 ```
 
-全部21份獨立參考builder位於 `Tools/Build*Vectors.ts`；最新實測數字與完整性紀錄見 [Coverage](docs/Coverage.md)。
+全部22份獨立參考builder位於 `Tools/Build*Vectors.ts`；最新實測數字與完整性紀錄見 [Coverage](docs/Coverage.md)。
 
 測試包含手工由反編譯轉寫的固定寬度 C++ 參考向量、實際資源檔、SQLite、真實 TCP／UDP、CLI 與啟動失敗清理。**C++ 參考不是執行原始官方程式，也不是原版客戶端錄包**；TCP 測試端使用本實作的 codec，不能單獨當作相容性的證明。
 

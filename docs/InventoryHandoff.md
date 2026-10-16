@@ -4,6 +4,8 @@
 
 **範圍是可信讀取端的發布，不是原生初始化／給付：** 207 只使用先前由可信 service-local caller 透過 `CUser.InstallPreInventory` 附掛的不可變清單，預設為空。正式 account／owned inventory 仍用明示 legacy SQLite bridge；不 SELECT／重解釋 legacy `FxPreInventory`，不呼叫 premium／Money／Exp／LoadOn／flush，也不套用 projection `After`。完整 native pre→owned SQL／calendar／durable effects 與原 client 驗證仍未完成；完成旗標保持 `false`。
 
+後續[InventoryInitialization](InventoryInitialization.md)增加pre→owned觀測協調與CUser成對可信清單安裝；第二份失敗不半換owned，same-byte pair reload同時換兩個epochs，已由Center與pending financial fences實測。它沒有改本頁正式GS的legacy owned來源、207條件／lease preflight或新增給付／native SQL provider。
+
 ## 原始發布條件
 
 `FXGS/FxServer.exe.c` 的 `CConnectPool::OnCenterResConnEstablished`（`0040860C`）與同 PE `.lst`：

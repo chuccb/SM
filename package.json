@@ -22,7 +22,8 @@
     "vectors:center-connection": "bun run Tools/BuildCenterConnectionVectors.ts",
     "vectors:pre-inventory": "bun run Tools/BuildPreInventoryVectors.ts",
     "vectors:inventory-handoff": "bun run Tools/BuildInventoryHandoffVectors.ts",
-    "vectors:calendar": "bun run Tools/BuildCalendarVectors.ts"
+    "vectors:calendar": "bun run Tools/BuildCalendarVectors.ts",
+    "vectors:inventory-initialization": "bun run Tools/BuildInventoryInitializationVectors.ts"
   },
   "dependencies": {
     "iconv-lite": "0.7.2"

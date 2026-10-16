@@ -88,7 +88,7 @@ source transport close exception在logical commit之後，以generic事件報告
 
 lease只處理Center身份／ownership。不證明SQL current ban／premium／stock／價格，不消費native rows、不實作stored procedures、不提供durable effects idempotency。即使identity合法，**Release後另開lease也不能當成可以重跑已發生money／XP／LoadOn的依據**。
 
-目前已有重新推導的[pre觀測投影](PreInventory.md)與[整組read-side207發布](InventoryHandoff.md)，但沒有把legacy SN／ItemID／Unix expiry換成native ItemSn／StockSn／DATE。後續另有[Calendar](Calendar.md)重新推導的timestamp-copy／CTime嚴格子集與隔離clock，非找回舊缺檔、不自動接GS／financial effects，也不取代此lease registry。正式account／owned初始化仍legacy；不執行native pre效果、billing或native paid成功。後續還需native provider／SQL／完整Windows calendar證據、完整pre→owned candidate到live user的rebind、不可逆effects的durable replay／recovery策略與原版client測試。
+目前已有重新推導的[pre觀測投影](PreInventory.md)與[整組read-side207發布](InventoryHandoff.md)，但沒有把legacy SN／ItemID／Unix expiry換成native ItemSn／StockSn／DATE。後續另有[Calendar](Calendar.md)重新推導的timestamp-copy／CTime嚴格子集與隔離clock，非找回舊缺檔、不自動接GS／financial effects，也不取代此lease registry。正式account／owned初始化仍legacy；不執行native pre效果、billing或native paid成功。後續[InventoryInitialization](InventoryInitialization.md)已有同catalog／DB clock generation的pre→owned觀測協調與CUser成對清單發布；paired ABA使lease失效，而failed第二份preflight不換epoch、原lease可正常single-use。它不是給付權限，也不是找回舊缺檔或native SQL整合。後續還需native provider／SQL／完整Windows calendar證據、完整pre→owned candidate到live user的rebind、不可逆effects的durable replay／recovery策略與原版client測試。
 
 ## 驗證與重建
 

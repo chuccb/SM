@@ -128,4 +128,6 @@ pre generation 已加入 Center source fingerprint 與 game result／world froze
 
 builder需要g++，只在明確執行時編譯／執行**我們的 C++**；一般測試消費已版本化的 JSON。沒有執行所附 EXE／DAT／carved SQL／Windows API，沒有更動主機時間或連線至舊官方／收費端點。獨立模型與共用 codec TCP peer 都不是原 client／原程式相容性證明。
 
+後續[InventoryInitialization](InventoryInitialization.md)以真CDBMan將此觀測投影接到owned投影，使用同catalog／clock generation與**After.Level**（即使XP row的LoadOn失敗）；owned-open失敗仍保留pre trace。另有CUser可信成對list install／capture，兩份全驗才換revision，仍不套用After／執行financial effects或native SQL。
+
 完整整合與重複驗證數字見 [Coverage](Coverage.md)。仍需補 native SQL schema／procedure parity、完整Windows calendar／native DB provider整合（[嚴格子集與隔離clock](Calendar.md)已有）、premium／financial effect 的 durable idempotency／recovery、完整 pre→owned initialization、整組read-side發布後的native初始化與durable送達／重啟策略、paid／flush／collector／restart 與原 client 實測。
