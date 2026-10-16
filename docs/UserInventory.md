@@ -112,6 +112,10 @@ money／house／legacy paid 的 shared world fingerprint 加入各 user **mode�
 
 若 trusted storage callback 在 root COMMIT **之後**重載 native generation：SQL／receipt 已 durable，不假裝回滾；live After／成功封包仍不發布，原 plan 留下等待明確 recovery，不能自動重付／rebase。這不是對任意 JS 欄位或外部 SQL writers 的通用原子 fence，亦不代表 native stock 已有持久化。
 
+## GS resident 轉移的後續接線
+
+[ResidentInventoryHandoff](ResidentInventoryHandoff.md)已讓正式GS使用lease-bound paired DTO；明示native empty／nonempty不再被legacy setter放棄，每個local獨立選來源。整組目標碼頁／201／207預備後才消耗，成功保留同一live CUser的rows／dirty／兩epochs／儲存presentation，不重裝／重算expiry／rebase copied attrs。Source-close／rank後的resident漂移擋prepared bundle但不rollback ownership。第23份33 anchors／254完整GS images與新雙local真TCP、209是resident讀取端證據，不是native SQL或原client。
+
 ## 為何尚未接原生 SQL loader
 
 - `InitPreInventory` 包含 premium／auth、Exp＋SetLevel、Money、procedure return、延後 flush 等副作用；30是成功處理數，不可替成單純 SELECT LIMIT30。某些副作用在 procedure 最終成功以前發生。
@@ -119,7 +123,7 @@ money／house／legacy paid 的 shared world fingerprint 加入各 user **mode�
 - [Calendar](Calendar.md)已核對Get_FieldDate未寫weekday／ms、DB copy ms0／reverse fraction0，新增CTime顯式ports／嚴格Gregorian DATE子集；invalid-day rolling／00..99 cutoff／timezone／DST／原DLL rounding與native provider binding仍未完整實證，不能拿legacy Unix bridge或此子集冒稱完整Windows轉換。
 - DB clock同步涉及 `prGetTime` → `ConvertDBTimeToSystemTime` → **SetLocalTime**；絕不修改host clock。現已新增隔離per-server `CDBClock`，只接受明示可信observations／monotonic，fault退役與同值sync增加generation；尚未接native prGetTime provider／正式GS或full initialization，不把revision當financial authority。
 - BAK 的只讀 ASCII 片段不是 SQL Server restore；沒有執行 supplied EXE／DAT 或拼接出的 SQL procedures。
-- native paid metadata CAS／receipt 版本、耗盡處理、deferred flush／collector、reload／handoff 和 restart recovery 都需要獨立設計。schema6／legacy inventory／四類 receipts 本輪完全不改格式。
+- native paid metadata CAS／receipt 版本、耗盡處理、deferred flush／collector、SQL-backed reload／financial handoff 和 restart recovery 都需要獨立設計；已有的可信resident讀取端轉移不取代它們。schema6／legacy inventory／四類 receipts 本輪完全不改格式。
 
 ## 驗證與重建
 

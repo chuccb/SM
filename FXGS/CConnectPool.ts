@@ -55,22 +55,24 @@ export class CConnectPool {
     try {
       const check = () =>
         this.center.CheckConnectionAuthorization(socket, authorization);
-      // Read ONLY pre rows already installed by a trusted service-local caller.
-      // This is NOT FxPreInventory SQL / InitPreInventory effects / an award.
-      const preRows = this.center.CaptureAuthorizedPreInventory(
+      // Paired resident data is explicit TRUSTED read-side state, not SQL load,
+      // expiry revalidation, billing or an award. Legacy locals still load SQL.
+      const resident = this.center.CaptureAuthorizedInventory(
         socket,
         authorization,
       );
       if (
-        preRows.length !== n ||
-        preRows.some(
+        resident.length !== n ||
+        resident.some(
           (r, i) =>
             NormalizeID(r.ID) !== NormalizeID(ids[i]!.ID) ||
             r.GlobalSerialNo !== ids[i]!.GlobalSerialNo ||
             r.GuildSn !== ids[i]!.GuildSn,
         )
       )
-        throw new CProtocolError("Pre-inventory owner mismatch");
+        throw new CProtocolError("Resident inventory owner mismatch");
+      if (resident.some((r) => r.OwnedGeneration.Native !== (r.Owned !== null)))
+        throw new CProtocolError("Resident inventory mode mismatch");
       const accounts = ids.map((id) => {
         check();
         const raw = this.db.GetUserInfo(id.ID);
@@ -88,8 +90,10 @@ export class CConnectPool {
         )
       )
         throw new CProtocolError("Account not available");
-      const inventories = ids.map((id) => {
+      const inventories = ids.map((id, i) => {
         check();
+        // Native EMPTY is still native; never fall back to SN/ItemID/Unix SQL.
+        if (resident[i]!.Owned !== null) return null;
         const raw = this.db.LoadInventory(id.ID);
         check();
         const rows = Object.freeze(
@@ -110,7 +114,7 @@ export class CConnectPool {
       // authoritative value after the detached201 has already been prepared.
       const liveAccounts = accounts.map((a) => ({ ...a! })),
         liveInventories = inventories.map((rows) =>
-          rows.map((r) => ({ ...r })),
+          rows === null ? null : rows.map((r) => ({ ...r })),
         );
       check();
       // ONE immutable catalog generation is shared by202 and EVERY207 local,
@@ -118,8 +122,24 @@ export class CConnectPool {
       const definitions = this.items.CaptureSnapshot(),
         candidates = ids.map((id, i) => {
           const user = new CUser({ ...accounts[i]! }, id.GlobalSerialNo);
-          user.m_aInventory = inventories[i]!.map((r) => ({ ...r }));
-          user.InstallPreInventory(preRows[i]!.Rows, socket.text);
+          const data = resident[i]!;
+          if (data.Owned !== null) {
+            user.InstallUserInventoryInitialization(
+              data.Owned.Rows,
+              data.Pre.Rows,
+              { FakeLevel: data.Presentation.FakeLevel },
+              socket.text,
+            );
+            // Preserve the exact stored enable DWORD AND signed SN, including
+            // disabled/nonzero-SN states. Do not derive/regrant from row order.
+            user.SetLevelIcon(
+              data.Presentation.LevelIconEnabled,
+              data.Presentation.LevelIconSN,
+            );
+          } else {
+            user.m_aInventory = inventories[i]!.map((r) => ({ ...r }));
+            user.InstallPreInventory(data.Pre.Rows, socket.text);
+          }
           check();
           return user;
         }),
@@ -168,14 +188,43 @@ export class CConnectPool {
         socket,
         authorization,
       );
+      // Source close callbacks happen AFTER Center consumption. Detect a late
+      // resident change before publishing the prepared native201; ownership is
+      // already consumed and is NEVER rolled back/reissued on this failure.
+      const assertResident = () => {
+        for (const [i, user] of users.entries()) {
+          const actual = user.CaptureUserInventoryInitialization(),
+            expected = resident[i]!;
+          if (
+            actual.OwnedGeneration.Native !== expected.OwnedGeneration.Native ||
+            actual.OwnedGeneration.Revision !==
+              expected.OwnedGeneration.Revision ||
+            actual.Pre.Revision !== expected.Pre.Revision ||
+            actual.Presentation.FakeLevel !== expected.Presentation.FakeLevel ||
+            actual.Presentation.LevelIconEnabled !==
+              expected.Presentation.LevelIconEnabled ||
+            actual.Presentation.LevelIconSN !==
+              expected.Presentation.LevelIconSN
+          )
+            throw new CProtocolError(
+              "Resident inventory changed after handoff",
+            );
+        }
+      };
+      assertResident();
+
       for (const [i, user] of users.entries()) {
         user.m_userInfo = liveAccounts[i]!;
         user.SetLevel();
-        user.m_aInventory = liveInventories[i]!;
+        // Native rows, dirty bits, equipment and BOTH resident epochs stay on
+        // the SAME live owner. Handoff is not another install/reload/SQL ACK.
+        if (liveInventories[i] !== null)
+          user.m_aInventory = liveInventories[i]!;
       }
       users[0]!.m_bClientInitialized = initialized;
       socket.m_nPoolType = "Lobby";
       this.onUsersAttached(socket);
+      assertResident();
       socket.SendPacket(info);
       if (catalog) socket.SendPacket(catalog);
       if (pre) socket.SendPacket(pre);

@@ -1,6 +1,6 @@
 # Center非消耗式授權lease與GS讀取／轉服邊界
 
-此處區分三件事：**原生Center CUser狀態核心、現代in-process授權lease、正式GS仍使用的legacy SQLite庫存**。本輪不新增native procedure成功回覆、商城交易或原版Center TCP。完整server／original-client旗標仍為`false`。
+此處區分三件事：**原生Center CUser狀態核心、現代in-process授權lease、正式GS的legacy SQLite／明示可信native resident庫存**。本輪不新增native procedure成功回覆、商城交易或原版Center TCP。完整server／original-client旗標仍為`false`。
 
 ## 本工作樹的實際起點
 
@@ -50,6 +50,8 @@ CheckConnectionAuthorization(socket, lease)
   → 再驗clock、owner／group／source state
 CaptureAuthorizedPreInventory(socket, lease)
   → 同guard持續涵蓋讀取、前後全組再驗，只回傳frozen identity／revision／pre row DTOs
+CaptureAuthorizedInventory(socket, lease)
+  → 正式GS使用的paired resident DTO：identity／owned模式與epoch／pre epoch／兩vectors／儲存presentation，deep detach／freeze；不查SQL、不選碼頁
 ConfirmAuthorizedConnection(socket, lease)
   → 最後全組檢查 → 原子logical consumption／owner切換
 ReleaseConnectionAuthorization(socket, lease)
@@ -75,11 +77,11 @@ fence是**現代in-process hardening**，不是任意JS monkeypatch／任意外�
 `FXGS/CConnectPool.OnConnEstablished`保持原request7 body／integrity／initialized語意，但改成：
 
 1. 完整解碼與integrity檢查，**先Authorize**，不先查帳號／庫存或編catalog。
-2. 每個DB read前後Check lease；處理既有account availability／ban檢查。
+2. 先在同一guard下capture paired resident DTO；每個DB read前後Check lease，處理既有account availability／ban檢查。Native owned（包括empty）略過legacy SQL，只有明示legacy local讀LoadInventory。
 3. loaded account／legacy inventory必須重新對上authorized ID，不能把trusted adapter誤回的另一個row授予此user。
 4. capture detached account／inventory primitives，另備live mutable copies；之後codec不能修改adapter回傳reference而偷換已編201與待發布值。
-5. 捕獲一份catalog generation，預先完成210／conditional202／conditional ALL-local207／conditional201，每個body後再Check；initialized且沒有pre才不編202／201。pre來自新的lease-bound DTO讀取，讀前後整組再驗且getter期間不能nested capture／consume／release。
-6. Confirm lease、整組重綁live values／SetLevel／legacy mode，再rank／發送。source detach／close發生在全組owner切換後。
+5. 捕獲一份catalog generation，預先完成210／conditional202／conditional ALL-local207／conditional201，每個body後再Check；initialized且沒有pre才不編202／201。owned／pre來自paired lease-bound DTO讀取，讀前後整組再驗且getter期間不能nested capture／consume／release；native copied strings依目標codec驗證，不重算expiry／metadata。
+6. Confirm lease、整組重綁account values／SetLevel，只有legacy local指定legacy owned；native live pair／dirty／兩epochs／presentation不重裝。source detach／close發生在全組owner切換後；close後與rank後再驗resident狀態，才發prepared packets。
 7. `finally`釋放preparation；read／encoding error不消耗pending。重試仍是同期限的transfer；207只發布可信pre清單，不新增native grant或SQL效果。
 
 source transport close exception在logical commit之後，以generic事件報告，不改成可再次消耗。rank／send失敗也**沒有handoff後rollback／exactly-once TCP保證**；已消耗的transfer不能因沒收到包而重播。
@@ -88,7 +90,7 @@ source transport close exception在logical commit之後，以generic事件報告
 
 lease只處理Center身份／ownership。不證明SQL current ban／premium／stock／價格，不消費native rows、不實作stored procedures、不提供durable effects idempotency。即使identity合法，**Release後另開lease也不能當成可以重跑已發生money／XP／LoadOn的依據**。
 
-目前已有重新推導的[pre觀測投影](PreInventory.md)與[整組read-side207發布](InventoryHandoff.md)，但沒有把legacy SN／ItemID／Unix expiry換成native ItemSn／StockSn／DATE。後續另有[Calendar](Calendar.md)重新推導的timestamp-copy／CTime嚴格子集與隔離clock，非找回舊缺檔、不自動接GS／financial effects，也不取代此lease registry。正式account／owned初始化仍legacy；不執行native pre效果、billing或native paid成功。後續[InventoryInitialization](InventoryInitialization.md)已有同catalog／DB clock generation的pre→owned觀測協調與CUser成對清單發布；paired ABA使lease失效，而failed第二份preflight不換epoch、原lease可正常single-use。它不是給付權限，也不是找回舊缺檔或native SQL整合。後續還需native provider／SQL／完整Windows calendar證據、完整pre→owned candidate到live user的rebind、不可逆effects的durable replay／recovery策略與原版client測試。
+目前已有重新推導的[pre觀測投影](PreInventory.md)與[整組read-side207發布](InventoryHandoff.md)，但沒有把legacy SN／ItemID／Unix expiry換成native ItemSn／StockSn／DATE。後續另有[Calendar](Calendar.md)重新推導的timestamp-copy／CTime嚴格子集與隔離clock，非找回舊缺檔、不自動接GS／financial effects，也不取代此lease registry。正式account與一般owned SQL初始化仍legacy；已明示可信native rows可由[ResidentInventoryHandoff](ResidentInventoryHandoff.md)保留模式轉移，但不是native SQL初始化／freshness；不執行native pre效果、billing或native paid成功。後續[InventoryInitialization](InventoryInitialization.md)已有同catalog／DB clock generation的pre→owned觀測協調與CUser成對清單發布；paired ABA使lease失效，而failed第二份preflight不換epoch、原lease可正常single-use。它不是給付權限，也不是找回舊缺檔或native SQL整合。後續還需native provider／SQL／完整Windows calendar證據、真正SQL／financial初始化candidate到live user的rebind、不可逆effects的durable replay／recovery策略與原版client測試；現有resident轉移不取代這些邊界。
 
 ## 驗證與重建
 

@@ -21,7 +21,7 @@
 
 原game constants／layouts集中`Common/OfficialValues.ts`，操作上限／TTL／receipt版本在`RuntimePolicy.ts`，packet方向在`Protocol/PacketTypes.ts`。未證實的attrs／opaque bytes保留角色，不改叫通用價格／flags。原普通strategy部分no-op是PE return／vtable已核對的例外，不等於可以用placeholder補未讀程式。
 
-另有[InventoryInitialization](InventoryInitialization.md)：真CDBMan的pre→owned觀測協調使用同catalog snapshot與DB clock revision fence，after-prefix level不能回退成initial level；CUser可成對preflight／發布兩清單，second-list失敗不先換owned。兩者都不套用pre After、不執行給付／SQL／replay，不改正式GS的legacy bridge。
+另有[InventoryInitialization](InventoryInitialization.md)：真CDBMan的pre→owned觀測協調使用同catalog snapshot與DB clock revision fence，after-prefix level不能回退成initial level；CUser可成對preflight／發布兩清單，second-list失敗不先換owned。兩者都不套用pre After、不執行給付／SQL／replay。後續[ResidentInventoryHandoff](ResidentInventoryHandoff.md)已把**先前可信明示附掛**的native pair接上正式GS轉移：lease-bound paired DTO、每local獨立legacy fallback、目標碼頁／非空201整組preflight，同一live owner保留native epochs／dirty／presentation，不重跑SQL／expiry或reinstall。一般SQLite登入仍legacy，不自動升級native。
 
 ## 啟動與清理
 
@@ -45,8 +45,8 @@ constructor讀資源／開DB／建cache；`SetUp`才bind。任一步失敗走同
 
 1. LS解碼1–2組帳密；Argon2在transaction外處理，全部帳號仍valid且socket活著才register整組。ID用ASCII folding匹配SQLite NOCASE，不做Unicode小寫猜測。
 2. Center按source ownership／未入房／無pending／target online與容量保留整組pending。source與target service epochs、group frozen refs及原expires固定。
-3. GS request7完整解碼後，**先取得bound非消耗式lease**，再讀account／inventory與做detached210／202／201。錯ID／guild／serial／IP沒有任何DB read。
-4. 讀取／codec之後全組重新檢查；loaded rows重綁authorized ID，live copies不alias DB adapter回傳物件。最後才single-use commit／整組owner切換／source detach＋close。
+3. GS request7完整解碼後，**先取得bound非消耗式lease**，再capture paired resident DTO、讀account／僅legacy local的inventory與做detached210／conditional202／207／201。錯ID／guild／serial／IP沒有任何DB read。
+4. 讀取／codec之後全組重新檢查；loaded rows重綁authorized ID，live copies不alias DB adapter回傳物件。最後才single-use commit／整組owner切換／source detach＋close。Native local不以legacy setter覆蓋；source-close後與rank callback後再驗兩epochs／presentation，阻擋已漂移的prepared bundle，但不回滾已消耗的owner。
 5. 讀取或編碼失敗只釋放準備，不取消／延長pending；source TCP可在pending中斷線且不free新owner。service restart／source ABA／expiry／invalid clock不能重用舊authority。
 6. logical handoff後rank／transport failure沒有回滾或exactly-once傳送；舊socket關閉不得刪除已交給新owner的共享users。
 

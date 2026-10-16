@@ -2,7 +2,7 @@
 
 新增 `FXGS/InventoryInitialization.ts` 與實際 `CDBMan.PlanInitUserInventory`，將已證實的 [PreInventory](PreInventory.md)、[UserInventory](UserInventory.md)、[Calendar](Calendar.md) 串成一份有來源邊界的觀測計畫；另新增 `CUser.InstallUserInventoryInitialization`／`CaptureUserInventoryInitialization`，提供成對讀取端更新／snapshot。
 
-**不是完整 native SQL 初始化，不執行給付，不把計畫的 After 套用 live user。** 正式 GS 仍走原本明示的 legacy account／owned bridge與可信 pre read-side handoff；本輪沒有新 provider、migration、receipt／procedure／billing／collector，也不讀 supplied SQL／EXE 或修改主機時鐘。完成與原 client 驗證旗標仍 false。
+**不是完整 native SQL 初始化，不執行給付，不把計畫的 After 套用 live user。** 正式 GS 的 account／一般 owned SQL仍是明示 legacy bridge；後續[ResidentInventoryHandoff](ResidentInventoryHandoff.md)已保留先前明示可信的native pair／模式，並未把這份觀測計畫變成SQL／financial初始化。此觀測協調本身沒有新 provider、migration、receipt／procedure／billing／collector，也不讀 supplied SQL／EXE 或修改主機時鐘。完成與原 client 驗證旗標仍 false。
 
 ## 原始順序與不能抹去的失敗前綴
 
@@ -47,14 +47,14 @@ FXGS `0040AF55 CDBMan::InitUserInventory`，交叉核對同 PE `.c`／`.lst`／b
 5. 所有fallible validation完成後，沒有callback／getter穿插地同步更新兩份vector、各revision＋1與明示presentation equipment。empty／byte-identical reinstall也換兩個generations。
 6. 不改Money／Exp／auth／dirty flush state，不讀SQL、不執行pre After、不給receipt、不標為client initialized。omitted fake／icon保留既有值，與原生loader沒有implicit清除的邊界一致。
 
-`CaptureUserInventoryInitialization`不呼叫ports，原子capture frozen `{Owned, Pre}`；Owned=null表示legacy mode，native empty與legacy不同。snapshot含各自revision／immutable rows，不含live user、apply方法或financial權限。現有單份安裝API仍獨立；新pair不是讓所有歷史單份更新自動變transaction。
+`CaptureUserInventoryInitialization`不呼叫ports，原子capture frozen pair；後續擴為 `{OwnedGeneration, Presentation, Owned, Pre}`。Owned=null表示legacy mode，native empty與legacy不同；legacy mode也可能保留非零owned epoch。snapshot含各自revision／immutable rows與儲存presentation，不含live user、apply方法或financial權限。現有單份安裝API仍獨立；新pair不是讓所有歷史單份更新自動變transaction。
 
 `CaptureUserInventoryRecord`／`CaptureUserInventory`也補上primitive latch：DateCreated／derived attrs getters只讀一次，codec不能在validation後偷偷換成NaN／未驗證字串。這是read-side資料一致性防護，不是對任意hostile JS／外部SQL的通用隔離。
 
 ## 真consumer與pending fences
 
 - 模型35個成功候選以可信既有account觀測建立CUser，再成對附掛清單，比對**非空201與207、plain／scalar完整bytes**。顯式建立account不表示initializer自動給付。
-- 真 `CChannelPool` request209、兩個local users發布native201；pre SN／StockSn不混成owned ItemSn。既有 GS210202207201條件／whole-group preflight與正式legacy owned路徑不改。
+- 真 `CChannelPool` request209、兩個local users發布native201；pre SN／StockSn不混成owned ItemSn。此觀測milestone未改既有 GS210202207201條件／whole-group preflight與正式legacy owned路徑；後續resident接線才增加native／混合模式來源，仍不執行SQL初始化。
 - 成對same-byte reload換兩個epochs，現有Center lease與pending money／house／legacy paid／result fences皆會拒絕舊計畫；invalid第二份preflight不換epoch，原lease仍可single-use整組完成。
 - 若trusted callback在真SQL COMMIT**之後**才成對reload，durable receipt／SQL仍保留，但live After／success packet被擋；不假裝rollback、不rebase或重付。
 - 正quantity native paid仍在legacy CAS前fail-closed，qty0 relay不讀stock／pre、不新增receipt；舊schema6／export v2／四類version1 receipts與Unix bridge格式不改。

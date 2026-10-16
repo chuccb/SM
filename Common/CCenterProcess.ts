@@ -46,6 +46,13 @@ export class CCenterProcess {
       lease,
     );
   }
+  /** Paired trusted resident DTOs, not native SQL initialization or a grant. */
+  CaptureAuthorizedInventory(
+    socket: CClientSocket,
+    lease: ConnectionAuthorization,
+  ) {
+    return this.center.CaptureAuthorizedInventory(socket, this.server, lease);
+  }
   ConfirmAuthorizedConnection(
     socket: CClientSocket,
     lease: ConnectionAuthorization,

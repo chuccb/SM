@@ -2,9 +2,9 @@
 
 本輪把已存在的 [pre-inventory 讀取端](PreInventory.md) 接到真正的 `FXGS/CConnectPool.OnConnEstablished`，不是另造 client request 或固定成功 ACK。
 
-**範圍是可信讀取端的發布，不是原生初始化／給付：** 207 只使用先前由可信 service-local caller 透過 `CUser.InstallPreInventory` 附掛的不可變清單，預設為空。正式 account／owned inventory 仍用明示 legacy SQLite bridge；不 SELECT／重解釋 legacy `FxPreInventory`，不呼叫 premium／Money／Exp／LoadOn／flush，也不套用 projection `After`。完整 native pre→owned SQL／calendar／durable effects 與原 client 驗證仍未完成；完成旗標保持 `false`。
+**範圍是可信讀取端的發布，不是原生初始化／給付：** 207 只使用先前由可信 service-local caller 透過 `CUser.InstallPreInventory` 附掛的不可變清單，預設為空。正式 account 仍用明示 legacy SQLite bridge；一般 owned 亦為 legacy，後續[ResidentInventoryHandoff](ResidentInventoryHandoff.md)已讓先前明示可信 native owned（含空清單）在同一 live owner 轉移，僅 legacy local 讀 SQL；不 SELECT／重解釋 legacy `FxPreInventory`，不呼叫 premium／Money／Exp／LoadOn／flush，也不套用 projection `After`。完整 native pre→owned SQL／calendar／durable effects 與原 client 驗證仍未完成；完成旗標保持 `false`。
 
-後續[InventoryInitialization](InventoryInitialization.md)增加pre→owned觀測協調與CUser成對可信清單安裝；第二份失敗不半換owned，same-byte pair reload同時換兩個epochs，已由Center與pending financial fences實測。它沒有改本頁正式GS的legacy owned來源、207條件／lease preflight或新增給付／native SQL provider。
+後續[InventoryInitialization](InventoryInitialization.md)增加pre→owned觀測協調與CUser成對可信清單安裝；第二份失敗不半換owned，same-byte pair reload同時換兩個epochs，已由Center與pending financial fences實測。它本身未改正式GS的legacy owned來源、207條件／lease preflight或新增給付／native SQL provider。**再後續的resident milestone**才補上明示native／混合模式轉移；本頁第20份empty-owned模型的歷史證據不改，非空native完整GS images另見[ResidentInventoryHandoff](ResidentInventoryHandoff.md)。
 
 ## 原始發布條件
 
@@ -38,11 +38,11 @@
 保留來源支持的成功發布順序，但**不照搬 native 的先送210、逐步改 pool／執行不可逆載入的時機**。現在的邊界為：
 
 1. 完整 decode request／integrity，向 Center 取得 issuer／destination socket／server／exact group 綁定的 exclusive non-consuming lease。
-2. `CaptureAuthorizedPreInventory` 在已驗證 lease 下擷取整組 pre DTO；**讀取前後**再驗 source／generation／clock／original TTL。
-3. 每個 account／legacy owned read 前後 Check，重綁 loaded ID；分開 detached snapshots 與最終 mutable live copies。
-4. 捕獲**一份** immutable catalog generation；以已載入 account 的 Exp 建立 detached CUser、SetLevel，安裝同組 pre 讀取端清單。這不變更 live user、不執行給付。
+2. 正式GS現用 `CaptureAuthorizedInventory` 在已驗證 lease 下擷取整組 owned／pre／presentation DTO；**讀取前後**再驗 source／generation／clock／original TTL。舊pre-only API仍保留。
+3. 每個 account／legacy owned read 前後 Check，重綁 loaded ID；分開 detached snapshots 與最終 mutable live copies。Native locals（包括empty）不讀legacy owned SQL。
+4. 捕獲**一份** immutable catalog generation；以已載入 account 的 Exp 建立 detached CUser、SetLevel，按各local模式安裝native pair或legacy owned＋pre讀取端清單。這不變更 live user、不執行給付。
 5. 依上表完成210／conditional202／conditional ALL-local207／conditional201；每個使用者 body 後再次 Check。所有 bytes 尚未發送。
-6. 最終 whole-group Check／single-use Confirm，切換整組 owner，再重綁先前的 account／legacy owned copies、rank，依序 Send。
+6. 最終 whole-group Check／single-use Confirm，切換整組 owner，再重綁先前的 account／僅legacy local的owned copies、rank，依序 Send。Native live不重裝；source-close後與rank後檢查resident模式／兩epochs／presentation，漂移則不發prepared bundle，但不假裝rollback已消耗ownership。
 7. `finally`只 release preparation。消耗前的失敗保留原 pending／deadline／source，可在剩餘 TTL 內開新 lease 重試這個**讀取端發布**。
 
 兩個各自小於65535的合法 user207 body，合起來仍可能超過 packet 上限；第二個201也可能失敗。因此不能因第一個 local 已編好，就先移動第一人或送210／202／207。缺定義／錯碼頁／整組 overflow 都在消耗前拒絕，不發 malformed-count image 或半套封包。
@@ -79,7 +79,7 @@ GS 在任何 outgoing codec callback 之前捕獲一次 snapshot：
 - 第一／第二 local 的207都依此 snapshot 查 Category。
 - pre候選驗證時、202編碼時、第一個207完成後發生 live catalog reload，都不會出現新版202／舊版207，或舊第一人／新第二人的混合。
 
-207 的 level WORD 來自**detached 已載入帳號的 cached Level**；不是 source stale cache、fake/look-level、ValidityLevel，亦不是純 pre projection 的 `After`。現有 owned201仍採 legacy橋接；沒有把 pre SN／ItemSn／StockSn當成 owned SN／ItemID 或 paid authorization。
+207 的 level WORD 來自**detached 已載入帳號的 cached Level**；不是 source stale cache、fake/look-level、ValidityLevel，亦不是純 pre projection 的 `After`。owned201現在依明示resident模式選native或legacy橋接；沒有把 pre SN／ItemSn／StockSn當成 owned SN／ItemID 或 paid authorization。
 
 清單與 generation 在成功發布後**不自動清空／遞增**，發布不是給付／SQL消費／耐久收據。再次使用同一可信 read-side 清單可能再發布相同顯示資料；不可把它當成可以再執行 financial effects 的證明。完成原生初始化前仍須另建可核對的 SQL key／durable effect／recovery 邊界。
 

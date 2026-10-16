@@ -28,6 +28,7 @@ import {
   UserInventoryKey,
   type UserInventory,
   type UserInventoryEquipment,
+  type UserInventoryPresentation,
 } from "./UserInventory.ts";
 import { g_nLevel2ExpTable } from "./Protocol/OfficialTables.ts";
 import {
@@ -201,6 +202,8 @@ export class CUser extends CSafeObject {
   /** Atomic detached read-side pair only; null Owned means legacy mode. Neither
    * this DTO nor its revisions prove SQL/financial initialization or freshness. */
   CaptureUserInventoryInitialization(): Readonly<{
+    OwnedGeneration: Readonly<{ Native: boolean; Revision: number }>;
+    Presentation: Readonly<UserInventoryPresentation>;
     Owned: Readonly<{
       Revision: number;
       Rows: readonly Readonly<UserInventory>[];
@@ -211,6 +214,15 @@ export class CUser extends CSafeObject {
     }>;
   }> {
     return Object.freeze({
+      OwnedGeneration: Object.freeze({
+        Native: this.m_vUserInventory !== undefined,
+        Revision: this.m_nUserInventoryRevision,
+      }),
+      Presentation: Object.freeze({
+        FakeLevel: this.m_nFakeLevel,
+        LevelIconEnabled: this.m_bLevelIcon,
+        LevelIconSN: this.m_nLevelIconSn,
+      }),
       Owned:
         this.m_vUserInventory === undefined
           ? null

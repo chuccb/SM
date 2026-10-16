@@ -11,6 +11,7 @@ import {
   ChannelType,
   IntegerRange,
   PreInventoryRule,
+  UserInventoryRule,
   UserCount,
   SessionLimit,
 } from "../Common/OfficialValues.ts";
@@ -19,9 +20,11 @@ import {
   CaptureConnectionIdentities,
   type ConnectionIdentity,
   type ConnectionPreInventory,
+  type ConnectionInventory,
   type ConnectionAuthorization,
 } from "./ConnectionAuthorization.ts";
 
+import { CaptureUserInventory } from "../Common/UserInventory.ts";
 import { CapturePreInventory } from "../Common/PreInventory.ts";
 
 type Phase = "active" | "released" | "invalidated" | "consumed";
@@ -522,6 +525,88 @@ export class CCenterServer {
             ...state.Identities[i]!,
             Revision,
             Rows: Object.freeze([...Rows].map(CapturePreInventory)),
+          });
+        }),
+      ),
+    );
+  }
+  /** Atomic per-local PAIR read under the SAME whole-group exclusive guard.
+   * Capture native resident rows/presentation, never legacy SQL or live users.
+   * No codec is called: the target validates its explicit codepage later. */
+  CaptureAuthorizedInventory(
+    socket: CClientSocket,
+    server: CLocalServer,
+    lease: ConnectionAuthorization,
+  ): readonly Readonly<ConnectionInventory>[] {
+    const state = this.FindAuthorization(socket, server, lease);
+    return this.CheckAuthorization(state, () =>
+      Object.freeze(
+        state.Owners.map((owner, i) => {
+          const { OwnedGeneration, Owned, Pre, Presentation } =
+              owner.User.CaptureUserInventoryInitialization(),
+            actual = owner.User.GetUserInventoryGeneration(),
+            { Native, Revision } = OwnedGeneration,
+            { Revision: preRevision, Rows: preRows } = Pre,
+            { FakeLevel, LevelIconEnabled, LevelIconSN } = Presentation;
+          if (
+            typeof Native !== "boolean" ||
+            !Number.isInteger(Revision) ||
+            Revision < 0 ||
+            Revision > IntegerRange.UInt32Maximum ||
+            Native !== actual.Native ||
+            Revision !== actual.Revision ||
+            !Number.isInteger(preRevision) ||
+            preRevision < 0 ||
+            preRevision > IntegerRange.UInt32Maximum ||
+            preRevision !== owner.User.GetPreInventoryGeneration() ||
+            !Array.isArray(preRows) ||
+            preRows.length > PreInventoryRule.SuccessfulLoadLimit ||
+            [FakeLevel, LevelIconEnabled, LevelIconSN].some(
+              (v) =>
+                !Number.isInteger(v) ||
+                v < IntegerRange.Int32Minimum ||
+                v > IntegerRange.Int32Maximum,
+            )
+          )
+            throw new CProtocolError(
+              "Invalid authorized inventory snapshot",
+              "invalid-transfer",
+            );
+          if (
+            Owned === null
+              ? Native
+              : !Native ||
+                Revision < 1 ||
+                Owned.Revision !== Revision ||
+                !Array.isArray(Owned.Rows) ||
+                Owned.Rows.length > UserInventoryRule.LoadCountLimit ||
+                Owned.Rows !== owner.NativeRows
+          )
+            throw new CProtocolError(
+              "Invalid authorized native inventory snapshot",
+              "invalid-transfer",
+            );
+          return Object.freeze({
+            ...state.Identities[i]!,
+            OwnedGeneration: Object.freeze({ Native, Revision }),
+            Owned:
+              Owned === null
+                ? null
+                : Object.freeze({
+                    Revision,
+                    Rows: Object.freeze(
+                      [...Owned.Rows].map(CaptureUserInventory),
+                    ),
+                  }),
+            Pre: Object.freeze({
+              Revision: preRevision,
+              Rows: Object.freeze([...preRows].map(CapturePreInventory)),
+            }),
+            Presentation: Object.freeze({
+              FakeLevel,
+              LevelIconEnabled,
+              LevelIconSN,
+            }),
           });
         }),
       ),

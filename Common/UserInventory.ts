@@ -33,6 +33,12 @@ export interface UserInventory extends UserInventoryRecord {
   readonly nAttr3: number;
   readonly Modified: number;
 }
+/** Stored presentation values, not derived grants/equipment/expiry decisions. */
+export interface UserInventoryPresentation {
+  readonly FakeLevel: number;
+  readonly LevelIconEnabled: number;
+  readonly LevelIconSN: number;
+}
 export interface UserInventoryEquipment {
   readonly FakeLevel?: number;
   readonly LevelIconSN?: number;

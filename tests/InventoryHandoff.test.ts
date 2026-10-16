@@ -273,15 +273,15 @@ test("malformed capture revisions / oversized resident rows never leave a succes
   }
 });
 
-test("GS rebinds authorized pre DTO identities and rejects an accidentally wrong SECOND owner BEFORE account reads", () => {
+test("GS rebinds authorized paired DTO identities and rejects an accidentally wrong SECOND owner BEFORE account reads", () => {
   const e = create(),
-    capture = e.gs.CaptureAuthorizedPreInventory.bind(e.gs);
+    capture = e.gs.CaptureAuthorizedInventory.bind(e.gs);
   let reads = 0;
-  e.gs.CaptureAuthorizedPreInventory = (socket, lease) =>
+  e.gs.CaptureAuthorizedInventory = (socket, lease) =>
     capture(socket, lease).map((r, i) => (i ? { ...r, ID: "WrongOwner" } : r));
   e.db.GetUserInfo = () => {
     reads++;
-    throw new Error("MUST NOT read after pre owner mismatch");
+    throw new Error("MUST NOT read after resident owner mismatch");
   };
   expect(() => e.run()).toThrow("owner mismatch");
   expect(reads).toBe(0);

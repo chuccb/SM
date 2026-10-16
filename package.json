@@ -23,7 +23,8 @@
     "vectors:pre-inventory": "bun run Tools/BuildPreInventoryVectors.ts",
     "vectors:inventory-handoff": "bun run Tools/BuildInventoryHandoffVectors.ts",
     "vectors:calendar": "bun run Tools/BuildCalendarVectors.ts",
-    "vectors:inventory-initialization": "bun run Tools/BuildInventoryInitializationVectors.ts"
+    "vectors:inventory-initialization": "bun run Tools/BuildInventoryInitializationVectors.ts",
+    "vectors:resident-inventory-handoff": "bun run Tools/BuildResidentInventoryHandoffVectors.ts"
   },
   "dependencies": {
     "iconv-lite": "0.7.2"

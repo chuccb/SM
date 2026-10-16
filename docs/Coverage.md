@@ -4,7 +4,28 @@
 
 **尚未滿足「完整官方伺服器」的驗收條件；沒有原版客戶端端到端驗證。** `Main.ts` 與診斷端點也會明確顯示此限制。
 
-## 本輪：pre→owned 觀測協調與成對讀取端發布（2026-10-17）
+## 本輪：正式GS可信resident native／混合模式轉移（2026-10-17）
+
+從已推送`d64812df3362c0204430933e65a0c162c165619e`繼續；376個tracked檔／98原始供給檔。編輯前compiler＋**1080 pass／0 fail／672475 assertions／57檔、101.90s**。這輪修正正式GS一律指定legacy owned而放棄既有trusted native模式的缺口，不是native SQL初始化／expiry freshness／給付或完整server完成。
+
+- 新[ResidentInventoryHandoff](ResidentInventoryHandoff.md)：正式GS使用lease-bound identity／paired owned-pre／兩epochs／stored presentation DTO，每個local分開選明示來源。**Native空清單仍native、不讀legacy SQL**；非空native同樣略過，只有legacy local使用既有LoadInventory。Legacy可保有非零abandoned-native epoch，不能由revision0或row count猜模式。
+- `CaptureAuthorizedInventory`維持既有whole-group exclusive guard，讀前／讀後全組驗clock／source／epochs／原TTL；native來源vector綁定、400／30與signed presentation驗證，primitive逐筆clone／freeze，不回傳live user／capability、不在Center用Big5強制轉碼。舊pre-only API保留，DTO不是SQL freshness／financial權限。
+- 目標GS以outgoing codec建立detached native pair或legacy owned＋pre候選，整組210／conditional202／ALL-local207／201完成preflight才消耗。Native ItemSn／StockSn／raw DATE／copied Category attrs不由legacy SN／ItemID／Unix日期或目前catalog重建；不重新sample clock／expiry、不套用pre.After。202與全部207仍同一catalog generation，207 level仍用loaded cached level。
+- 成功移動**同一live CUser**，native rows／dirty／equipment／presentation及兩epochs保留，不重新install／wrap／清pre；native revision已達上限也能合法讀取轉移。Account仍重讀／SetLevel，legacy local保留既有重載；initialized無pre仍210-only，不因native有道具就新增ACK／201。
+- Source-close後與rank callback後、第一個packet前再驗resident modes／兩epochs／presentation；late drift擋prepared bundle，**不假裝ownership可rollback／重發pending**。Transport201失敗可已有210202207，不聲稱exactly-once TCP或防止Send開始後的一切mutation。
+- 第**23份**獨立人工C++ reference：**33固定PE anchors／254完整GS wire images**，另獨立讀取核對LS-GS450項level inputs。含1／2 locals、legacy／native empty／native2rows、initialized、GameAttr0／1／255、pre0／1與30、negative-zero／negative DATE、signed amounts、copied attrs／dirty與icon enable0／2。全部cases驅動真正GS，比對完整210202207／**非空native201** bytes、逐local SQL讀取選擇與live pair保留；resident source policy明示為**MODERN**，不是原生cached-transfer／SQL／client oracle。
+- 新**30項／3360 assertions、2檔、3.27s**通過：native empty與mixed legacy隔離、deep DTO／guard／forgery／read後ABA／expiry、native epoch exhaustion／nonzero legacy epoch、malformed pair與mode early拒絕、第二人201 overflow／錯碼頁／同pending可信修復、同catalog202207、no-pre initialized、source斷線、close／rank／presentation drift、201 transport故障與真channel209。
+- 新**真LS→GS TCP**：雙local可信native fixture、second201 overflow令新GS TCP拒絕且無210、原LS／pending保留；可信修復後新TCP同pending取得210202207及非空native201，209再取exact201。Rows／兩epochs、SQL total_changes／legacy stock及四種receipts不變；peer共用codec，不是原版client oracle。
+- 五種TS controls，**8 red→8 green**，每次exact source bytes還原：錯讀native legacy SQL **0／1→1／0**、native empty fallback **0／1→1／0**、移除capture後全組fence **0／2→2／0**、live native重裝 **0／1→1／0**、移除post-consume fences **0／3→3／0**；最後compiler再通過，不執行supplied程式。
+- `bun run verify` compiler通過，**1110 pass／0 fail／675835 assertions／59檔、107.51s**；原1080項保留。測試數／模型數不是移植完成率。
+- 原38核心＋新兩檔，**40檔重複2輪**，每輪**636 pass／0 fail／634174 assertions**（88.98／97.85s）。五項真TCP／UDP另**重複3輪**，每輪**5 pass／0 fail／1295 assertions**（11.62／11.31／11.23s），不是壓力／長時間／原client測試。
+- **23份builders各重建2輪**（76.01／77.34s），全部23份fixture hash一致，原22份逐一與編輯前相同。只執行我們的C++；原EXE／DAT／carved SQL／Windows API不執行，不改host clock、不連舊官方／billing端點。
+- `format:check`與`git diff --check`通過；原98 blobs＋modes不變、舊22fixtures未改、272個local links／fragments有效、changed／new檔secret patterns無命中。Real fresh constructor diagnostics為schema6、五個empty catalog各Revision1、drivers stopped、maintenance0、completion／client false。
+- Bun **1.4.3**／TypeScript **7.1.0-dev.20261014.1**／SQLite **3.53.4**；dependencies／兩lockfiles、schema6／export v2／四類version1 receipts與legacy owned-pre schema不變。Native positive paid仍在legacy CAS前fail-closed，qty0 relay不新增stock查詢／receipt；沒有新grant、財務replay權限或初始化完成旗標。
+
+本輪本機證據在ignored `.analysis/tests/resident-handoff-*`與`verify-resident-handoff-*`：baseline／新tests／full、五類controls、23builders stability、40core／五network repetitions。推送前另核對原98 blobs＋modes／舊22fixtures／locks／local links與fragments／secrets、real fresh diagnostics，再對**exact staged tree**做populated export／fresh npm ci／compiler／format／new builder／完整suite並核對exported blobs／modes；不夾帶runtime DB、logical exports、node_modules或分析binary。完整native provider／SQL initialization、不可逆effects durable recovery、完整Windows calendar／DST、paid persistence／flush／collector／restart、獨立Center TCP／其他服務／特殊模式及原client仍未完成，completion／client flags保持false。
+
+## 前一個已推送checkpoint：pre→owned 觀測協調與成對讀取端發布（2026-10-17，保留紀錄）
 
 從已推送`13be3558259b7ddbdd8b86e0646a2b68f0a451d0`繼續；368個tracked檔／98原始供給檔。編輯前重跑compiler＋**1047 pass／0 fail／669694 assertions／55檔、98.50s**。本輪是重新推導的observed composite，不是找回歷史缺檔／沿用1020，不是native SQL／financial effects或完整server完成。
 
@@ -222,6 +243,7 @@ ignored `.analysis/tests/calendar-*`保留baseline／focused／full logs、五�
 - `GameUDP.test.ts`：真正 UDP datagrams 經實際 app listener，120 回 TCP transport mock；驗證 malformed 全 datagram 無部分發布、HostDestroy 單筆 dispatch／empty-frame semantics、owner／pending／marked-free／IP 群組限制、TCP+1／cleanup／bind collision／設定界線。登入用受信任測試使用者，不當作新增的原 client 端到端證據。
 - `ItemAttr.test.ts`：實檔 rows／lookup／signed money delta、未正規化 probability table、每個 truncation 的 atomic reload、錯誤count／weight／name／容量、兩組iteminfo atomic載入／未知item−1→FF／missing-vs-empty／不正規化及reload invalidation、真實map+52 level regression。
 - `InventoryHandoff.test.ts`／`InventoryHandoffLifecycle.test.ts`：24 PE anchors／288獨立C++ images驅動真正GS、first-init／ANY-pre→ALL-local207→201條件、lease-bound DTO／重入／讀後check、同catalog202207、second錯碼頁／缺定義／整組與後段overflow無半包、同pending修復、真TCP initialized210207201／空first與無financial／SQL效果、post-consume故障不rollback。
+- `ResidentInventoryHandoff.test.ts`／`ResidentInventoryHandoffLifecycle.test.ts`：33 PE anchors／254獨立C++完整GS images；逐local native empty／nonempty／legacy來源與非空201、paired DTO／兩epochs／stored presentation、whole-group native201 overflow與目標碼頁、同pending可信修復、post-consume drift不rollback、真LS→GS TCP與209、no SQL／financial effects。
 - `PreInventory.test.ts`／`PreInventoryLifecycle.test.ts`：54 fixed anchors／2587 C++ cases、全部效果順序／參數／signed32算術與CUser207 scalar／plain bytes、native malformed-count與現代fail-closed分開、copied/frozen輸入／錯碼頁／overflow無半包、真SQLite legacy碰撞無mutation、Center整組lease與pre-only ABA、真ordinary開局pending／storage後durable receipt但無live publication的fences；不是native SQL／完整207handoff。
 - `Database.test.ts`：Argon2id、NOCASE、競爭註冊 rollback、money／inventory 所有權、舊密碼升級、hash await 期間封鎖／改密碼的競態。
 - `Center.test.ts`：多使用者整組驗證、容量預留、ID／SN／順序／guild／IP 錯配、重放、來源斷線與逾時。

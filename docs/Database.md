@@ -1,5 +1,7 @@
 # SQLite、資料匯入與備份限制
 
+後續[GS resident／混合模式轉移](ResidentInventoryHandoff.md)只在明示可信native owned已附掛時略過該local的legacy庫存SQL；native empty也不fallback，另一個legacy local仍正常讀原表。Account仍用SQLite bridge；不把FxUserInventory的SN／ItemID／Unix expiry映射成native ItemSn／StockSn／DATE，不新增native SQL provider／給付／receipt／migration，也不聲稱resident資料已重新驗證expiry或freshness。
+
 ## 目前的資料模型
 
 `Common/DB/Migrations/001_Initial.sql` 是根據原 LS／FXGS／FXSS 的 query／stored-procedure binding 所做的**邏輯重建**，不是還原後的官方 DDL。

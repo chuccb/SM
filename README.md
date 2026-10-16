@@ -15,6 +15,8 @@
 
 新增[pre→owned觀測協調／成對讀取端發布](docs/InventoryInitialization.md)：真CDBMan以同catalog／clock generation串接兩段投影，保留failed LoadOn後的XP前綴對owned level判斷；CUser兩清單全preflight後才一起換revision，不把After當Money／XP／premium給付。第22份模型24 anchors／131 cases，尚未接正式native SQL初始化。
 
+後續[GS resident／混合模式轉移](docs/ResidentInventoryHandoff.md)已讓正式GS保留明示可信native owned／pre與presentation：native空清單也不fallback legacy SQL，每個local分開選來源；整組非空201／207用目標碼頁預備，成功在同一live CUser保留兩epochs／dirty。第23份模型33 anchors／254完整wire images，另有雙local真TCP與209；不宣稱native SQL freshness／expiry refresh／給付或原client已完成。
+
 ## 安裝與執行
 
 從儲存庫根目錄執行；需要能安裝 npm 套件的 Node/npm，或已安裝的相同版本 Bun：
@@ -93,6 +95,7 @@ HTTP 的 `processReady` 只代表這批已實作的 listener 已啟動，**不�
 - [`docs/GameClaims.md`](docs/GameClaims.md)：Bula160／177的flat aliases、圈次155／170的unsigned64排名、case8兩個opaque bytes、真正C3復活hook與不捏造復活規則的界線。
 - [`docs/UserItemCatalog.md`](docs/UserItemCatalog.md)：原始FxItem七欄名／不可變catalog snapshot與reload／202、v2 export＋明確v1 adapter、schema6 rename-only migration與DDL error guard、GS雙人202／201 handoff前preflight；native ItemSn／StockSn／日期與equipment仍明示未接通。
 - [`docs/InventoryHandoff.md`](docs/InventoryHandoff.md)：正式GS210／conditional202／ALL-local207／forced201、授權DTO讀取／同catalog generation、完整preflight後才consume，以及未執行原生給付／SQL的界線。
+- [`docs/ResidentInventoryHandoff.md`](docs/ResidentInventoryHandoff.md)：明示native empty／nonempty及混合模式的GS轉移、paired DTO／非空201、原epochs／dirty保留與post-consume界線，不是native SQL初始化。
 - [`docs/PreInventory.md`](docs/PreInventory.md)：原生十欄pre row、先效果後LoadOn的純觀測投影、單人207 body／missing-definition原子拒絕、獨立generation fences及未接財務／SQL；整組讀取端handoff見獨立頁。
 - [`docs/ConnectionAuthorization.md`](docs/ConnectionAuthorization.md)：Center issued-pending／non-consuming lease、GS auth-before-read／rebind、native CHECK與17500ms timeout、modern recovery與未完範圍。
 - [`docs/UserInventory.md`](docs/UserInventory.md)：原生持有道具 read-side、1768人工C++ cases／72 PE anchors、209／201／105、generation fences與未接原生SQL／paid的界線。

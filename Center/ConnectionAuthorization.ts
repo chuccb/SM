@@ -1,3 +1,7 @@
+import type {
+  UserInventory,
+  UserInventoryPresentation,
+} from "../Common/UserInventory.ts";
 import type { PreInventory } from "../Common/PreInventory.ts";
 import { CProtocolError } from "../Common/CProtocolError.ts";
 import { NormalizeID } from "../Common/CIDCompare.ts";
@@ -17,6 +21,21 @@ export interface ConnectionIdentity {
 export interface ConnectionPreInventory extends ConnectionIdentity {
   readonly Revision: number;
   readonly Rows: readonly Readonly<PreInventory>[];
+}
+/** Lease-bound detached resident state. Native owned data is an EXPLICIT
+ * trusted read-side attachment, not SQL freshness, a load/grant or a receipt.
+ * null Owned means legacy mode EVEN if the legacy epoch is nonzero. */
+export interface ConnectionInventory extends ConnectionIdentity {
+  readonly OwnedGeneration: Readonly<{ Native: boolean; Revision: number }>;
+  readonly Owned: Readonly<{
+    Revision: number;
+    Rows: readonly Readonly<UserInventory>[];
+  }> | null;
+  readonly Pre: Readonly<{
+    Revision: number;
+    Rows: readonly Readonly<PreInventory>[];
+  }>;
+  readonly Presentation: Readonly<UserInventoryPresentation>;
 }
 declare const authorizationBrand: unique symbol;
 /** Modern IN-PROCESS capability, not an original Center packet, bearer token,
