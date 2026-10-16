@@ -1,0 +1,5 @@
+node_modules/
+.analysis/
+var/
+docs/generated/
+Common/Protocol/OfficialTables.ts

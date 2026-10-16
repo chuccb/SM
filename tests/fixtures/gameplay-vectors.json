@@ -1,0 +1,535 @@
+{
+  "provenance": "Manually translated C++ FXGS reference, not executed official code or client captures",
+  "initialBombs": [
+    {
+      "SerialNo": 0,
+      "State": 0,
+      "RemainingMilliseconds": 2800,
+      "Row": 1,
+      "Column": 2,
+      "Power": 3,
+      "RemotelyPaused": false
+    },
+    {
+      "SerialNo": 1,
+      "State": 0,
+      "RemainingMilliseconds": 1000,
+      "Row": 2,
+      "Column": 3,
+      "Power": 4,
+      "RemotelyPaused": true
+    },
+    {
+      "SerialNo": 2,
+      "State": 1,
+      "RemainingMilliseconds": 100,
+      "Row": 3,
+      "Column": 4,
+      "Power": 5,
+      "RemotelyPaused": true
+    },
+    {
+      "SerialNo": 3,
+      "State": 0,
+      "RemainingMilliseconds": 0,
+      "Row": 4,
+      "Column": 5,
+      "Power": 6,
+      "RemotelyPaused": false
+    },
+    {
+      "SerialNo": 4,
+      "State": 1,
+      "RemainingMilliseconds": 0,
+      "Row": 5,
+      "Column": 6,
+      "Power": 7,
+      "RemotelyPaused": false
+    }
+  ],
+  "bombSteps": [
+    {
+      "delta": 0,
+      "events": [
+        {
+          "SerialNo": 3,
+          "Landed": false
+        },
+        {
+          "SerialNo": 4,
+          "Landed": true
+        }
+      ],
+      "body": "c258a56a5aa56d5b",
+      "bombs": [
+        {
+          "SerialNo": 0,
+          "State": 0,
+          "RemainingMilliseconds": 2800,
+          "Row": 1,
+          "Column": 2,
+          "Power": 3,
+          "RemotelyPaused": false
+        },
+        {
+          "SerialNo": 1,
+          "State": 0,
+          "RemainingMilliseconds": 1000,
+          "Row": 2,
+          "Column": 3,
+          "Power": 4,
+          "RemotelyPaused": true
+        },
+        {
+          "SerialNo": 2,
+          "State": 1,
+          "RemainingMilliseconds": 100,
+          "Row": 3,
+          "Column": 4,
+          "Power": 5,
+          "RemotelyPaused": true
+        },
+        {
+          "SerialNo": 4,
+          "State": 0,
+          "RemainingMilliseconds": 2000,
+          "Row": 5,
+          "Column": 6,
+          "Power": 7,
+          "RemotelyPaused": false
+        }
+      ]
+    },
+    {
+      "delta": 100,
+      "events": [
+        {
+          "SerialNo": 2,
+          "Landed": true
+        }
+      ],
+      "body": "c25ba56b5b",
+      "bombs": [
+        {
+          "SerialNo": 0,
+          "State": 0,
+          "RemainingMilliseconds": 2700,
+          "Row": 1,
+          "Column": 2,
+          "Power": 3,
+          "RemotelyPaused": false
+        },
+        {
+          "SerialNo": 1,
+          "State": 0,
+          "RemainingMilliseconds": 1000,
+          "Row": 2,
+          "Column": 3,
+          "Power": 4,
+          "RemotelyPaused": true
+        },
+        {
+          "SerialNo": 2,
+          "State": 0,
+          "RemainingMilliseconds": 2000,
+          "Row": 3,
+          "Column": 4,
+          "Power": 5,
+          "RemotelyPaused": true
+        },
+        {
+          "SerialNo": 4,
+          "State": 0,
+          "RemainingMilliseconds": 1900,
+          "Row": 5,
+          "Column": 6,
+          "Power": 7,
+          "RemotelyPaused": false
+        }
+      ]
+    },
+    {
+      "delta": 1900,
+      "events": [
+        {
+          "SerialNo": 4,
+          "Landed": false
+        }
+      ],
+      "body": "c25ba56d5a",
+      "bombs": [
+        {
+          "SerialNo": 0,
+          "State": 0,
+          "RemainingMilliseconds": 800,
+          "Row": 1,
+          "Column": 2,
+          "Power": 3,
+          "RemotelyPaused": false
+        },
+        {
+          "SerialNo": 1,
+          "State": 0,
+          "RemainingMilliseconds": 1000,
+          "Row": 2,
+          "Column": 3,
+          "Power": 4,
+          "RemotelyPaused": true
+        },
+        {
+          "SerialNo": 2,
+          "State": 0,
+          "RemainingMilliseconds": 2000,
+          "Row": 3,
+          "Column": 4,
+          "Power": 5,
+          "RemotelyPaused": true
+        }
+      ]
+    },
+    {
+      "delta": 800,
+      "events": [
+        {
+          "SerialNo": 0,
+          "Landed": false
+        }
+      ],
+      "body": "c25ba5695a",
+      "bombs": [
+        {
+          "SerialNo": 2,
+          "State": 0,
+          "RemainingMilliseconds": 2000,
+          "Row": 3,
+          "Column": 4,
+          "Power": 5,
+          "RemotelyPaused": true
+        },
+        {
+          "SerialNo": 1,
+          "State": 0,
+          "RemainingMilliseconds": 1000,
+          "Row": 2,
+          "Column": 3,
+          "Power": 4,
+          "RemotelyPaused": true
+        }
+      ]
+    },
+    {
+      "delta": 2000,
+      "events": [],
+      "body": "c25a",
+      "bombs": [
+        {
+          "SerialNo": 2,
+          "State": 0,
+          "RemainingMilliseconds": 2000,
+          "Row": 3,
+          "Column": 4,
+          "Power": 5,
+          "RemotelyPaused": true
+        },
+        {
+          "SerialNo": 1,
+          "State": 0,
+          "RemainingMilliseconds": 1000,
+          "Row": 2,
+          "Column": 3,
+          "Power": 4,
+          "RemotelyPaused": true
+        }
+      ]
+    }
+  ],
+  "clocks": [
+    {
+      "name": "pause-is-accounting-not-freeze",
+      "steps": [
+        {
+          "op": "start",
+          "time": 100,
+          "stopped": 0,
+          "start": 100,
+          "end": 0,
+          "elapsed": 0,
+          "real": 4294967196,
+          "errors": []
+        },
+        {
+          "op": "read",
+          "time": 150,
+          "stopped": 0,
+          "start": 100,
+          "end": 0,
+          "elapsed": 50,
+          "real": 4294967196,
+          "errors": []
+        },
+        {
+          "op": "suspend",
+          "time": 160,
+          "stopped": 0,
+          "start": 100,
+          "end": 0,
+          "elapsed": 60,
+          "real": 4294967196,
+          "errors": []
+        },
+        {
+          "op": "read",
+          "time": 200,
+          "stopped": 0,
+          "start": 100,
+          "end": 0,
+          "elapsed": 100,
+          "real": 4294967196,
+          "errors": []
+        },
+        {
+          "op": "suspend",
+          "time": 220,
+          "stopped": 60,
+          "start": 100,
+          "end": 0,
+          "elapsed": 120,
+          "real": 4294967196,
+          "errors": ["suspend"]
+        },
+        {
+          "op": "resume",
+          "time": 250,
+          "stopped": 90,
+          "start": 100,
+          "end": 0,
+          "elapsed": 150,
+          "real": 4294967196,
+          "errors": ["suspend"]
+        },
+        {
+          "op": "resume",
+          "time": 260,
+          "stopped": 90,
+          "start": 100,
+          "end": 0,
+          "elapsed": 160,
+          "real": 4294967196,
+          "errors": ["suspend", "resume"]
+        },
+        {
+          "op": "end",
+          "time": 280,
+          "stopped": 90,
+          "start": 100,
+          "end": 280,
+          "elapsed": 180,
+          "real": 180,
+          "errors": ["suspend", "resume"]
+        },
+        {
+          "op": "read",
+          "time": 300,
+          "stopped": 90,
+          "start": 100,
+          "end": 280,
+          "elapsed": 200,
+          "real": 180,
+          "errors": ["suspend", "resume"]
+        }
+      ]
+    },
+    {
+      "name": "DWORD-rollover",
+      "steps": [
+        {
+          "op": "start",
+          "time": 4294967280,
+          "stopped": 0,
+          "start": 4294967280,
+          "end": 0,
+          "elapsed": 0,
+          "real": 16,
+          "errors": []
+        },
+        {
+          "op": "read",
+          "time": 5,
+          "stopped": 0,
+          "start": 4294967280,
+          "end": 0,
+          "elapsed": 21,
+          "real": 16,
+          "errors": []
+        },
+        {
+          "op": "suspend",
+          "time": 10,
+          "stopped": 0,
+          "start": 4294967280,
+          "end": 0,
+          "elapsed": 26,
+          "real": 16,
+          "errors": []
+        },
+        {
+          "op": "resume",
+          "time": 25,
+          "stopped": 15,
+          "start": 4294967280,
+          "end": 0,
+          "elapsed": 41,
+          "real": 16,
+          "errors": []
+        },
+        {
+          "op": "end",
+          "time": 40,
+          "stopped": 15,
+          "start": 4294967280,
+          "end": 40,
+          "elapsed": 56,
+          "real": 56,
+          "errors": []
+        },
+        {
+          "op": "read",
+          "time": 55,
+          "stopped": 15,
+          "start": 4294967280,
+          "end": 40,
+          "elapsed": 71,
+          "real": 56,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "name": "native-quirks-no-silent-fix",
+      "steps": [
+        {
+          "op": "start",
+          "time": 0,
+          "stopped": 0,
+          "start": 0,
+          "end": 0,
+          "elapsed": 0,
+          "real": 0,
+          "errors": []
+        },
+        {
+          "op": "suspend",
+          "time": 0,
+          "stopped": 0,
+          "start": 0,
+          "end": 0,
+          "elapsed": 0,
+          "real": 0,
+          "errors": []
+        },
+        {
+          "op": "resume",
+          "time": 10,
+          "stopped": 0,
+          "start": 0,
+          "end": 0,
+          "elapsed": 10,
+          "real": 0,
+          "errors": ["resume"]
+        },
+        {
+          "op": "suspend",
+          "time": 20,
+          "stopped": 0,
+          "start": 0,
+          "end": 0,
+          "elapsed": 20,
+          "real": 0,
+          "errors": ["resume"]
+        },
+        {
+          "op": "start",
+          "time": 30,
+          "stopped": 0,
+          "start": 30,
+          "end": 0,
+          "elapsed": 0,
+          "real": 4294967266,
+          "errors": ["resume"]
+        },
+        {
+          "op": "resume",
+          "time": 50,
+          "stopped": 30,
+          "start": 30,
+          "end": 0,
+          "elapsed": 20,
+          "real": 4294967266,
+          "errors": ["resume"]
+        },
+        {
+          "op": "end",
+          "time": 70,
+          "stopped": 30,
+          "start": 30,
+          "end": 70,
+          "elapsed": 40,
+          "real": 40,
+          "errors": ["resume"]
+        }
+      ]
+    }
+  ],
+  "syncRates": [
+    {
+      "elapsed": 4999,
+      "stopped": 0,
+      "allowed": false
+    },
+    {
+      "elapsed": 5000,
+      "stopped": 0,
+      "allowed": true
+    },
+    {
+      "elapsed": 7000,
+      "stopped": 2000,
+      "allowed": false
+    },
+    {
+      "elapsed": 12000,
+      "stopped": 2000,
+      "allowed": true
+    },
+    {
+      "elapsed": 2147483632,
+      "stopped": 0,
+      "allowed": true
+    },
+    {
+      "elapsed": 2147483648,
+      "stopped": 0,
+      "allowed": false
+    },
+    {
+      "elapsed": 2147488632,
+      "stopped": 0,
+      "allowed": true
+    },
+    {
+      "elapsed": 4294967280,
+      "stopped": 0,
+      "allowed": true
+    },
+    {
+      "elapsed": 32,
+      "stopped": 0,
+      "allowed": false
+    },
+    {
+      "elapsed": 4984,
+      "stopped": 0,
+      "allowed": true
+    }
+  ]
+}

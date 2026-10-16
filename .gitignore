@@ -1,0 +1,21 @@
+# Local tooling and generated analysis
+node_modules/
+.analysis/
+# Reproducible function indexes: regenerate with `bun run analyze index`.
+docs/generated/
+.cache/
+coverage/
+dist/
+
+# Runtime state; never commit accounts, logs or database journals
+var/
+*.sqlite
+*.sqlite-*
+*.db-wal
+*.db-shm
+.env
+.env.*
+!.env.example
+
+# Optional SQL Server exports (may contain personal information)
+DB/exports/

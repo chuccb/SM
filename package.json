@@ -1,0 +1,33 @@
+{
+  "name": "crazy-arcade-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.4.3",
+  "engines": {
+    "bun": "1.4.3"
+  },
+  "scripts": {
+    "start": "bun run Main.ts",
+    "check": "tsc --noEmit",
+    "test": "bun test",
+    "verify": "bun run check && bun test",
+    "analyze": "bun run Tools/AnalyzeOfficial.ts",
+    "db": "bun run Tools/Database.ts",
+    "format": "prettier --write '**/*.ts' '**/*.json' '**/*.md'",
+    "format:check": "prettier --check '**/*.ts' '**/*.json' '**/*.md'",
+    "vectors:special-item-use": "bun run Tools/BuildSpecialItemUseVectors.ts",
+    "vectors:user-item-catalog": "bun run Tools/BuildUserItemCatalogVectors.ts",
+    "vectors:user-inventory": "bun run Tools/BuildUserInventoryVectors.ts",
+    "vectors:center-connection": "bun run Tools/BuildCenterConnectionVectors.ts"
+  },
+  "dependencies": {
+    "iconv-lite": "0.7.2"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.3",
+    "bun": "1.4.3",
+    "prettier": "3.8.1",
+    "typescript": "7.1.0-dev.20261014.1"
+  }
+}

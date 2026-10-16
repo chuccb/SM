@@ -1,0 +1,78 @@
+# Modern deployment configuration; original .cfg files are preserved as evidence.
+# This is NOT an assertion that all original features are implemented. See docs/Coverage.md.
+[Runtime]
+Host = "0.0.0.0"
+# For a real client on another machine, set this to the server's reachable IPv4.
+AdvertisedIP = "127.0.0.1"
+Database = "var/CA.sqlite"
+Encoding = "big5"
+Resources = "FXGS/FxServer"
+# Off by default on public listeners. Create an account locally using bun run db.
+Registration = false
+# Read-only diagnostics only; 0 disables HTTP. No account/GM HTTP API.
+HealthPort = 8080
+
+[LS]
+Port = 3838
+Greetings = ["ftp://download.nexon.co.kr/ca"]
+
+[FXGS]
+# Optional discovery-only UDP on each GS TCP port + 1 (not the Relay listener).
+# No UDP replies. Same authenticated TCP IP/channel/room generation required.
+# Opt-in also supplies ordinary 106/loading/start services; false stays gated.
+# NOT complete playable rounds; see docs/GameLaunch.md and docs/Gameplay.md.
+UDPEnabled = false
+
+# The five channels registered in Center_000.cfg, retaining indices/types/ports.
+[[FXGS.Channels]]
+Name = "BnB初級-1"
+Port = 4848
+MaxUser = 400
+Type = 1
+LevelLimit = 0
+Community = 0
+EnterableType = 0
+
+[[FXGS.Channels]]
+Name = "BnB無差別-1"
+Port = 5858
+MaxUser = 400
+Type = 0
+LevelLimit = 0
+Community = 0
+EnterableType = 0
+
+[[FXGS.Channels]]
+Name = "BnB優惠-1"
+Port = 6868
+MaxUser = 400
+Type = 41
+LevelLimit = 0
+Community = 0
+EnterableType = 0
+
+[[FXGS.Channels]]
+Name = "BnB公會-1"
+Port = 7888
+MaxUser = 400
+Type = 77
+LevelLimit = 0
+Community = 0
+EnterableType = 0
+
+[[FXGS.Channels]]
+Name = "BnB高手-4"
+Port = 8888
+MaxUser = 400
+Type = 99
+LevelLimit = 0
+Community = 0
+EnterableType = 0
+
+[FXSS]
+Ports = [9801, 9811, 9821, 9831]
+
+[Relay]
+# Relay remains disabled until enabled explicitly; see compatibility/security notes.
+Enabled = false
+Port = 9520
