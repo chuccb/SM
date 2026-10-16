@@ -5,11 +5,13 @@
 > **目前尚未完成使用者要求的「完整官方 server 重寫」。**
 > 已能啟動 LS、五個 FXGS listener、行程內 Center、選用 Relay，並驗證登入→轉服→一般開局→SQLite結算→實際8秒回準備→第二次開局。已有對局時鐘、炸彈／同步物件核心、載入驗證、可選 GS UDP discovery，以及來源核對的獎勵計算／隊伍統計／純結果判定、163 結果預覽編碼、CUser 動態核心、SQLite 原子結算回執與一般結算／164 回準備尾段、cached-level 排名、受限一般Loading／Running／Result定時Update、來源對照的普通離房／UDP loss移除與195／pool4，以及151／152→166／167鬼魂請求、156→171飛機排程／box-item重設、144／145拾取與149原始公告、Type99金錢的native算術＋SQLite耐久收據／重試協調、Bula160／177、圈次155／170、146事件8、house161／178的board／allocator＋5money獨立收據、146 case0免費relay／paid inventory CAS＋receipt及201欄位修正，原欄名FxItem cached202／v2匯入與GS轉服202／201 preflight，與已核對為原版空操作的DeferResurrection及部分角色事件，但**仍無可玩的完整對局／結算、可用的 FXSS／FXUS 服務、完整公會／練習／任務，也沒有原版客戶端相容性驗證。** 不應部署為可正式遊玩的完整伺服器。詳細範圍見 [Coverage](docs/Coverage.md)。
 
-後續已增加**原生持有道具讀取端**：ItemSn／StockSn 分離、signed16 validity-level／strict raw DATE 投影、可信 CUser resident generation、原生201／105與飾品查詢，以及 pending 重載／ABA fence；**尚未接通 native SQL loader／pre-inventory 正式效果及完整初始化／Windows calendar 轉換／native paid persistence**。正式 SQLite 登入庫存仍採明示 legacy bridge，不暗改既有 receipts，見 [UserInventory](docs/UserInventory.md)。
+後續已增加**原生持有道具讀取端**：ItemSn／StockSn 分離、signed16 validity-level／strict raw DATE 投影、可信 CUser resident generation、原生201／105與飾品查詢，以及 pending 重載／ABA fence；**尚未接通 native SQL loader／pre-inventory 正式效果及完整初始化／完整 Windows calendar／provider 整合／native paid persistence**。正式 SQLite 登入庫存仍採明示 legacy bridge，不暗改既有 receipts，見 [UserInventory](docs/UserInventory.md)。
 
 本輪另完成**pre-inventory 的純觀測投影與可信 CUser 讀取端207**：54個固定PE anchors、2,587個獨立手譯C++ cases，保留prefix先於LoadOn、成功30而非SELECT LIMIT、catalog Category dispatch；pre-only reload／ABA已納入Center及pending財務／result fences。**不執行真實premium／XP／money／flush／SQL效果**；後續已接[整組讀取端handoff](docs/InventoryHandoff.md)的conditional207及forced201，含空local與整組預備／同catalog generation，不冒稱native SQL初始化，見[PreInventory](docs/PreInventory.md)。
 
 另已補上**Center非消耗式、exclusive授權lease**：正式GS在任何account／inventory讀取前先驗證整組pending，讀取／codec後全組再驗、最後才single-use handoff。錯guild／serial／ID不會先read；失敗僅釋放preparation，原pending可在同期限內重試。native Center17500ms／DWORD auth1與現代30秒TTL／legacy TicketDate分開建模，不冒稱native財務SQL已接。見[ConnectionAuthorization](docs/ConnectionAuthorization.md)。
+
+本輪新增[原生日期／CTime／隔離DB clock](docs/Calendar.md)：分清DB converter的ms0與rowset未寫weekday／ms，明示clock／API ports、嚴格Gregorian DATE子集及monotonic generation snapshot；不讀JS Date、不改host clock、不自動接入正式GS／SQLite日期或授權financial replay。第21份獨立模型30 anchors／2773 cases，另1680組clock advances；仍不是完整Windows API／native SQL初始化。
 
 ## 安裝與執行
 
@@ -129,9 +131,11 @@ HTTP 的 `processReady` 只代表這批已實作的 listener 已啟動，**不�
 ./node_modules/.bin/bun run vectors:pre-inventory
 # 整組讀取端210202207201與條件／bytes的人工參考
 ./node_modules/.bin/bun run vectors:inventory-handoff
+# Timestamp／CTime支援子集與隔離clock；不執行Windows API／SetLocalTime
+./node_modules/.bin/bun run vectors:calendar
 ```
 
-全部20份獨立參考builder位於 `Tools/Build*Vectors.ts`；最新實測數字與完整性紀錄見 [Coverage](docs/Coverage.md)。
+全部21份獨立參考builder位於 `Tools/Build*Vectors.ts`；最新實測數字與完整性紀錄見 [Coverage](docs/Coverage.md)。
 
 測試包含手工由反編譯轉寫的固定寬度 C++ 參考向量、實際資源檔、SQLite、真實 TCP／UDP、CLI 與啟動失敗清理。**C++ 參考不是執行原始官方程式，也不是原版客戶端錄包**；TCP 測試端使用本實作的 codec，不能單獨當作相容性的證明。
 

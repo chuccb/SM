@@ -6,7 +6,7 @@
 
 本輪開始時可見程式為890項tests／17份C++模型的owned-inventory read-side階段。前文曾報告的pre-inventory／calendar／composite初始化新增檔，本輪開始時並不在checkout；它們**不列為這份工作樹已實作／已驗證項目**，也不直接沿用先前1020項數字。以程式、fixtures與本輪重新執行的結果為準。
 
-**後續更新：** 本版已重新推導[PreInventory](PreInventory.md)純觀測投影／CUser讀取端207並將pre generation加入lease source fingerprint；同值reinstall／empty或changed ABA均會失效。這不表示舊缺失檔案已找回，也不表示financial effects／calendar／composite已完成。後續[整組讀取端207handoff](InventoryHandoff.md)已接正式GS，並新增下列lease-bound pre DTO API；它不是native SQL／給付完成。
+**後續更新：** 本版已重新推導[PreInventory](PreInventory.md)純觀測投影／CUser讀取端207並將pre generation加入lease source fingerprint；同值reinstall／empty或changed ABA均會失效。這不表示舊缺失檔案已找回，也不表示financial effects／完整Windows calendar／provider與composite已完成。後續[整組讀取端207handoff](InventoryHandoff.md)已接正式GS，並新增下列lease-bound pre DTO API；它不是native SQL／給付完成。
 
 已接線的是**現有legacy GS handler在讀取前先驗證、準備期間持有exclusive lease、成功後才消耗pending**。不是聲稱缺少的native財務流程已恢復或完成。
 
@@ -88,7 +88,7 @@ source transport close exception在logical commit之後，以generic事件報告
 
 lease只處理Center身份／ownership。不證明SQL current ban／premium／stock／價格，不消費native rows、不實作stored procedures、不提供durable effects idempotency。即使identity合法，**Release後另開lease也不能當成可以重跑已發生money／XP／LoadOn的依據**。
 
-目前已有重新推導的[pre觀測投影](PreInventory.md)與[整組read-side207發布](InventoryHandoff.md)，但沒有把legacy SN／ItemID／Unix expiry換成native ItemSn／StockSn／DATE。正式account／owned初始化仍legacy；不執行native pre效果、billing或native paid成功。後續還需native provider／SQL／calendar證據、完整pre→owned candidate到live user的rebind、不可逆effects的durable replay／recovery策略與原版client測試。
+目前已有重新推導的[pre觀測投影](PreInventory.md)與[整組read-side207發布](InventoryHandoff.md)，但沒有把legacy SN／ItemID／Unix expiry換成native ItemSn／StockSn／DATE。後續另有[Calendar](Calendar.md)重新推導的timestamp-copy／CTime嚴格子集與隔離clock，非找回舊缺檔、不自動接GS／financial effects，也不取代此lease registry。正式account／owned初始化仍legacy；不執行native pre效果、billing或native paid成功。後續還需native provider／SQL／完整Windows calendar證據、完整pre→owned candidate到live user的rebind、不可逆effects的durable replay／recovery策略與原版client測試。
 
 ## 驗證與重建
 

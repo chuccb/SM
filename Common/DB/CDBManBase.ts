@@ -19,12 +19,31 @@ import { DefaultTextCodec, type CTextCodec } from "../CTextCodec.ts";
 import { CProtocolError } from "../CProtocolError.ts";
 import { EncodePassword } from "../EncodePassword.ts";
 
+import type { _SYSTEMTIME } from "../Calendar.ts";
+import {
+  ConvertDBTimeToSystemTime,
+  ConvertSystemTimeToDBTime,
+  type tagDBTIMESTAMP,
+} from "./NativeCalendar.ts";
+
 const UserInfoQuery = `SELECT a.SID,a.ID,a.UserHashNo,a.Name,a.Email,a.EmailRcv,a.Gender,a.Address,a.Tel,a.Reveal,a.Profile,a.PasswordQ,a.IdentityNo,a.Birthday,a.CommunitySvr,a.GuildSn,a.Authority,a.TotalConn,a.LastConn,a.CreatedAt,a.BannedUntil,d.Money,d.Exp,d.Win,d.Draw,d.Lose,d.TicketDate FROM FxUserAccount a JOIN FxUserDynamic d USING(ID) WHERE a.ID = ?`;
 export class CDBManBase {
   constructor(
     readonly session: CDBSession,
     readonly text: CTextCodec = DefaultTextCodec,
   ) {}
+  /** Native field-copy cores ONLY; no schema/Unix reinterpretation or SQL. */
+  ConvertDBTimeToSystemTime(
+    time: Readonly<tagDBTIMESTAMP>,
+    observedWeekday: number | null = null,
+  ): Readonly<_SYSTEMTIME> {
+    return ConvertDBTimeToSystemTime(time, observedWeekday);
+  }
+  ConvertSystemTimeToDBTime(
+    time: Readonly<_SYSTEMTIME>,
+  ): Readonly<tagDBTIMESTAMP> {
+    return ConvertSystemTimeToDBTime(time);
+  }
   GetUserHashNo(id: string): number {
     let first = this.text.Encode(id)[0];
     if (first === undefined) throw new CProtocolError("Empty user ID");

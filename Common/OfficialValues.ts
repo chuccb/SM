@@ -14,6 +14,32 @@ export const IntegerRange = {
   UInt32Maximum: 0xffffffff,
 } as const;
 
+/** OLE DB DBTIMESTAMP / SYSTEMTIME16-byte layouts from supplied FXGS headers
+ * and004404D0/00440F00; these are native field offsets, NOT Unix units. */
+export const NativeTimeFormat = {
+  DBTimestampBytes: 16,
+  SystemTimeBytes: 16,
+  DBTimestamp: {
+    Year: 0,
+    Month: 2,
+    Day: 4,
+    Hour: 6,
+    Minute: 8,
+    Second: 10,
+    Fraction: 12,
+  },
+  SystemTime: {
+    Year: 0,
+    Month: 2,
+    DayOfWeek: 4,
+    Day: 6,
+    Hour: 8,
+    Minute: 10,
+    Second: 12,
+    Milliseconds: 14,
+  },
+} as const;
+
 export const CipherDegree = { None: 0, CRC32: 1, CRC8: 2 } as const;
 export type CipherDegree = (typeof CipherDegree)[keyof typeof CipherDegree];
 

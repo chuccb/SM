@@ -20,7 +20,7 @@ export const UnportedFeatures = [
   "full GS MTUDP host/queue/clock synchronization",
   "practice/ladder/mission/guild",
   "native pre-inventory durable effects/billing; SQL-backed pre/owned initialization",
-  "native owned-inventory SQL persistence/CTime calendar adapter; inventory flush/collector",
+  "native owned-inventory SQL persistence/full Windows calendar and DB provider integration; inventory flush/collector",
   "FXSS stock/pricing/billing/transactions",
   "FXUS account utility",
   "SQL Server backup restoration",

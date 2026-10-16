@@ -4,7 +4,26 @@
 
 **尚未滿足「完整官方伺服器」的驗收條件；沒有原版客戶端端到端驗證。** `Main.ts` 與診斷端點也會明確顯示此限制。
 
-## 本輪：正式GS整組讀取端207與conditional201（2026-10-17）
+## 本輪：原生 timestamp／CTime 嚴格支援子集與隔離clock（2026-10-17）
+
+從已推送`214a2bc493fad7b23a853fbb84dffb733aff16e0`繼續；編輯前357個tracked檔、98原始供給檔，先重跑compiler與**1010 pass／0 fail／639153 assertions／53檔、118.99s**。以下是重新推導的calendar核心，**不是找回歷史缺檔、不沿用曾報過的1020，也不是native SQL／完整Windows相容或完整server**。
+
+- 新[Calendar](Calendar.md)：精確16-byte DBTIMESTAMP reader、signed-year／WORD copy、CDBManBase同名兩轉換。**DB converter weekday未寫／ms0，rowset weekday與ms均未寫，reverse fraction0**；未寫word以null觀測，不捏造previous值／SQL NULL／fraction→ms。
+- 新`CTime`顯式local-time／VariantTime ports，capture／freeze、reentry／失敗原值保留，GetTickCount是calendar snapshot、非DWORD ticker。原API忽略BOOL可讀indeterminate stack double；現代failure拒絕，真DATE0與明示observed -0 raw bits不丟失。
+- 可攜**嚴格Gregorian100..9999**支援子集：有效civil日期、seconds INCLUDED／ms ignored、1899-12-30 epoch／負DATE特殊fraction；不讀JS Date／host TZ。明確拒絕OS-dependent00..99 mapping與invalid-day rolling，不宣稱原DLL rounding／timezone／DST相容。
+- 獨立per-server `CDBClock`接受明示可信DB observations＋safe-integer monotonic ms，不執行prGetTime／SQL／SetLocalTime、不自動接正式GS。bad replacement不破壞valid anchor，monotonic fault則退役至新可信sync；同值sync也換generation，atomic frozen time＋revision snapshot不是financial capability／durable freshness。
+- 第**21份**我們的獨立人工C++ reference：**30固定PE anchors／3份LS-GS一致copy區段／2773 cases**，含2748支援DATE→實際CUser201 plain／scalar完整bytes與25個strict rejection；另**1680組clock advances**。C++獨立Julian-day arithmetic對照TS cumulative Gregorian，不是Windows API／supplied binary／client oracle。
+- 新**37項／30541 assertions**全部通過（2檔、218ms）；含getter單讀、callback latch／reentry、未知word、signed-year／fraction、atomic clock generation／fault／ABA／exhaustion、no-host-Date／TZ及真CDBManBase無SQL寫入。五種red→green regressions／controls：負DATE fraction **0／2→2／0**、rowset ms擅自設0 **0／1→1／0**、clock fault不退役 **0／1→1／0**、忽略BOOL **0／1→1／0**、SetTime getter-driven nested mutation **0／1→1／0**；前四種測後exact source bytes還原；最後review新增SetTime整段copy guard／失敗原值保留regression。
+- 真正串起明示DB timestamp→rowset calendar→CTime→既有owned loader→可信CUser201，但**不自動wire正式GS**。同秒999ms不過期／下一秒strict >；missing definition不sample、level-invalid仍sample；**保留負DATE原始數值比較quirk**而不擅改chronology。SQL total_changes／legacy bridge bytes與四類receipt不改。
+- `bun run verify` compiler通過，**1047 pass／0 fail／669694 assertions／55檔、115.18s**。原1010項保留；測試數不是移植完成率。
+- 原34核心＋新兩檔，共**36檔重複2輪**，每輪**573 pass／0 fail／628033 assertions**（96.40／101.15s）。四項真TCP／UDP另**重複3輪**，每輪**4 pass／0 fail／1222 assertions**（11.01／11.02／11.01s），共用codec peer不是original-client相容證明。
+- **21份builders各重建2輪**（72.82／71.85s），全部21份fixture hash一致，原20份逐一與編輯前相同。只執行我們的C++，不執行supplied EXE／DAT／carved SQL／Windows API，不改host clock或連舊官方／billing端點。
+- `format:check`通過；98個原供給檔blob＋mode不變、原20份fixtures未改、246個local links／fragments有效。fresh狀態為schema6、五個空catalog各Revision1、drivers stopped、maintenance0、completion／client flags false。
+- Bun **1.4.3**／TypeScript **7.1.0-dev.20261014.1**／SQLite **3.53.4**；dependencies／兩lockfiles、schema6／export v2／四類version1 receipts與legacy owned-pre schema不改。native paid positive quantity仍fail-closed，qty0 relay與整組207 handoff不改，completion／client flags仍false。
+
+ignored `.analysis/tests/calendar-*`保留baseline／focused／full logs、五類red→green regressions／controls、reference stability／core／network repetition manifests。推送前另以**exact staged tree**乾淨匯出／fresh安裝／format／compiler／完整suite與calendar builder確認，逐一核對98個原始blob＋mode、原20份fixtures、local links／fragments、schema／五個空catalog Revision1／stopped drivers／false flags；不夾帶runtime DB、exports、node_modules或分析執行檔。仍缺完整Windows／native provider／SQL初始化、financial durability／recovery、billing／flush／collector與原client，詳見[Calendar限制](Calendar.md)。
+
+## 前一個已推送checkpoint：正式GS整組讀取端207與conditional201（2026-10-17，保留紀錄）
 
 以已推送`5ebca416980d0c9de5d40e65d344659ffa5e1ad6`為起點；350個檔案及mode逐一對上遠端後恢復本branch的本機追蹤狀態，**沒有覆寫工作檔**。先重跑基準 **982 pass／0 fail／635943 assertions／51檔、109.14s**。這不是完整native SQL／計費初始化完成，也不是重用先前缺檔時報過的1020數字。
 
