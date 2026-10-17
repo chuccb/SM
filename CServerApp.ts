@@ -16,7 +16,7 @@ import { RuntimePolicy } from "./Common/RuntimePolicy.ts";
 
 export const UnportedFeatures = [
   "Center TCP registration/negotiation",
-  "playing/special-mode vote-ban, pending-vote joins/launch/mode transitions and restart restoration",
+  "playing/special-mode vote-ban, pending-vote launch/mode transitions and restart restoration",
   "special-mode waiting-chief recovery/remaining battle events/special-mode launch/result restart recovery",
   "full GS MTUDP host/queue/clock synchronization",
   "practice/ladder/mission/guild",
@@ -107,6 +107,7 @@ export class CServerApp {
         loadingRooms: game.m_gameSessionTable.GetLoadingSessionCount(),
         scheduledRounds: game.m_gameSessionTable.GetScheduledRoundCount(),
         voteBanScope: "ordinary-waiting" as const,
+        voteJoinScope: "ordinary-issued-waiting" as const,
         pendingVoteRooms: game.m_gameSessionTable.GetPendingBanPlayerCount(),
         waitingChiefRooms:
           game.m_gameSessionTable.GetWaitingChiefSessionCount(),

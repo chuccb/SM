@@ -595,7 +595,7 @@ test("cold real-app diagnostics explicitly retain unsupported vote scopes and bo
     expect(status.officialClientVerified).toBe(false);
     expect(status.processReady).toBe(false);
     expect(status.unported).toContain(
-      "playing/special-mode vote-ban, pending-vote joins/launch/mode transitions and restart restoration",
+      "playing/special-mode vote-ban, pending-vote launch/mode transitions and restart restoration",
     );
     expect(
       status.gameUpdate.every(

@@ -44,6 +44,7 @@ export class CGameSessionTable {
   private m_ulSerialNo = 0;
   #removalAuthority: object = Object.freeze({});
   private readonly m_setDestroyingPlayer = new Set<CClientSocket>();
+  private readonly m_setJoiningPlayer = new Set<CClientSocket>();
   private readonly m_setRecoveringPlayer = new Set<CClientSocket>();
   private readonly m_setRecoveryRemovalAllowed = new Set<CClientSocket>();
   private m_nRecoveryNoticeFailures = 0;
@@ -232,6 +233,8 @@ export class CGameSessionTable {
     );
   }
   CreateSession(packet: CReceivedPacketBase, socket: CClientSocket): void {
+    if (this.m_setJoiningPlayer.has(socket))
+      throw new CProtocolError("Create during incoming join preparation");
     const title = packet.DecodeStr(SessionLimit.TitleBytes);
     const password = packet.DecodeStr(SessionLimit.PasswordBytes);
     const manner = packet.Decode1();
@@ -310,12 +313,14 @@ export class CGameSessionTable {
     password: string,
     bombers: readonly number[],
   ): void {
+    if (this.IsRemovingPlayer(socket))
+      throw new CProtocolError("Join during table/room transition");
     const room = this.GetBaseSession(index, serial);
     let code: number = JoinSessionResult.Success;
     if (
       !room ||
       room.m_bPlaying ||
-      room.m_ulBanTargetSerialNo !== 0 ||
+      room.HasUnownedBanPlayerState() ||
       socket.m_aUser.some((u) => u.m_nSessionIdx !== SessionLimit.NoSession) ||
       room.GetEmptySlotCount() < socket.GetUserCount()
     )
@@ -332,6 +337,16 @@ export class CGameSessionTable {
       );
       return;
     }
+    if (room.m_ulBanTargetSerialNo !== 0) {
+      this.m_setJoiningPlayer.add(socket);
+      try {
+        room.JoinPlayerDuringVote(this.#removalAuthority, socket, bombers);
+      } finally {
+        this.m_setJoiningPlayer.delete(socket);
+      }
+      this.FlushModifiedInfo(room);
+      return;
+    }
     room.AddAllUser(socket, bombers);
     socket.SendPacket(
       new CSendPacket(ServerResponse.JoinSession, undefined, this.text).Encode1(
@@ -344,6 +359,8 @@ export class CGameSessionTable {
     this.FlushModifiedInfo(room);
   }
   JoinFreeSession(packet: CReceivedPacketBase, socket: CClientSocket): void {
+    if (this.IsRemovingPlayer(socket))
+      throw new CProtocolError("Autojoin during table/room transition");
     const bombers = this.DecodeBombers(packet, socket);
     packet.AssertEnd();
     // Safe deterministic first-fit policy, not a claim to restore original matchmaking scores.
@@ -351,6 +368,7 @@ export class CGameSessionTable {
       (r) =>
         !r.m_strPassword &&
         !r.m_bPlaying &&
+        !r.HasUnownedBanPlayerState() &&
         r.GetEmptySlotCount() >= socket.GetUserCount(),
     );
     if (room)
@@ -368,6 +386,7 @@ export class CGameSessionTable {
   IsRemovingPlayer(socket: CClientSocket): boolean {
     return (
       this.m_setDestroyingPlayer.has(socket) ||
+      this.m_setJoiningPlayer.has(socket) ||
       this.m_setRecoveringPlayer.has(socket) ||
       !!this.GetSession(socket)?.IsRemovingPlayer()
     );
@@ -384,6 +403,8 @@ export class CGameSessionTable {
   /** 00421C32 ordinary normal-table generation/close boundary. Unsupported
    * room cascades preflight BEFORE identities or pointers are cleared. */
   DestroyPlayer(socket: CClientSocket, includeSelf = false): boolean {
+    if (this.m_setJoiningPlayer.has(socket))
+      throw new CProtocolError("Removal during incoming join preparation");
     if (
       this.m_setRecoveringPlayer.has(socket) &&
       !this.m_setRecoveryRemovalAllowed.has(socket)

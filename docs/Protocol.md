@@ -59,6 +59,7 @@ raw pure投影／36PE anchors／3444 cases與256個native inner-loop組合是我
 | ---------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
 | 80／81／82／83         | create／join／autojoin／lobby，slot／serial／群組ownership                          | [PlayerRemoval](PlayerRemoval.md)                                |
 | 96..109                | ready／map／color／bomber／slots／普通start與loading；104105僅ordinary等待房        | [GameLaunch](GameLaunch.md)                                      |
+| 81／82 during vote     | ordinary issued waiting vote加入；原票／target／chief不改，無113／114／Defer        | [WaitingVoteJoin](WaitingVoteJoin.md)                            |
 | 104／105→113／114      | ordinary等待房live接線，Playing／特殊模式仍拒絕；per-local／prefix／BanReflex／重算 | [BanPlayer](BanPlayer.md)                                        |
 | 106→116／120／150      | ordinary native launch／discovery／109 agreement、fresh round generation            | [GameLaunch](GameLaunch.md)                                      |
 | 144／145、156 response | item／obstacle claims與Type99 money                                                 | [ItemPickup](ItemPickup.md)、[MoneyPickup](MoneyPickup.md)       |
@@ -101,4 +102,4 @@ request `209` → response `201` 已使用真正channel handler消費兩個nativ
 
 104先busy後request、SuperChief immediate先於BanReflex；105按SELF逐local寫入，second非pending時保留prefix但不Defer。Tally是nonzero per-player分母、strict Yes majority／No tie失敗；113只做最後socket的連續去重。114 code0..5，只有2／3／5附name，4兼missing／immediate。native Socket.HasAuthority00406C66另有PE zero-stub證據，不從SQL Authority21推權利。
 
-`MakeBanPlayerPacket`／真正room `Prepare*`仍只產生immutable資料與候選body；live ordinary等待房104／105另有JS-private issued state及table issuer，DTO不能授權執行。ordinary departure已在native位置同步重算／整組移除，waiting-chief可有double Init並保留outer最終setter的獨立sample。Playing／特殊模式、active-vote join／106／103仍明確拒絕，非native完整transition parity。沒有新ACK、TTL或金融權限；真TCP104／105 weighted disconnect及secondary BanReflex已另測，但peer共用codec，不是原client oracle。詳見[BanPlayer](BanPlayer.md)。
+`MakeBanPlayerPacket`／真正room `Prepare*`仍只產生immutable資料與候選body；live ordinary等待房104／105另有JS-private issued state及table issuer，DTO不能授權執行。ordinary departure已在native位置同步重算／整組移除，waiting-chief可有double Init並保留outer最終setter的獨立sample。Playing／特殊模式、active-vote加入已由[WaitingVoteJoin](WaitingVoteJoin.md)接通，106／103仍明確拒絕，非native完整transition parity。沒有新ACK、TTL或金融權限；真TCP104／105 weighted disconnect及secondary BanReflex已另測，但peer共用codec，不是原client oracle。詳見[BanPlayer](BanPlayer.md)。

@@ -150,3 +150,5 @@ money／house／legacy paid 的 shared world fingerprint 加入各 user **mode�
 原有Category2／exact encoded attr功能查詢現由[WaitingChief](WaitingChief.md)的真正ordinary等待房排程消費；當下chief local的`Item/SuperChief`延長三種期限×3，不檢查Amount／Slot、不重驗raw DATE、不重解catalog、不寫SQL／清dirty。明示native carry仍沿用同一CUser／epochs；legacy ItemID／Verbose不提供此權利。native HasAuthority是獨立已核對的zero stub，不把SQL Authority22變成exemption。
 
 [BanPlayer](BanPlayer.md)另以真正room的唯讀準備及後續**ordinary等待房live104**消費同一native功能查詢：immediate非0時依chief SELF查`Item/SuperChief`，否則依target SELF查`Item/BanReflex`；兩者Category2／exact bytes、不查Amount／Slot／expiry、不消耗。legacy／pre rows無此權利，whole-room owned-pre epochs與實際Center opaque generation在query前後fence；native rows仍不是SQL freshness／grant或移除權限；live ordinary waiting另由private table issuer執行，不由functional DTO授權Playing／financial replay。
+
+[WaitingVoteJoin](WaitingVoteJoin.md)的active-vote入房現在以同一native／legacy live CUser預備105／飾品，原mode、兩epochs／dirty／equipment與raw DATE保留、不重install／讀SQL／refresh expiry。整份房間快照含incoming雙local的第二人及原occupants，任一錯碼頁／overflow／same-value reload／Center ABA先拒絕，不先發81或半換tuple；新0-vote eligibility不是庫存權利或grant。

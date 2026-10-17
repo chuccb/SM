@@ -130,4 +130,6 @@ money144與house161的耐久協調是**明示現代前置屏障**，不是native
 
 ## Active waiting vote
 
-合法private-issued ordinary waiting vote現仍列入400ms／8-stripe waiting-chief排程；[BanPlayer](BanPlayer.md)記錄121→root離房→deferred target整組移除／double Init→outer final setter。Public target-votes drift不被當作合法vote或新增財務權限；status另有`voteBanScope=ordinary-waiting`／`pendingVoteRooms`，completion／client flags仍false。Playing／特殊模式vote與active-vote join／launch／mode transitions仍拒絕，native其餘Update分支未因此完成。
+合法private-issued ordinary waiting vote現仍列入400ms／8-stripe waiting-chief排程；[BanPlayer](BanPlayer.md)記錄121→root離房→deferred target整組移除／double Init→outer final setter。Public target-votes drift不被當作合法vote或新增財務權限；status另有`voteBanScope=ordinary-waiting`／`pendingVoteRooms`，completion／client flags仍false。Playing／特殊模式vote與active-vote launch／mode transitions仍拒絕；ordinary active-vote加入見[WaitingVoteJoin](WaitingVoteJoin.md)，native其餘Update分支未因此完成。
+
+`gameUpdate.voteJoinScope`另明示`ordinary-issued-waiting`；新入房只擴充private roster、不改正在計算的electorate，不重新sample／reset房主helper。不是Playing join或financial lifecycle授權。

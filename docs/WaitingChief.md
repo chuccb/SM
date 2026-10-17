@@ -102,3 +102,5 @@ helper欄位發布之間不呼叫callback。這些 guards 不是任意外部 JS�
 [BanPlayer](BanPlayer.md)已將104／105的既有policy接入ordinary等待房；合法issued vote不再停止本頁scheduler。Native普通chief離房後可重算並踢掉繼任chief，second Init仍在outer最後setter之前：新detached removal hook在該位置preflight整條cascade，ready保留ENTRY／IsBan／兩Init／final SetCanStart五次分開samples，odd只ENTRY／兩Init。整份votes現加入waiting fingerprint，並有private vote-state／table issuer、one-use／return revoke及nested bool／batch ownership；public fields／plan不能授權。
 
 本頁現代preflight／final helper先發布的callback時序差異仍在；clock fault、post121 drift先拒絕，不假rollback。真TCP pending disconnect／BanReflex另已驗證，但double-Init時計使用合法packet flow＋顯式clock provider的lifecycle證據，不冒充原client或真WinMM動態oracle。
+
+[WaitingVoteJoin](WaitingVoteJoin.md)另開放active vote中的普通81／82；加入不重設CBanChief或其任何clock marker，後續自然400ms Update才依當時current count與capacity比較。Incoming與incumbent fence／table join reservation並未授權重入本頁121／移除；後續double Init／outer setter仍由既有private issuance與native-order preflight處理。

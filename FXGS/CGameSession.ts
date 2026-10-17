@@ -1,3 +1,5 @@
+import { CBaseSession } from "./CBaseSession.ts";
+import { PlanWaitingVoteJoin } from "./WaitingVoteJoin.ts";
 import {
   PlanHostAskBanPlayer,
   PlanRespondToBanPlayer,
@@ -47,6 +49,7 @@ import {
   TeamLimit,
   GameType,
   StartGameResult,
+  JoinSessionResult,
   ChannelType,
   GameStage,
   GamePlayerState,
@@ -461,13 +464,20 @@ export class CGameSession extends CListSession {
     color: number,
   ): void {
     super.AddUser(user, slot, bomber, color);
-    // CGameSession::AddUser 0041AF4B. Defensive endpoint clearing also prevents
-    // slot-reuse leakage if a future caller bypasses the ordinary leave path.
+    // Preserve native field reset BEFORE the fallible per-local clock read.
+    this.#ResetJoinedPlayerState(slot);
+    this.m_adwPlayerJoinTime[slot] = this.m_gameClock.GetCurrentTime();
+  }
+  #ResetJoinedPlayerState(slot: number): void {
+    //0041AF4B; modern defensive endpoint/state clearing is preserved.
     this.m_aBomberIdxPlaying[slot] = -1;
     this.m_aPlayerState[slot] = GamePlayerState.Active;
     this.m_abUDPPeerReceived[slot] = 0;
     this.m_aUDPHost[slot]!.fill(invalidHost);
-    this.m_adwPlayerJoinTime[slot] = this.m_gameClock.GetCurrentTime();
+  }
+  #InstallJoinedPlayerState(slot: number, tick: number): void {
+    this.#ResetJoinedPlayerState(slot);
+    this.m_adwPlayerJoinTime[slot] = tick;
   }
   private SocketSlots(socket: CClientSocket): number[] {
     if (
@@ -1167,6 +1177,260 @@ export class CGameSession extends CListSession {
     this.m_dwLastAirplaneRequestTime = 0;
     this.BindResultRound(false);
     this.SendPacket(packet);
+  }
+  /** Read-only availability, never an issuance token. Internal join paths
+   * independently check the private registry and constructor-bound issuer. */
+  HasUnownedBanPlayerState(): boolean {
+    return !this.#HasConsistentBanPlayerState();
+  }
+  /**00422849/0041BD0E/0042410D: joining during a waiting vote changes the
+   * roster, NOT ballots/target/chief, never Defer and never a new113/114 ACK.
+   * Modern whole-group preflight prepares ALL81/105/107/112/93 bodies and
+   * per-local join clocks before the first membership/tuple write. */
+  JoinPlayerDuringVote(
+    authority: object,
+    socket: CClientSocket,
+    bombers: readonly number[],
+  ): void {
+    if (!this.IsTableRemovalIssuer(authority))
+      throw new CProtocolError("Invalid waiting-vote join issuer");
+    this.#AssertOwnedBanPlayerState();
+    this.#RequireLiveBanPlayerScope();
+    if (!this.#liveBanPlayer || this.m_resultRound)
+      throw new CProtocolError("Join requires an issued idle waiting vote");
+    this.#WithBanPlayerTransition(() => {
+      const prepared = this.WithBanPlayerPreparation((capture) => {
+        const group = socket.m_aUser,
+          users = Array.from(group),
+          beforeLive = this.#liveBanPlayer!,
+          slotBuffers = this.m_rgSlotInfo.slice(),
+          fingerprint = this.WaitingChiefFingerprint(),
+          connected = socket.IsConnected(),
+          pool = socket.m_nPoolType;
+        if (
+          !connected ||
+          users.length < UserCount.Minimum ||
+          users.length > UserCount.Maximum ||
+          new Set(users).size !== users.length ||
+          users.some(
+            (u, self) =>
+              !u ||
+              u.m_pClientSocket !== socket ||
+              u.GetSelfidx() !== self ||
+              u.IsSetFree() !== 0 ||
+              u.GetSessionIdx() !== SessionLimit.NoSession ||
+              u.GetSessionSerialNo() !== IntegerRange.UInt32Maximum ||
+              this.m_rgPlayer.includes(u),
+          )
+        )
+          throw new CProtocolError("Invalid incoming waiting-vote join group");
+        const existingSerials = new Set(
+          this.m_rgPlayer.flatMap((u) => (u ? [u.GetGlobalSerialNo()] : [])),
+        );
+        for (const u of users) {
+          const serial = u.GetGlobalSerialNo();
+          if (
+            !Number.isInteger(serial) ||
+            serial <= 0 ||
+            serial > IntegerRange.UInt32Maximum ||
+            existingSerials.has(serial)
+          )
+            throw new CProtocolError(
+              "Invalid/duplicate incoming waiting-vote serial",
+            );
+          existingSerials.add(serial);
+        }
+        const owners = users.map((u) => ({
+          Info: u.m_userInfo,
+          Native: u.CaptureUserInventory()?.Rows,
+          Pre: u.CapturePreInventory().Rows,
+          Owned: u.GetUserInventoryGeneration(),
+          PreEpoch: u.GetPreInventoryGeneration(),
+          Connection: this.ChiefConnectionGeneration(u),
+          Legacy: u.m_aInventory,
+          Slot: u.m_nSlotIdx,
+        }));
+        const incomingFingerprint = () =>
+            JSON.stringify(
+              users.map((u) => ({
+                Info: u.m_userInfo,
+                Serial: u.GetGlobalSerialNo(),
+                Dynamic: u.GetDynamicInfoSnapshot(),
+                Inventory: u.CaptureUserInventory()
+                  ? null
+                  : u.GetInventoryStateSnapshot(),
+                Auth: u.GetAuthencode(),
+                Free: u.IsSetFree(),
+              })),
+            ),
+          incoming = incomingFingerprint();
+        const stable = () => {
+          capture.Stable();
+          this.#RequireLiveBanPlayerScope();
+          this.#AssertOwnedBanPlayerState();
+          if (
+            this.#liveBanPlayer !== beforeLive ||
+            this.m_resultRound ||
+            this.WaitingChiefFingerprint() !== fingerprint ||
+            this.m_rgSlotInfo.some((b, i) => b !== slotBuffers[i]) ||
+            socket.m_aUser !== group ||
+            group.length !== users.length ||
+            Array.from(group).some((u, i) => u !== users[i]) ||
+            socket.IsConnected() !== connected ||
+            socket.m_nPoolType !== pool
+          )
+            throw new CProtocolError(
+              "Waiting-vote join context changed during preparation",
+            );
+          users.forEach((u, i) => {
+            const o = owners[i]!;
+            if (
+              u.m_pClientSocket !== socket ||
+              u.GetSelfidx() !== i ||
+              u.GetSessionIdx() !== SessionLimit.NoSession ||
+              u.GetSessionSerialNo() !== IntegerRange.UInt32Maximum ||
+              u.m_nSlotIdx !== o.Slot ||
+              u.m_userInfo !== o.Info ||
+              u.m_aInventory !== o.Legacy ||
+              u.CaptureUserInventory()?.Rows !== o.Native ||
+              u.CapturePreInventory().Rows !== o.Pre ||
+              u.GetUserInventoryGeneration().Native !== o.Owned.Native ||
+              u.GetUserInventoryGeneration().Revision !== o.Owned.Revision ||
+              u.GetPreInventoryGeneration() !== o.PreEpoch ||
+              this.ChiefConnectionGeneration(u) !== o.Connection
+            )
+              throw new CProtocolError(
+                "Waiting-vote join owner/generation changed during preparation",
+              );
+          });
+          if (incomingFingerprint() !== incoming)
+            throw new CProtocolError(
+              "Waiting-vote join user data changed during preparation",
+            );
+        };
+        stable();
+        const selected = Array.from(bombers);
+        if (selected.length !== users.length)
+          throw new CProtocolError("Waiting-vote join bomber count mismatch");
+        const resolved = selected.map((n) => {
+          stable();
+          const b = this.bombers.IsValidSelectIdx(n)
+            ? n
+            : this.bombers.GetRandomBomberIdx();
+          stable();
+          return b;
+        });
+        const first = this.m_rgPlayer.findIndex(
+          (u, i) => !u && !(this.m_rgSlotInfo[i]![0]! & SlotStateMask.Closed),
+        );
+        if (first < 0) throw new CProtocolError("Waiting-vote room full");
+        const color = this.GetColorForNewComer(first);
+        stable();
+        const plan = PlanWaitingVoteJoin(
+          {
+            Occupied: this.m_rgPlayer.map(Boolean),
+            SlotInfo: this.m_rgSlotInfo.map((b) => Array.from(b)),
+            Votes: Array.from(this.m_anBanPlayerVote),
+            TargetSerialNo: this.m_ulBanTargetSerialNo,
+            ChiefSlot: this.m_nChiefSlotidx,
+          },
+          resolved,
+          color,
+        );
+        if (plan.Slots.some((slot) => this.m_anBanPlayerVote[slot] !== 0))
+          throw new CProtocolError("Issued vote vacancy has a stale ballot");
+        const times = users.map(() => {
+          stable();
+          const tick = this.m_gameClock.GetCurrentTime();
+          stable();
+          if (
+            !Number.isInteger(tick) ||
+            tick < 0 ||
+            tick > IntegerRange.UInt32Maximum
+          )
+            throw new CProtocolError("Invalid waiting-vote join clock");
+          return tick;
+        });
+        const view = new CBaseSession(
+          this.m_nIdx,
+          this.m_ulSerialNo,
+          this.text,
+        );
+        this.m_rgPlayer.forEach((u, i) => {
+          view.m_rgPlayer[i] = u;
+          view.m_rgSlotInfo[i] = Buffer.from(plan.SlotInfo[i]!);
+        });
+        plan.Slots.forEach((slot, i) => {
+          view.m_rgPlayer[slot] = users[i]!;
+        });
+        const packets: {
+          Packet: CSendPacket;
+          Targets: readonly CClientSocket[];
+        }[] = [];
+        const add = (
+          packet: CSendPacket,
+          targets: readonly CClientSocket[],
+        ) => {
+          stable();
+          packets.push({ Packet: packet, Targets: [...targets] });
+        };
+        add(
+          new CSendPacket(
+            ServerResponse.JoinSession,
+            undefined,
+            this.text,
+          ).Encode1(JoinSessionResult.Success),
+          [socket],
+        );
+        for (let slot = 0; slot < SessionLimit.Players; slot++) {
+          const u = view.m_rgPlayer[slot];
+          add(
+            u
+              ? view.MakeSetPlayerPacket(slot, u.m_pClientSocket === socket)
+              : view.MakeSetSlotStatePacket(slot),
+            [socket],
+          );
+        }
+        for (let i = 0; i < 2; i++)
+          add(
+            new CSendPacket(
+              ServerResponse.SelectMap,
+              undefined,
+              this.text,
+            ).Encode2(this.m_nMapIdx & 0xffff),
+            [socket],
+          );
+        for (const slot of plan.Slots)
+          add(view.MakeSetPlayerPacket(slot, true), capture.Sockets);
+        add(
+          new CSendPacket(ServerResponse.GameTypeNormal, undefined, this.text),
+          [socket],
+        );
+        stable();
+        return { users, plan, times, packets, beforeLive };
+      });
+      // Callback-free native-field publication; do not call a clock/codec or
+      // reinterpret pre/native inventory, and do NOT rewrite ANY ballot.
+      const { users, plan, times, packets, beforeLive } = prepared;
+      plan.Slots.forEach((slot, i) => {
+        const row = plan.SlotInfo[slot]!;
+        super.AddUser(
+          users[i]!,
+          slot,
+          row[1]! & SlotStateMask.Bomber,
+          row[2]! & SlotStateMask.Color,
+        );
+        this.#InstallJoinedPlayerState(slot, times[i]!);
+      });
+      socket.m_nPoolType = "Session";
+      this.m_nModified |= SessionModified.PlayerCount;
+      this.#liveBanPlayer = {
+        Target: beforeLive.Target,
+        Votes: beforeLive.Votes,
+        Players: Object.freeze(this.m_rgPlayer.slice()),
+      };
+      for (const p of packets) this.QueuePacketTo(p.Packet, p.Targets);
+    });
   }
   #HasConsistentBanPlayerState(): boolean {
     const live = this.#liveBanPlayer;
@@ -4784,6 +5048,7 @@ export class CGameSession extends CListSession {
     return fallback;
   }
   AddAllUser(socket: CClientSocket, bombers: readonly number[]): void {
+    this.#AssertOwnedBanPlayerState();
     // Same gate as CGameSessionTable::DoJoinSession, also for direct callers.
     if (
       this.m_bPlaying ||

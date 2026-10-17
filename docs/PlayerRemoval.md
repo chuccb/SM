@@ -86,7 +86,7 @@ Type99的pending money與house161的pending house均使用同樣的pre-mutation 
 
 [BanPlayer](BanPlayer.md)在既有immutable policy之上已接ordinary等待房live104／105與synchronous departure cascade。清任何ID前，root／conditional second target皆preflight ghost、113114碼頁／body及獨立chief Init clocks；private table issuer／一用entry綁exact socket／generation，nested restore外層removing bool與batch depth，沒有中間86或195／自動15。Waiting-chief的ready最終SetCanStart sample必須在double Init之後，odd最終SetOdd不讀clock；fault皆在121／roster mutation之前。
 
-合法live vote由私有state綁target／exact votes／actual player refs；public target-vote fields／prepared DTO不能建立它。Unowned／changed state、financial freeze、Playing／special-mode及active-vote join／launch／Mod transitions仍拒絕；unbound trusted kernel table adapter僅維持原nonvote用途。原snapshot／同codec peers不是original-client或durable offline settlement證據。
+合法live vote由私有state綁target／exact votes／actual player refs；public target-vote fields／prepared DTO不能建立它。Unowned／changed state、financial freeze、Playing／special-mode及active-vote launch／Mod transitions仍拒絕；ordinary active-vote加入已另接；unbound trusted kernel table adapter僅維持原nonvote用途。原snapshot／同codec peers不是original-client或durable offline settlement證據。
 
 ## 驗證與重建
 
@@ -100,3 +100,5 @@ Type99的pending money與house161的pending house均使用同樣的pre-mutation 
 既有512個有向三-primary loss graphs也逐一比對non-consuming preview與consuming kernel。另測真正CreateSession的service注入、Running串接106／195／152／159、unsigned strict期限、closed/free primary guards、舊generation／稀疏與重複群組、傳送失敗／重入、不重播、83／16／直接建房、真app的frozen CAS斷線與SQLite-before-write拒絕。這些仍是來源／移植邊界驗證；新增[GameLaunch](GameLaunch.md)提供ordinary正式launch及真TCP+UDP連續兩輪，**仍沒有原client或整場可玩證據**。
 
 146 case0 paid inventory現共用gameplay freeze：unresolved CAS／lost-ACK時，不允許removal改roster或替terminal／detached user安裝舊庫存；其他peer已closed亦拒絕。即使SQL扣量已durable，仍不猜測159送達或自動退款／重建room。完整來源與storage-before-live差異見[SpecialItemUse](SpecialItemUse.md)。
+
+投票中後加入的新0-vote locals已由[WaitingVoteJoin](WaitingVoteJoin.md)接入private player binding，原ballots／target／chief不變；其普通離房仍在本頁native hook位置重新計票。入房本身不Defer、不做勝敗或金融給付；不能把新roster當成重開electorate。

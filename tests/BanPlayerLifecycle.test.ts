@@ -5,7 +5,6 @@ import {
   BanPlayerRule,
   GameType,
   JoinSessionResult,
-  SessionLimit,
 } from "../Common/OfficialValues.ts";
 import { CUser } from "../Common/CUser.ts";
 import { CUser as CenterUser } from "../Center/CUser.ts";
@@ -376,7 +375,7 @@ test("LIVE codec fault and native/pre epoch reload during result-body preflight 
   }
 });
 
-test("LIVE public vote fields/DTO cannot manufacture owned state or table authority; direct DeleteAllUser/ghost/Mod/start/join are gated while legitimately pending", () => {
+test("LIVE public vote fields/DTO cannot manufacture owned state or table authority; direct DeleteAllUser/Mod/start are gated, only issuer-owned waiting join is admitted", () => {
   const fake = create(),
     planned = fake.room.PrepareHostAskBanPlayer(fake.clients[0]!, {
       TargetSerialNo: fake.clients[1]!.m_aUser[0]!.GetGlobalSerialNo(),
@@ -405,8 +404,9 @@ test("LIVE public vote fields/DTO cannot manufacture owned state or table author
   u.m_pClientSocket = outsider;
   outsider.m_aUser.push(u);
   e.table.DoJoinSession(outsider, e.room.m_nIdx, e.room.m_ulSerialNo, "", [0]);
-  expect(outsider.Take(81).Decode1()).toBe(JoinSessionResult.Unavailable);
-  expect(u.GetSessionIdx()).toBe(SessionLimit.NoSession);
+  expect(outsider.Take(81).Decode1()).toBe(JoinSessionResult.Success);
+  expect(u.GetSessionIdx()).toBe(e.room.m_nIdx);
+  expect(e.room.m_anBanPlayerVote[u.m_nSlotIdx]).toBe(0);
 });
 
 test("LIVE both packet-body truncation/trailing data and non-chief requests fail before any vote state/publication, guard retires after failure", () => {

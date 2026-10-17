@@ -115,4 +115,4 @@ key是room初始化時的一次15-bit draw；sequence從room serial起算，每�
 
 ## 與ordinary等待房投票的界線
 
-[BanPlayer](BanPlayer.md)已接ordinary等待房104／105及離房同步cascade。**pending vote仍拒絕106**，沒有藉vote DTO取得private launch／financial authority；Playing／特殊模式vote及active-vote join／mode transitions仍缺。這是明示現代scope差異，不宣稱native launch與vote的全部交互已還原。
+[BanPlayer](BanPlayer.md)已接ordinary等待房104／105及離房同步cascade。**pending vote仍拒絕106**，沒有藉vote DTO取得private launch／financial authority；Playing／特殊模式vote及active-vote mode transitions仍缺；ordinary active-vote加入已另接[WaitingVoteJoin](WaitingVoteJoin.md)。這是明示現代scope差異，不宣稱native launch與vote的全部交互已還原。

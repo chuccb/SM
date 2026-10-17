@@ -1,5 +1,5 @@
 import { PutSlotAccessoryList } from "../Common/UserInventory.ts";
-import { UserInventoryRule } from "../Common/OfficialValues.ts";
+import { UserInventoryRule, CipherDegree } from "../Common/OfficialValues.ts";
 import { CSendPacket } from "../Common/CSendPacket.ts";
 import type { CClientSocket } from "../Common/CClientSocket.ts";
 import type { CUser } from "../Common/CUser.ts";
@@ -134,16 +134,16 @@ export class CBaseSession {
   }
   /**00419A6E. Capture one native read-side generation INCLUDING look/icon
    * fields before a caller codec can reload it. No new client equipment API. */
-  MakeSetPlayerPacket(slot: number, self: boolean): CSendPacket {
+  MakeSetPlayerPacket(
+    slot: number,
+    self: boolean,
+    cipher: CipherDegree = CipherDegree.CRC8,
+  ): CSendPacket {
     const user = this.m_rgPlayer[slot];
     if (!user) throw new CProtocolError("No player at slot");
     const native = user.CaptureUserInventory(),
       simpleUser = native ? user.CloneForResultCalculation() : user;
-    const packet = new CSendPacket(
-      ServerResponse.SetPlayer,
-      undefined,
-      this.text,
-    )
+    const packet = new CSendPacket(ServerResponse.SetPlayer, cipher, this.text)
       .Encode1(slot)
       .Encode4(user.GetGlobalSerialNo())
       .Encode1(self ? 1 : 0)

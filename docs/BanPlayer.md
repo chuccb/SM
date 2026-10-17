@@ -4,7 +4,7 @@
 
 **普通 Normal、非 Guild／Mod／BangPok／practice 的等待房已接通104／105。** 不需要GS UDP／private launch token。真正room／table使用前輪已驗證的native policy，發113／114、執行TRUE whole-socket removal／pool4，普通離房及真TCP disconnect會在native位置重新計票，也能同步踢出另一整組。waiting-chief仍排程active vote，不會靠停止timer避開連鎖問題。
 
-Playing／特殊模式仍拒絕；目前**投票中不接受加入、106開局或103轉Mod**。Native沒有同樣的統一限制，這是明確的現代availability／移植scope差異，不宣稱已完成所有native transitions。沒有新增vote TTL、每socket weighting、SQL角色、給付或自動Lobby成功；completion／original-client flags仍false。
+Playing／特殊模式仍拒絕；後續[WaitingVoteJoin](WaitingVoteJoin.md)已開放ordinary issued vote中的81／82；**投票中的106開局或103轉Mod仍拒絕**。Native沒有同樣的統一限制，這是明確的現代availability／移植scope差異，不宣稱已完成所有native transitions。沒有新增vote TTL、每socket weighting、SQL角色、給付或自動Lobby成功；completion／original-client flags仍false。
 
 前輪 `FXGS/BanPlayer.ts`、`CaptureBanPlayerObservation`／四個 `Prepare*`仍是純讀取端；`MakeBanPlayerPacket`仍只產生候選body。**Returned DTO／數字SocketKey／public target-vote fields都不能安裝active vote或授權table執行**。Live command有獨立JS-private issued state與constructor-bound opaque table issuer；它們不是財務／SQL replay權限。
 
@@ -106,7 +106,7 @@ Private active vote的ordinary departure已開通，包括closed socket在Center
 
 新增**41 tests／32,405 assertions**：18個pure／packet／PE units與23個真正room read-side／fence／status案例。80／81／96由既有正式handlers建立；active vote狀態在少數觀測案例是**顯式可信fixture**，不是網路vote已接通。native item rows亦是可信讀取端fixture，不是SQL初始化。這是前輪讀取端的驗證範圍；後續新增的live／TCP證據見下一節。
 
-C++是我們的人工reference，不是執行官方EXE／Windows API／原client oracle；測試peer共用codec，也不是相容性證明。完整驗證／controls／fresh-export結果見[Coverage](Coverage.md)。後續仍須完成Playing／特殊模式、active-vote join／launch／mode transitions、durable restoration與完整server其餘缺口。
+C++是我們的人工reference，不是執行官方EXE／Windows API／原client oracle；測試peer共用codec，也不是相容性證明。完整驗證／controls／fresh-export結果見[Coverage](Coverage.md)。後續仍須完成Playing／特殊模式、active-vote launch／mode transitions、durable restoration與完整server其餘缺口。
 
 ## Live／cascade新增驗證
 
@@ -122,3 +122,7 @@ C++是我們的人工reference，不是執行官方EXE／Windows API／原client
 真TCP第一例由105的同socket209作順序barrier，不以sleep猜測；pending vote中真正關閉另一條TCP，驗證同步踢target雙local、outer106先於target-own last106／survivor114／2，closed peer確實釋放Center／rank／global，而target保留TCP／pool4、209且沒有195／15、SQL changes或四類receipt。第二例target secondary帶**顯式可信native BanReflex row**，真正104使chief雙local離房、107交接／114／5、pool4與209不變；該row不是native SQL／client grant。
 
 測試peer仍共用codec；沒有原client、原binary oracle、完整可玩整場或金融restart證據。最新full／controls／fresh proof見[Coverage](Coverage.md)。
+
+## 後續：原electorate不變的等待房加入
+
+[WaitingVoteJoin](WaitingVoteJoin.md)已釘完整native AddUser／AddPlayer bodies，普通入房不重設vote／target、也不Defer或補113。Live private registry只更新player refs，新0-vote locals不能對已開始的投票補投；兩local的所有slot／clock／snapshot候選完成才發布，incoming socket亦有table reservation，避免codec中對別房80／81重入。既有ordinary departure／double Init保持原樣；Playing／active-vote106／103仍缺。
