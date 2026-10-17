@@ -2,7 +2,7 @@
 
 ## 範圍
 
-正式 `CGameSessionTable.DoJoinSession` 現允許**合法JS-private issued vote中的普通 Normal 等待房**接納1／2 locals。81與既有現代first-fit82走同一入房準備；不是開放Playing／Guild／Mod／BangPok／practice，也不開放active-vote106／103、native restart／financial replay。原始read-side DTO與public target/vote fields仍不授權入房或移除。
+正式 `CGameSessionTable.DoJoinSession` 現允許**合法JS-private issued vote中的普通 Normal 等待房**接納1／2 locals。81與既有現代first-fit82走同一入房準備；不是開放Playing／Guild／Mod／BangPok／practice，active-vote ordinary106已由[VoteLifecycle](VoteLifecycle.md)另接，但仍不開放103、native restart／financial replay。原始read-side DTO與public target/vote fields仍不授權入房或移除。
 
 本輪不改SQL、schema6／四種v1 receipts、owned-pre native/legacy模式、GS授權lease或給付。`voteJoinScope=ordinary-issued-waiting`是唯讀診斷scope，不是client權限token；completion／original-client flags仍false。
 
@@ -62,4 +62,4 @@ incoming在preflight時還沒session；不能只靠「房間目前transition」�
 
 真TCP驗證pending104後later雙local81完整快照，new105不計票，以同socket209作順序barrier、不用sleep猜測；舊105仍踢同一target、new peer收106／114且保有native/legacy inventory與wallet，無SQL changes／四receipts。另一例password81/1→同peer正確重試→closed capacity81/2；拒絕前沒有部分enrollment。Native row為顯式可信preexisting read-side fixture，不是SQL loader／client grant。
 
-Peer共用production codec，不是原client oracle；模型也不是native resource／SQL／client execution證明。Full／controls／fresh-export結果見[Coverage](Coverage.md)。後續仍缺Playing／特殊模式vote、active-vote launch／mode transitions與durable restoration。
+Peer共用production codec，不是原client oracle；模型也不是native resource／SQL／client execution證明。Full／controls／fresh-export結果見[Coverage](Coverage.md)。後續ordinary native Playing vote／106已另接[VoteLifecycle](VoteLifecycle.md)，特殊模式、active-vote103與durable restoration仍缺；本頁join scope仍只有waiting。

@@ -4,7 +4,7 @@
 
 **普通 Normal、非 Guild／Mod／BangPok／practice 的等待房已接通104／105。** 不需要GS UDP／private launch token。真正room／table使用前輪已驗證的native policy，發113／114、執行TRUE whole-socket removal／pool4，普通離房及真TCP disconnect會在native位置重新計票，也能同步踢出另一整組。waiting-chief仍排程active vote，不會靠停止timer避開連鎖問題。
 
-Playing／特殊模式仍拒絕；後續[WaitingVoteJoin](WaitingVoteJoin.md)已開放ordinary issued vote中的81／82；**投票中的106開局或103轉Mod仍拒絕**。Native沒有同樣的統一限制，這是明確的現代availability／移植scope差異，不宣稱已完成所有native transitions。沒有新增vote TTL、每socket weighting、SQL角色、給付或自動Lobby成功；completion／original-client flags仍false。
+後續[VoteLifecycle](VoteLifecycle.md)已開ordinary native Loading／Running及durable Result；特殊模式仍拒絕；後續[WaitingVoteJoin](WaitingVoteJoin.md)已開放ordinary issued vote中的81／82；投票中的ordinary native106亦已接通，**103轉Mod仍拒絕**。Native沒有同樣的統一限制，這是明確的現代availability／移植scope差異，不宣稱已完成所有native transitions。沒有新增vote TTL、每socket weighting、SQL角色、給付或自動Lobby成功；completion／original-client flags仍false。
 
 前輪 `FXGS/BanPlayer.ts`、`CaptureBanPlayerObservation`／四個 `Prepare*`仍是純讀取端；`MakeBanPlayerPacket`仍只產生候選body。**Returned DTO／數字SocketKey／public target-vote fields都不能安裝active vote或授權table執行**。Live command有獨立JS-private issued state與constructor-bound opaque table issuer；它們不是財務／SQL replay權限。
 
@@ -126,3 +126,7 @@ C++是我們的人工reference，不是執行官方EXE／Windows API／原client
 ## 後續：原electorate不變的等待房加入
 
 [WaitingVoteJoin](WaitingVoteJoin.md)已釘完整native AddUser／AddPlayer bodies，普通入房不重設vote／target、也不Defer或補113。Live private registry只更新player refs，新0-vote locals不能對已開始的投票補投；兩local的所有slot／clock／snapshot候選完成才發布，incoming socket亦有table reservation，避免codec中對別房80／81重入。既有ordinary departure／double Init保持原樣；Playing／active-vote106／103仍缺。
+
+## 後續：保留投票的ordinary native106／150／164
+
+[VoteLifecycle](VoteLifecycle.md)已釘完整native request／launch／begin／return bodies：106失敗、116 Loading與150 Running都保留原票及target，164只清target／撤銷private issued state、不重設票。普通native Loading／Running及durable Result的104／105有private launch／bound round proof；trusted/synthetic Playing不取得這個權限。Loading的root／nested removal會先預備survivor150 clocks／resources／body及one-use brand；financial pending／Applying／Returning仍拒絕，103／特殊模式／restart未接。

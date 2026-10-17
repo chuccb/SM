@@ -104,3 +104,5 @@ helper欄位發布之間不呼叫callback。這些 guards 不是任意外部 JS�
 本頁現代preflight／final helper先發布的callback時序差異仍在；clock fault、post121 drift先拒絕，不假rollback。真TCP pending disconnect／BanReflex另已驗證，但double-Init時計使用合法packet flow＋顯式clock provider的lifecycle證據，不冒充原client或真WinMM動態oracle。
 
 [WaitingVoteJoin](WaitingVoteJoin.md)另開放active vote中的普通81／82；加入不重設CBanChief或其任何clock marker，後續自然400ms Update才依當時current count與capacity比較。Incoming與incumbent fence／table join reservation並未授權重入本頁121／移除；後續double Init／outer setter仍由既有private issuance與native-order preflight處理。
+
+後續[VoteLifecycle](VoteLifecycle.md)允許issued vote沿native106／116／150保留，ordinary Playing票控不從本頁waiting eligibility取得權限。Native DoStartGame另有自己的CBanChief.Init sample；若Loading移除先造成150，該sample在所有適用的leaving-chief Init後，再獨立預備／install，不折成同一timestamp。普通164撤銷target／private vote，不重設原票陣列。

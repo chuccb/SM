@@ -12,8 +12,17 @@ export async function read(peer: WireClient, opcode: number) {
 }
 /** Genuine registration/LS/GS80/81. No clock/Running/ready/vote state injection.
  * Peer shares production codec: NOT an official client or binary oracle. */
-export async function networkRoom(counts: readonly number[], password = "") {
-  const app = new CServerApp(TestConfig()),
+export async function networkRoom(
+  counts: readonly number[],
+  password = "",
+  nativeUDPPort?: number,
+) {
+  const config = TestConfig();
+  if (nativeUDPPort !== undefined) {
+    config.FXGS.UDPEnabled = true;
+    config.FXGS.Channels[0]!.Port = nativeUDPPort;
+  }
+  const app = new CServerApp(config),
     all: WireClient[] = [],
     groups: {
       peer: WireClient;

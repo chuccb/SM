@@ -144,3 +144,7 @@ request `209` → response `201` 已使用真正channel handler消費兩個nativ
 可信原生read-side附掛已加入per-player result fingerprint；shared money／house／legacy paid world fingerprint也包含mode＋revision。同值reload、native→legacy→native或consume後裝回相同rows都要求凍結舊pending，不可因JSON相同而換generation繼續。result storage callback返回後再驗fingerprint／occupants，才准進入counter／native stats／stage／163。
 
 若callback在root COMMIT後換generation，receipt與SQL After不假裝回滾，但live After／成功封包不發布；明確recovery尚未完成。不變的原生generation仍可正常lost-ACK／duplicate結算，也不禁止其他玩家的legacy paid CAS。`UserInventoryLifecycle.test.ts`用真106／discovery／109／150及claims驗這些分支；不是native stock persistence或crash重建證據。詳見[UserInventory](UserInventory.md)。
+
+## Ordinary native carried vote
+
+[VoteLifecycle](VoteLifecycle.md)現讓native private vote從waiting／Loading保留到Running與durable Result。Undurable result conflict、Applying／Returning仍在105／membership mutation／clock／SQL之前拒絕；恢復後原receipt／duration不因投票重建。Durable Result的非financial105／ordinary table removal不改commit payload；普通164清target及modern issued state，**不重設票**。Synthetic `BeginResultLifecycle` hook仍不能提供private native launch token，不能因此開native vote或financial replay。

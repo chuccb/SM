@@ -102,3 +102,9 @@ Type99的pending money與house161的pending house均使用同樣的pre-mutation 
 146 case0 paid inventory現共用gameplay freeze：unresolved CAS／lost-ACK時，不允許removal改roster或替terminal／detached user安裝舊庫存；其他peer已closed亦拒絕。即使SQL扣量已durable，仍不猜測159送達或自動退款／重建room。完整來源與storage-before-live差異見[SpecialItemUse](SpecialItemUse.md)。
 
 投票中後加入的新0-vote locals已由[WaitingVoteJoin](WaitingVoteJoin.md)接入private player binding，原ballots／target／chief不變；其普通離房仍在本頁native hook位置重新計票。入房本身不Defer、不做勝敗或金融給付；不能把新roster當成重開electorate。
+
+## Native Loading／Running投票後的survivor150
+
+[VoteLifecycle](VoteLifecycle.md)已開ordinary native phases的104／105與issued departures；Playing來源必須有真正private committed launch／bound round，不靠public bool。Loading預測root及conditional second target後final survivors的peer／ready，預備nativeStart clock→CBanChief.Init clock與150／resource body，再綁內部one-use brand／token／sequence／table-entry socket；vote clears即使令private target先變0，也仍沿該prepared start而不在清ID後重讀clock。
+
+若nested target先離房而令survivors可start，150是在inner tail且先於該投票114；caller已持transition batch不另進互斥wrapper。Update owner限定目前regulating socket，financial pending／undurable result／Applying／Returning仍先拒絕。Durable Result非financial removal不改receipt；164只清target／private issuance，保留票。No195仍是vote ejection分支，原UDP root另有自己的195／pool4，兩者不能混淆。

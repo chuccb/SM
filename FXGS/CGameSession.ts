@@ -1,3 +1,7 @@
+import {
+  PlanNativeVoteTransition,
+  type NativeVoteState,
+} from "./VoteLifecycle.ts";
 import { CBaseSession } from "./CBaseSession.ts";
 import { PlanWaitingVoteJoin } from "./WaitingVoteJoin.ts";
 import {
@@ -304,6 +308,23 @@ export interface GameUpdatePublicationFailures {
   readonly ServerDie: number;
 }
 
+interface PreparedVoteNativeStart {
+  readonly Socket: CClientSocket | undefined;
+  readonly Token: object;
+  readonly StartTick: number;
+  readonly Chief: Readonly<BanChiefState>;
+  readonly Sequence: number;
+  readonly InitialObjects: number;
+  readonly Rebirth: boolean;
+  readonly Packet: CSendPacket;
+}
+interface PreparedVoteLaunch {
+  readonly Code: number;
+  readonly States?: readonly Buffer[];
+  readonly Launch?: GameLaunchPacket;
+  readonly Airplane: CSendPacket | undefined;
+  readonly Tick: number | undefined;
+}
 interface PreparedBanPlayerDeparture {
   readonly Socket: CClientSocket;
   readonly Policy: Readonly<BanPlayerCascadePlan>;
@@ -314,11 +335,13 @@ interface PreparedBanPlayerDeparture {
     Targets: readonly CClientSocket[];
   }[];
   FinalChiefState?: Readonly<BanChiefState>;
+  NativeStart: PreparedVoteNativeStart | undefined;
 }
 interface BanPlayerRemovalEntry {
   readonly Socket: CClientSocket;
   readonly Reset: Readonly<BanChiefState> | undefined;
   readonly Departure: PreparedBanPlayerDeparture | undefined;
+  readonly NativeStart: PreparedVoteNativeStart | undefined;
 }
 /** Audited ordinary native launch/loading/recovery and durable result tail.
  * Normal waiting-chief/Loading/Running/Result Update is scheduled; special
@@ -344,10 +367,12 @@ export class CGameSession extends CListSession {
       }
     | undefined;
   #banPlayerOperation = false;
+  #preparedVoteStarts = new WeakSet<PreparedVoteNativeStart>();
   #expectedBanRemoval:
     | {
         Socket: CClientSocket;
         Reset: Readonly<BanChiefState> | undefined;
+        NativeStart: PreparedVoteNativeStart | undefined;
         Consumed: boolean;
         Active: boolean;
         Guard: () => void;
@@ -671,7 +696,7 @@ export class CGameSession extends CListSession {
       throw new CProtocolError("Deferred start during room update/removal");
     this.WithGameTransition(() => this.TryStartGame());
   }
-  private TryStartGame(): void {
+  private TryStartGame(prepared?: PreparedVoteNativeStart): void {
     if (
       !this.m_bPlaying ||
       this.m_nGameState !== GameStage.Loading ||
@@ -686,7 +711,7 @@ export class CGameSession extends CListSession {
         "CGameSession::DoStartGame",
         "no complete native launch generation attached; no fabricated 150",
       );
-    this.DoStartGame();
+    this.DoStartGame(prepared);
   }
   /** Source's 0041DC31 loading-only timeout block. Returns unique sockets to
    * remove, WITHOUT making up pool-type-4 recovery or scheduling a partial loop.
@@ -889,11 +914,8 @@ export class CGameSession extends CListSession {
         "full launch resources / durable result services absent; no fabricated start success",
       );
     this.RequireOrdinaryResultLifecycle();
-    if (this.m_ulBanTargetSerialNo)
-      throw new CUnsupportedOperation(
-        "launch during vote",
-        "launch with pending waiting vote is not enabled",
-      );
+    this.#AssertOwnedBanPlayerState();
+    if (this.#liveBanPlayer) this.#RequireLiveBanPlayerScope();
     return this.launchServices;
   }
   /** 0041C9C4. Native calls this BEFORE CanStartGame, even on a failed request.
@@ -1015,70 +1037,92 @@ export class CGameSession extends CListSession {
       return;
     }
     this.WithGameTransition(() => {
-      this.RequireLaunchServices();
-      for (const peer of this.GetSockets()) {
-        if (!peer.IsConnected())
-          throw new CProtocolError("Launch participant socket is closed");
-        this.SocketSlots(peer);
-      }
-      const chief = this.m_rgPlayer[this.m_nChiefSlotidx]!;
-      // HasAuthority0041688A really returns0 in this build.
-      this.SelectPlayingMap(chief.GetLevel(), 0, chief.GetAuthencode() === 1);
-      const code = this.CanStartGame(false, this.m_nMapIdxPlaying);
-      if (code) {
-        this.QueuePacketTo(
-          new CSendPacket(
-            ServerResponse.StartGame,
-            undefined,
-            this.text,
-          ).Encode1(code),
-          [socket],
-        );
-        return;
-      }
-      const map = this.maps.GetMapTmpl(this.m_nMapIdxPlaying),
-        states = this.MakeStartColorStates(this.m_nMapIdxPlaying);
-      // Validate stats, resource images and sync wire bounds without replacing
-      // the previous calculator/context. No SQL write happens at launch/start.
-      const preflight = new CDynInfoCalculator(
-        () => this.channelType === ChannelType.Premium,
-      );
-      preflight.Init(this.m_rgPlayer, states);
-      const mission = new MissionInfo();
-      mission.Assign(map.m_aMissionInfo);
-      const count = map.m_nSyncGameObjCount;
-      if (
-        !Number.isInteger(count) ||
-        count < 0 ||
-        count > SyncGameObjectRule.MaximumWireID + 1
-      )
-        throw new CProtocolError(
-          "Invalid initial synchronized-object resource count",
-        );
-      const launch = this.MakeLaunchGameStagePacket(
-        this.m_nMapIdxPlaying,
-        () => this.DrawNativeRandom(),
-        states,
-      );
-      const airplane = this.MakeAirplaneItemProbPacket(this.m_nMapIdxPlaying);
+      const p = this.#liveBanPlayer
+        ? this.#WithVoteLifecyclePreparation(
+            (stable) => this.#PrepareRequestVoteLaunch(stable),
+            true,
+          )
+        : this.#PrepareRequestVoteLaunch(() => {});
       this.QueuePacketTo(
         new CSendPacket(ServerResponse.StartGame, undefined, this.text).Encode1(
-          StartGameResult.Valid,
+          p.Code,
         ),
         [socket],
       );
+      if (p.Code) return;
       for (let slot = 0; slot < SessionLimit.Players; slot++)
         if (
           this.m_rgPlayer[slot] &&
-          !states[slot]!.equals(this.m_rgSlotInfo[slot]!)
+          !p.States![slot]!.equals(this.m_rgSlotInfo[slot]!)
         ) {
-          states[slot]!.copy(this.m_rgSlotInfo[slot]!);
+          p.States![slot]!.copy(this.m_rgSlotInfo[slot]!);
           this.PutPacket(this.MakeSetSlotStatePacket(slot));
         }
-      this.LaunchGameStage(launch, airplane);
-      // DoLaunchGameStageEx0041B1B3 and LaunchGameStageEx004209B9 are both
-      // actual C3 native no-ops for ordinary rooms, not unimplemented work.
+      this.LaunchGameStage(p.Launch!, p.Airplane, p.Tick);
     });
+  }
+  #PrepareRequestVoteLaunch(stable: () => void): PreparedVoteLaunch {
+    this.RequireLaunchServices();
+    stable();
+    for (const peer of this.GetSockets()) {
+      if (!peer.IsConnected())
+        throw new CProtocolError("Launch participant socket is closed");
+      this.SocketSlots(peer);
+    }
+    const chief = this.m_rgPlayer[this.m_nChiefSlotidx]!;
+    this.SelectPlayingMap(chief.GetLevel(), 0, chief.GetAuthencode() === 1);
+    stable();
+    const chosenMap = this.m_nMapIdxPlaying,
+      check = () => {
+        stable();
+        if (this.m_nMapIdxPlaying !== chosenMap)
+          throw new CProtocolError(
+            "Chosen native vote launch map changed during preparation",
+          );
+      };
+    const code = this.CanStartGame(false, this.m_nMapIdxPlaying);
+    check();
+    if (code) return { Code: code, Airplane: undefined, Tick: undefined };
+    const map = this.maps.GetMapTmpl(this.m_nMapIdxPlaying),
+      states = this.MakeStartColorStates(this.m_nMapIdxPlaying),
+      preflight = new CDynInfoCalculator(
+        () => this.channelType === ChannelType.Premium,
+      );
+    preflight.Init(this.m_rgPlayer, states);
+    const mission = new MissionInfo();
+    mission.Assign(map.m_aMissionInfo);
+    const count = map.m_nSyncGameObjCount;
+    if (
+      !Number.isInteger(count) ||
+      count < 0 ||
+      count > SyncGameObjectRule.MaximumWireID + 1
+    )
+      throw new CProtocolError(
+        "Invalid initial synchronized-object resource count",
+      );
+    const launch = this.MakeLaunchGameStagePacket(
+        this.m_nMapIdxPlaying,
+        () => {
+          check();
+          const n = this.DrawNativeRandom();
+          check();
+          return n;
+        },
+        states,
+      ),
+      airplane = this.MakeAirplaneItemProbPacket(this.m_nMapIdxPlaying);
+    check();
+    const tick = this.#liveBanPlayer
+      ? this.#ReadVoteTransitionTime(check)
+      : undefined;
+    check();
+    return {
+      Code: StartGameResult.Valid,
+      States: states,
+      Launch: launch,
+      Airplane: airplane,
+      Tick: tick,
+    };
   }
   /** Full ordinary00420BB3 state tail, using a prevalidated detached packet.
    * Ready/status bits, peer flags/hosts, join times and context state timestamps
@@ -1086,7 +1130,15 @@ export class CGameSession extends CListSession {
   private LaunchGameStage(
     launch: GameLaunchPacket,
     airplane?: CSendPacket,
+    preparedTick?: number,
   ): void {
+    const vote = PlanNativeVoteTransition(
+      {
+        TargetSerialNo: this.m_ulBanTargetSerialNo,
+        Votes: Array.from(this.m_anBanPlayerVote),
+      },
+      "Launch",
+    );
     const map = this.maps.GetMapTmpl(launch.MapIndex);
     this.m_aBomberIdxPlaying.set(launch.BomberIndices);
     this.SendPacket(launch.Packet);
@@ -1106,13 +1158,14 @@ export class CGameSession extends CListSession {
     this.m_dwLastGhostTime = 0;
     this.m_dwGhostStart = map.m_nGhostStart >>> 0;
     this.m_dwGhostFrequency = map.m_nGhostFreq >>> 0;
-    this.m_dwLaunchTime = this.m_gameClock.GetCurrentTime();
+    this.m_dwLaunchTime = preparedTick ?? this.m_gameClock.GetCurrentTime();
     this.m_missionInfo.Assign(map.m_aMissionInfo);
     this.m_dwAirplaneInitialTime = map.m_nAirplaneInitialTime >>> 0;
     this.m_dwAirplaneFrequency = map.m_nAirplaneFrequency >>> 0;
     this.m_adwLapSort.fill(GameLaunchRule.InitialLapWord);
     this.m_adwLapPrefix.fill(0);
     if (airplane) this.SendPacket(airplane);
+    this.#AssertNativeVoteTransition(vote);
   }
   /** 0041BDCF. This path is reachable only after a committed launch and full
    * ready+peer predicate. Result UUID is bound internally, never from a client.
@@ -1142,27 +1195,52 @@ export class CGameSession extends CListSession {
         "Invalid initial synchronized-object resource count",
       );
   }
-  private DoStartGame(): void {
+  private DoStartGame(prepared?: PreparedVoteNativeStart): void {
     this.ValidateNativeStart();
+    const vote = PlanNativeVoteTransition(
+      {
+        TargetSerialNo: this.m_ulBanTargetSerialNo,
+        Votes: Array.from(this.m_anBanPlayerVote),
+      },
+      "Begin",
+    );
+    const p =
+      prepared ??
+      (this.#liveBanPlayer
+        ? this.#WithVoteLifecyclePreparation((stable) =>
+            this.#PrepareVoteNativeStart(stable, undefined),
+          )
+        : undefined);
+    if (
+      p &&
+      (!this.#preparedVoteStarts.has(p) ||
+        p.Token !== this.m_nativeLaunchToken ||
+        p.Sequence !== this.m_dwGameSequence ||
+        (p.Socket &&
+          (this.#tableRemovalStack.at(-1)?.Socket !== p.Socket ||
+            this.#tableRemovalStack.at(-1)?.NativeStart !== p)))
+    )
+      throw new CProtocolError("Expired/unissued prepared native vote start");
+    if (p) this.#preparedVoteStarts.delete(p);
     this.m_syncGameObjMan.Init(this);
     this.m_syncGameObjMan.SetInitialObjNo(
-      this.maps.GetSyncGameObjCount(this.m_nMapIdxPlaying),
+      p?.InitialObjects ?? this.maps.GetSyncGameObjCount(this.m_nMapIdxPlaying),
     );
     this.m_anOpaque11612.fill(GameLaunchRule.InitialOpaqueStartWord);
-    this.m_gameClock.StartGame();
+    if (p) this.m_gameClock.StartGameAt(p.StartTick);
+    else this.m_gameClock.StartGame();
     this.m_dwOpaque12552 = 0;
     this.m_nGameState = GameStage.Running;
-    const packet = new CSendPacket(
-      ServerResponse.BeginGame,
-      undefined,
-      this.text,
-    )
-      .Encode4(this.m_gameClock.GetStartGameTime())
-      .Encode4((this.m_dwGameSequence ^ this.m_dwGameSequenceKey) >>> 0)
-      .Encode4(this.m_dwGhostStart)
-      .Encode4(this.m_dwGhostFrequency);
+    const packet =
+      p?.Packet ??
+      new CSendPacket(ServerResponse.BeginGame, undefined, this.text)
+        .Encode4(this.m_gameClock.GetStartGameTime())
+        .Encode4((this.m_dwGameSequence ^ this.m_dwGameSequenceKey) >>> 0)
+        .Encode4(this.m_dwGhostStart)
+        .Encode4(this.m_dwGhostFrequency);
     this.m_dwGameSequence = (this.m_dwGameSequence + 1) >>> 0;
-    this.m_bRebirthMap = this.maps.IsRebirthMap(this.m_nMapIdxPlaying);
+    this.m_bRebirthMap =
+      p?.Rebirth ?? this.maps.IsRebirthMap(this.m_nMapIdxPlaying);
     this.m_dwGhostStart =
       Math.imul(this.m_dwGhostStart, GameLaunchRule.MillisecondsPerSecond) >>>
       0;
@@ -1173,9 +1251,11 @@ export class CGameSession extends CListSession {
       ) >>> 0;
     for (let slot = 0; slot < SessionLimit.Players; slot++)
       if (!this.m_rgPlayer[slot]) this.m_aUDPHost[slot]!.fill(invalidHost);
-    this.m_banChief.Init();
+    if (p) this.m_banChief.InstallSnapshot(p.Chief);
+    else this.m_banChief.Init();
     this.m_dwLastAirplaneRequestTime = 0;
     this.BindResultRound(false);
+    this.#AssertNativeVoteTransition(vote);
     this.SendPacket(packet);
   }
   /** Read-only availability, never an issuance token. Internal join paths
@@ -1196,7 +1276,7 @@ export class CGameSession extends CListSession {
       throw new CProtocolError("Invalid waiting-vote join issuer");
     this.#AssertOwnedBanPlayerState();
     this.#RequireLiveBanPlayerScope();
-    if (!this.#liveBanPlayer || this.m_resultRound)
+    if (!this.#liveBanPlayer || this.m_bPlaying || this.m_resultRound)
       throw new CProtocolError("Join requires an issued idle waiting vote");
     this.#WithBanPlayerTransition(() => {
       const prepared = this.WithBanPlayerPreparation((capture) => {
@@ -1432,6 +1512,199 @@ export class CGameSession extends CListSession {
       for (const p of packets) this.QueuePacketTo(p.Packet, p.Targets);
     });
   }
+  #VoteLifecycleFingerprint(ignorePlayingMap = false): string {
+    const r = this.m_resultRound;
+    return JSON.stringify([
+      this.WaitingChiefFingerprint(ignorePlayingMap),
+      this.GetGameLaunchState(),
+      Array.from(this.m_aPlayerState),
+      Array.from(this.m_abUDPPeerReceived),
+      Array.from(this.m_adwPlayerJoinTime),
+      this.m_aUDPHost.map((row) => row.map((h) => [h.Address, h.Port])),
+      r
+        ? [
+            r.RoundID,
+            r.StartTick,
+            r.Durable,
+            r.Applying,
+            r.Returning,
+            !!r.Pending,
+            !!r.PendingMoney,
+            !!r.PendingHouse,
+            !!r.PendingSpecial,
+            r.MoneySequence,
+            r.HouseSequence,
+            r.SpecialSequence,
+          ]
+        : null,
+    ]);
+  }
+  #WithVoteLifecyclePreparation<T>(
+    action: (stable: () => void) => T,
+    ignorePlayingMap = false,
+  ): T {
+    return this.WithBanPlayerPreparation((capture) => {
+      const native = this.m_nativeLaunchToken,
+        prepared = this.m_preparedRoundToken,
+        last = this.m_lastStartedRoundToken,
+        round = this.m_resultRound,
+        live = this.#liveBanPlayer,
+        slotBuffers = this.m_rgSlotInfo.slice(),
+        fingerprint = this.#VoteLifecycleFingerprint(ignorePlayingMap);
+      const stable = () => {
+        capture.Stable();
+        this.#AssertOwnedBanPlayerState();
+        this.#RequireLiveBanPlayerScope();
+        if (
+          this.m_nativeLaunchToken !== native ||
+          this.m_preparedRoundToken !== prepared ||
+          this.m_lastStartedRoundToken !== last ||
+          this.m_resultRound !== round ||
+          this.#liveBanPlayer !== live ||
+          this.m_rgSlotInfo.some((b, i) => b !== slotBuffers[i]) ||
+          this.#VoteLifecycleFingerprint(ignorePlayingMap) !== fingerprint
+        )
+          throw new CProtocolError(
+            "Vote lifecycle changed during native transition preparation",
+          );
+      };
+      stable();
+      const result = action(stable);
+      stable();
+      return result;
+    });
+  }
+  #ReadVoteTransitionTime(stable: () => void): number {
+    stable();
+    const tick = this.m_gameClock.GetCurrentTime();
+    stable();
+    if (
+      !Number.isInteger(tick) ||
+      tick < 0 ||
+      tick > IntegerRange.UInt32Maximum
+    )
+      throw new CProtocolError("Invalid native vote transition DWORD clock");
+    return tick;
+  }
+  #ValidateVoteStartSurvivors(excluded: readonly CClientSocket[]): void {
+    this.RequireLaunchServices();
+    if (
+      !this.m_bPlaying ||
+      this.m_nGameState !== GameStage.Loading ||
+      this.m_resultRound ||
+      !this.m_nativeLaunchToken ||
+      this.m_nativeLaunchToken !== this.m_preparedRoundToken ||
+      this.m_preparedRoundToken === this.m_lastStartedRoundToken ||
+      !this.m_aRoundPlayers
+    )
+      throw new CProtocolError(
+        "Vote start lacks complete native loading generation",
+      );
+    for (const peer of this.GetSockets().filter((s) => !excluded.includes(s))) {
+      if (!peer.IsConnected())
+        throw new CProtocolError("Vote start survivor is closed");
+      this.SocketSlots(peer);
+      for (const u of peer.m_aUser)
+        if (
+          u !== this.m_aRoundPlayers[u.m_nSlotIdx] ||
+          this.m_departedRoundUsers.has(u) ||
+          (this.m_rgSlotInfo[u.m_nSlotIdx]![2]! & SlotStateMask.Color) >=
+            SessionLimit.Players
+        )
+          throw new CProtocolError("Vote start survivor changed since launch");
+    }
+  }
+  #PrepareVoteNativeStart(
+    stable: () => void,
+    forSocket: CClientSocket | undefined,
+    time: () => number = () => this.#ReadVoteTransitionTime(stable),
+  ): PreparedVoteNativeStart {
+    const token = this.m_nativeLaunchToken;
+    if (!token || token !== this.m_preparedRoundToken)
+      throw new CProtocolError("Missing private native vote start token");
+    const count = this.maps.GetSyncGameObjCount(this.m_nMapIdxPlaying),
+      rebirth = this.maps.IsRebirthMap(this.m_nMapIdxPlaying);
+    stable();
+    if (
+      !Number.isInteger(count) ||
+      count < 0 ||
+      count > SyncGameObjectRule.MaximumWireID + 1
+    )
+      throw new CProtocolError("Invalid vote start synchronized-object count");
+    const tick = time(),
+      helper = this.m_banChief.Fork(time);
+    helper.Init();
+    if (
+      !Number.isInteger(tick) ||
+      tick < 0 ||
+      tick > IntegerRange.UInt32Maximum
+    )
+      throw new CProtocolError("Invalid native vote start DWORD clock");
+    const packet = new CSendPacket(
+      ServerResponse.BeginGame,
+      undefined,
+      this.text,
+    )
+      .Encode4(tick)
+      .Encode4((this.m_dwGameSequence ^ this.m_dwGameSequenceKey) >>> 0)
+      .Encode4(this.m_dwGhostStart)
+      .Encode4(this.m_dwGhostFrequency);
+    stable();
+    const result: PreparedVoteNativeStart = {
+      Socket: forSocket,
+      Token: token,
+      StartTick: tick,
+      Chief: helper.CaptureSnapshot(),
+      Sequence: this.m_dwGameSequence,
+      InitialObjects: count,
+      Rebirth: rebirth,
+      Packet: packet,
+    };
+    this.#preparedVoteStarts.add(result);
+    return result;
+  }
+  #PrepareVoteDepartureStart(
+    socket: CClientSocket,
+    policy: Readonly<BanPlayerCascadePlan>,
+    sockets: readonly CClientSocket[],
+    time: () => number,
+  ): PreparedVoteNativeStart | undefined {
+    if (!this.m_bPlaying || this.m_nGameState !== GameStage.Loading)
+      return undefined;
+    const eject = policy.Departure.Decision?.Eject,
+      second = eject ? sockets[eject.SocketKey]! : undefined,
+      excluded = second ? [socket, second] : [socket],
+      survivors = this.m_rgPlayer.filter(
+        (u) => u && !excluded.includes(u.m_pClientSocket!),
+      );
+    if (
+      !survivors.length ||
+      survivors.some(
+        (u) =>
+          !this.HasUDPPeerInfo(u!.m_nSlotIdx) ||
+          (this.m_rgSlotInfo[u!.m_nSlotIdx]![0]! & SlotStateMask.Status) !==
+            SlotStateMask.ReadyForStart,
+      )
+    )
+      return undefined;
+    this.#ValidateVoteStartSurvivors(excluded);
+    // The caller already wraps each read with its whole-room/epoch fence.
+    const stable = () => {
+      this.#AssertOwnedBanPlayerState();
+      this.#RequireLiveBanPlayerScope();
+    };
+    return this.#PrepareVoteNativeStart(stable, second ?? socket, time);
+  }
+  #AssertNativeVoteTransition(expected: Readonly<NativeVoteState>): void {
+    if (
+      this.m_ulBanTargetSerialNo !== expected.TargetSerialNo ||
+      this.m_anBanPlayerVote.some((v, i) => v !== expected.Votes[i])
+    )
+      throw new CProtocolError(
+        "Native launch/start unexpectedly rewrote vote state",
+      );
+    this.#AssertOwnedBanPlayerState();
+  }
   #HasConsistentBanPlayerState(): boolean {
     const live = this.#liveBanPlayer;
     return this.m_ulBanTargetSerialNo === 0
@@ -1455,7 +1728,6 @@ export class CGameSession extends CListSession {
   }
   #RequireLiveBanPlayerScope(): void {
     if (
-      this.m_bPlaying ||
       this.m_nGameType !== GameType.Normal ||
       this.channelType === ChannelType.Guild ||
       this.IsBangPok() ||
@@ -1463,9 +1735,28 @@ export class CGameSession extends CListSession {
       this.m_nIdx >= SessionLimit.GameSessions
     )
       throw new CUnsupportedOperation(
-        "Vote-ban outside ordinary waiting room",
-        "playing/special-mode vote cascades remain unavailable",
+        "Vote-ban outside ordinary native room",
+        "special-mode vote cascades remain unavailable",
       );
+    if (this.m_bPlaying) {
+      const token = this.m_nativeLaunchToken,
+        round = this.m_resultRound;
+      if (
+        !token ||
+        token !== this.m_preparedRoundToken ||
+        (this.m_nGameState === GameStage.Loading
+          ? !!round || token === this.m_lastStartedRoundToken
+          : (this.m_nGameState !== GameStage.Running &&
+              this.m_nGameState !== GameStage.Result) ||
+            !round ||
+            this.m_lastStartedRoundToken !== token ||
+            round.StartTick !== this.m_gameClock.GetStartGameTime())
+      )
+        throw new CUnsupportedOperation(
+          "Vote-ban without complete native launch/round",
+          "public Playing/stage/DTO is not native or financial authority",
+        );
+    }
     if (
       this.IsResultCommitPending() ||
       this.IsGameplayCommitPending() ||
@@ -1474,6 +1765,15 @@ export class CGameSession extends CListSession {
     )
       throw new CProtocolError(
         "Vote-ban during frozen financial/result transition",
+      );
+    if (
+      this.m_bPlaying &&
+      this.m_nGameState === GameStage.Result &&
+      !this.m_resultRound?.Durable
+    )
+      throw new CUnsupportedOperation(
+        "Vote-ban without durable native result",
+        "result flags alone do not grant receipt authority",
       );
     if (
       !this.removalServices?.TableAuthority ||
@@ -1485,12 +1785,16 @@ export class CGameSession extends CListSession {
         "no public plan/boolean authorizes removal",
       );
   }
-  #WithBanPlayerTransition<T>(action: () => T): T {
+  #WithBanPlayerTransition<T>(
+    action: () => T,
+    updatingOwner?: CClientSocket,
+  ): T {
     if (
       this.#banPlayerOperation ||
       this.m_bGameTransition ||
       this.m_bRemovingPlayer ||
-      this.m_bUpdating
+      (this.m_bUpdating &&
+        (!updatingOwner || this.m_pRegulatingSocket !== updatingOwner))
     )
       throw new CProtocolError("Reentrant vote-ban transition");
     this.#banPlayerOperation = true;
@@ -1544,6 +1848,12 @@ export class CGameSession extends CListSession {
     const messages = policy.Departure.Decision
       ? this.#PrepareBanPlayerMessages(policy.Departure.Decision, sockets)
       : [];
+    const nativeStart = this.#PrepareVoteDepartureStart(
+      socket,
+      policy,
+      sockets,
+      time,
+    );
     // Clocks and codecs are fallible injected ports. Revalidate the WHOLE ghost
     // image/candidate tuple AFTER them, before the table may clear any IDs.
     this.ValidatePlayerRemoval(socket, { PlanningBatch: true });
@@ -1557,19 +1867,21 @@ export class CGameSession extends CListSession {
       Sockets: [...sockets],
       Players: this.m_rgPlayer.slice(),
       Messages: messages,
+      NativeStart: nativeStart,
     };
   }
   #EjectLiveBanPlayer(
     socket: CClientSocket,
     reset: Readonly<BanChiefState> | undefined,
+    nativeStart?: PreparedVoteNativeStart,
   ): void {
     const capture = this.CaptureBanPlayerPreparation(),
-      fingerprint = this.WaitingChiefFingerprint(),
+      fingerprint = this.#VoteLifecycleFingerprint(),
       guard = () => {
         capture.Stable();
         this.#RequireLiveBanPlayerScope();
         this.#AssertOwnedBanPlayerState();
-        if (this.WaitingChiefFingerprint() !== fingerprint)
+        if (this.#VoteLifecycleFingerprint() !== fingerprint)
           throw new CProtocolError(
             "Vote ejection source changed before consumption",
           );
@@ -1578,6 +1890,7 @@ export class CGameSession extends CListSession {
       entry = {
         Socket: socket,
         Reset: reset,
+        NativeStart: nativeStart,
         Consumed: false,
         Active: true,
         Guard: guard,
@@ -1629,6 +1942,7 @@ export class CGameSession extends CListSession {
         this.#EjectLiveBanPlayer(
           target,
           prepared.Policy.Resets.find((r) => r.SocketKey === key)?.State,
+          prepared.NativeStart,
         );
       }
       for (const m of prepared.Messages)
@@ -1685,6 +1999,7 @@ export class CGameSession extends CListSession {
         entry: BanPlayerRemovalEntry = {
           Socket: socket,
           Departure: departure,
+          NativeStart: expected?.NativeStart ?? departure?.NativeStart,
           Reset:
             expected?.Reset ??
             (key !== undefined
@@ -1712,35 +2027,33 @@ export class CGameSession extends CListSession {
         throw new CProtocolError("Expired waiting vote departure");
       return execute(this.#waitingBanDeparture);
     }
-    return this.#WithBanPlayerTransition(() => {
-      const prepared = this.WithBanPlayerPreparation((capture) => {
-        const fingerprint = this.WaitingChiefFingerprint(),
-          stable = () => {
-            capture.Stable();
-            this.#RequireLiveBanPlayerScope();
-            this.#AssertOwnedBanPlayerState();
-            if (this.WaitingChiefFingerprint() !== fingerprint)
-              throw new CProtocolError(
-                "Vote departure changed during preparation",
-              );
-          };
-        const prepared = this.#PrepareBanPlayerDeparture(
-          socket,
-          capture.Observation,
-          capture.Sockets,
-          this.m_banChief,
-          () => {
-            stable();
-            const value = this.m_gameClock.GetCurrentTime();
-            stable();
-            return value;
-          },
-        );
-        stable();
-        return prepared;
-      });
-      return execute(prepared);
-    });
+    return this.#WithBanPlayerTransition(
+      () => {
+        const prepared = this.WithBanPlayerPreparation((capture) => {
+          const fingerprint = this.#VoteLifecycleFingerprint(),
+            stable = () => {
+              capture.Stable();
+              this.#RequireLiveBanPlayerScope();
+              this.#AssertOwnedBanPlayerState();
+              if (this.#VoteLifecycleFingerprint() !== fingerprint)
+                throw new CProtocolError(
+                  "Vote departure changed during preparation",
+                );
+            };
+          const prepared = this.#PrepareBanPlayerDeparture(
+            socket,
+            capture.Observation,
+            capture.Sockets,
+            this.m_banChief,
+            () => this.#ReadVoteTransitionTime(stable),
+          );
+          stable();
+          return prepared;
+        });
+        return execute(prepared);
+      },
+      this.m_bUpdating ? socket : undefined,
+    );
   }
   ValidateBanPlayerEjection(authority: object, socket: CClientSocket): void {
     const e = this.#expectedBanRemoval;
@@ -1763,12 +2076,12 @@ export class CGameSession extends CListSession {
     this.#AssertOwnedBanPlayerState();
     this.#WithBanPlayerTransition(() => {
       const prepared = this.WithBanPlayerPreparation((capture) => {
-        const fingerprint = this.WaitingChiefFingerprint(),
+        const fingerprint = this.#VoteLifecycleFingerprint(),
           stable = () => {
             capture.Stable();
             this.#RequireLiveBanPlayerScope();
             this.#AssertOwnedBanPlayerState();
-            if (this.WaitingChiefFingerprint() !== fingerprint)
+            if (this.#VoteLifecycleFingerprint() !== fingerprint)
               throw new CProtocolError("Vote room changed during preparation");
           },
           sender = capture.Sockets.indexOf(socket),
@@ -1812,12 +2125,7 @@ export class CGameSession extends CListSession {
             { ...source, ...plan.After },
             capture.Sockets,
             this.m_banChief,
-            () => {
-              stable();
-              const value = this.m_gameClock.GetCurrentTime();
-              stable();
-              return value;
-            },
+            () => this.#ReadVoteTransitionTime(stable),
           );
         }
         stable();
@@ -1831,6 +2139,7 @@ export class CGameSession extends CListSession {
           departure!.Policy.Resets.find(
             (r) => r.SocketKey === plan.Eject!.SocketKey,
           )?.State,
+          departure!.NativeStart,
         );
       for (const m of messages) this.QueuePacketTo(m.Packet, m.Targets);
     });
@@ -1894,7 +2203,7 @@ export class CGameSession extends CListSession {
       user as CUser & { GetConnectionGeneration?: () => object }
     ).GetConnectionGeneration?.();
   }
-  private WaitingChiefFingerprint(): string {
+  private WaitingChiefFingerprint(ignorePlayingMap = false): string {
     return JSON.stringify({
       Index: this.m_nIdx,
       Serial: this.m_ulSerialNo,
@@ -1913,7 +2222,7 @@ export class CGameSession extends CListSession {
         ByPlayer: Array.from(this.m_anSlotGhost),
         ByGhost: Array.from(this.m_anGhostSlot),
       },
-      Maps: [this.m_nMapIdx, this.m_nMapIdxPlaying],
+      Maps: [this.m_nMapIdx, ignorePlayingMap ? null : this.m_nMapIdxPlaying],
       Modified: this.m_nModified,
       Slots: this.m_rgSlotInfo.map((s) => s.toString("hex")),
       Ban: this.m_banChief.CaptureSnapshot(),
@@ -2552,8 +2861,12 @@ export class CGameSession extends CListSession {
       if (removalEntry?.Departure)
         this.#ApplyPreparedBanPlayerDeparture(removalEntry.Departure);
       // 0041BBC4: removing the unready last peer may start ready survivors.
-      if (this.m_bPlaying && this.m_nGameState === GameStage.Loading)
-        this.WithGameTransition(() => this.TryStartGame());
+      if (this.m_bPlaying && this.m_nGameState === GameStage.Loading) {
+        const start = removalEntry?.NativeStart;
+        if (this.#banPlayerOperation && this.m_bGameTransition)
+          this.TryStartGame(start);
+        else this.WithGameTransition(() => this.TryStartGame(start));
+      }
       socket.AddBeforeJoinSession(this.m_nIdx);
       return true;
     } finally {
@@ -3212,8 +3525,16 @@ export class CGameSession extends CListSession {
         this.m_resultPublicationFailures.push("return-packet");
       }
     }
+    const vote = PlanNativeVoteTransition(
+      {
+        TargetSerialNo: this.m_ulBanTargetSerialNo,
+        Votes: Array.from(this.m_anBanPlayerVote),
+      },
+      "ReturnPrepare",
+    );
     this.m_nGameState = GameStage.Loading;
-    this.m_ulBanTargetSerialNo = 0;
+    this.m_ulBanTargetSerialNo = vote.TargetSerialNo;
+    this.#liveBanPlayer = undefined;
     this.m_nMapIdxPlaying = -1;
     this.m_dwStartChatTimeTick = this.m_gameClock.GetCurrentTime();
     this.SetPlaying(false);

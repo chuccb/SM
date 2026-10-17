@@ -315,7 +315,7 @@ test("read-only prepared DTO remains NOT installed or authority; copying its pub
   expect(state(e)).toEqual(copied);
 });
 
-test("existing live pending-vote removal and launch fences remain: observation does NOT authorize a table cascade or bypass unavailable native playing path", () => {
+test("unowned public pending-vote removal and launch fences remain: observation does NOT authorize a table cascade or bypass unavailable native playing path", () => {
   const e = create();
   activeFixture(e, [2, 0, 1, 1, 0, 0, 0, 0]);
   const before = state(e);
@@ -330,7 +330,7 @@ test("existing live pending-vote removal and launch fences remain: observation d
       Received(new CSendPacket(ClientRequest.RequestStartGame)),
       e.clients[0]!,
     ),
-  ).toThrow("launch during vote");
+  ).toThrow("Unowned");
   expect(state(e)).toEqual(before);
 });
 
@@ -595,7 +595,7 @@ test("cold real-app diagnostics explicitly retain unsupported vote scopes and bo
     expect(status.officialClientVerified).toBe(false);
     expect(status.processReady).toBe(false);
     expect(status.unported).toContain(
-      "playing/special-mode vote-ban, pending-vote launch/mode transitions and restart restoration",
+      "special-mode vote-ban, pending-vote Mod transitions and restart restoration",
     );
     expect(
       status.gameUpdate.every(

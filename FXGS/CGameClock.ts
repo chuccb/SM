@@ -36,7 +36,17 @@ export class CGameClock {
     return this.timeGetTime() >>> 0;
   }
   StartGame(): void {
-    const time = this.timeGetTime() >>> 0;
+    this.StartGameAt(this.timeGetTime() >>> 0);
+  }
+  /** Modern preflight install; preserves all four native marker roles without
+   * re-sampling a fallible clock after roster consumption. Not round authority. */
+  StartGameAt(time: number): void {
+    if (
+      !Number.isInteger(time) ||
+      time < 0 ||
+      time > IntegerRange.UInt32Maximum
+    )
+      throw new RangeError("Invalid unsigned start-game tick");
     this.m_dwTimeStopped = 0;
     this.m_dwEndGameTime = 0;
     this.m_dwStartGameTime = time;

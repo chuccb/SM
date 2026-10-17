@@ -25,6 +25,8 @@
 
 新增[投票中等待房加入](docs/WaitingVoteJoin.md)：正式81／既有first-fit82可在issued vote中接納1／2 locals，整批preflight／incoming reservation／每local時計／完整快照後才發布；原生AddUser**不寫票、target或chief**，新空位原票0不補投、不重發113／不Defer。第27份模型28 anchors／1476 cases與plain-scalar完整body，另有later雙local真TCP及password／capacity重試；**Playing／特殊模式與active-vote開局／模式切換仍未開放**。
 
+後續[普通原生投票跨階段](docs/VoteLifecycle.md)已接通issued vote的106／116／150，ordinary native Loading／Running與durable Result可處理104／105；**launch/start保票與target，164只清target**。Loading移除後的survivor150由private brand／native token／sequence預備，避免roster消耗後才讀fallible clock。第28份模型4完整函式images／24 anchors／2048 cases，另真TCP＋UDP與未加速164；**特殊模式／active-vote103／restart與完整原client仍缺**。
+
 ## 安裝與執行
 
 從儲存庫根目錄執行；需要能安裝 npm 套件的 Node/npm，或已安裝的相同版本 Bun：
@@ -114,6 +116,7 @@ HTTP 的 `processReady` 只代表這批已實作的 listener 已啟動，**不�
 - [`docs/WaitingChief.md`](docs/WaitingChief.md)：普通等待房的capacity／Manner、原版zero authority、native SuperChief×3、121與stack-bound整組移除、未加速真TCP及非financial界線。
 - [`docs/BanPlayer.md`](docs/BanPlayer.md)：104／105原生計票、SuperChief／BanReflex、113／114候選與ordinary離房重算的唯讀準備，ordinary等待房live接線／callback私有權限與連鎖離房；Playing與active-vote加入／開局仍缺。
 - [`docs/WaitingVoteJoin.md`](docs/WaitingVoteJoin.md)：issued waiting vote中的81／82、零新票／原target／chief、雙人preflight與private roster adoption、incoming reservation／clock／codecs及真TCP界線。
+- [`docs/VoteLifecycle.md`](docs/VoteLifecycle.md)：ordinary issued vote的106／116／150／164、private native generation／prepared150、Loading cascade／Update owner及financial freeze與未加速真TCP＋UDP證據。
 - [`docs/PlayerRemoval.md`](docs/PlayerRemoval.md)：原版DestroyPlayer分層、ghost／sync／chief、195／pool4、凍結結果與斷線安全界線。
 - [`docs/ResultLifecycle.md`](docs/ResultLifecycle.md)：結算尾段、原版時序與現代 receipt／失敗重試差異；不是完整對局。
 - `Common/OfficialValues.ts`、`Common/Protocol/PacketTypes.ts`：已辨識的協定數值及方向；`Common/RuntimePolicy.ts`：明確區分的現代操作限制。

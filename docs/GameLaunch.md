@@ -113,6 +113,10 @@ key是room初始化時的一次15-bit draw；sequence從room serial起算，每�
 
 146 case0已接真native-generation gate、獨立inventory receipt、Type22 timer與201 snapshot修正，見[SpecialItemUse](SpecialItemUse.md)。106重建statistics／清Shop／Nice但不重載或回補消耗；150給新UUID與ordinal0，下一paid use才ordinal1。真TCP第二局耗盡同一resident SN，SQL刪除而live201保留Amount0，close／reopen無row。庫存在login／transfer前seed並由真正CConnectPool載入，不用手改Running／庫存或時鐘通過整合。native ItemSn／StockSn與日期／catalog mapping仍未還原，不把非空201封包測試當完整shop／client相容性。
 
-## 與ordinary等待房投票的界線
+## 與ordinary native投票銜接
 
-[BanPlayer](BanPlayer.md)已接ordinary等待房104／105及離房同步cascade。**pending vote仍拒絕106**，沒有藉vote DTO取得private launch／financial authority；Playing／特殊模式vote及active-vote mode transitions仍缺；ordinary active-vote加入已另接[WaitingVoteJoin](WaitingVoteJoin.md)。這是明示現代scope差異，不宣稱native launch與vote的全部交互已還原。
+[VoteLifecycle](VoteLifecycle.md)已讓private-issued waiting vote沿106／116進Loading，real109／discovery／150再進Running；native不在這些位置清票／target，普通164才只清target。Synthetic Playing／trusted Begin hook／DTO不授予private native vote authority，GS UDP opt-in／resources／durable wiring門檻仍在。
+
+Loading vote／departure可能先同步踢另一whole group才start survivors，prepared150綁目前native token／sequence／table-entry socket，start-marker與chief Init兩次clock在清ID前先準備。Actual109保留已解析／合法ready bits，start-clock fault不發150／不建UUID，可原deferred path重試；現代callback／preflight時序與原WinMM動態oracle的界線見該頁。
+
+Active-vote ordinary等待房join另見[WaitingVoteJoin](WaitingVoteJoin.md)；Playing join、103／特殊模式及restart仍缺，不能把已接子集當整場可玩／原client相容。

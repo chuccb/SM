@@ -375,7 +375,7 @@ test("LIVE codec fault and native/pre epoch reload during result-body preflight 
   }
 });
 
-test("LIVE public vote fields/DTO cannot manufacture owned state or table authority; direct DeleteAllUser/Mod/start are gated, only issuer-owned waiting join is admitted", () => {
+test("LIVE public vote fields/DTO cannot manufacture owned state or table authority; direct DeleteAllUser/Mod/unowned start are gated, only issuer-owned waiting join is admitted", () => {
   const fake = create(),
     planned = fake.room.PrepareHostAskBanPlayer(fake.clients[0]!, {
       TargetSerialNo: fake.clients[1]!.m_aUser[0]!.GetGlobalSerialNo(),
@@ -396,8 +396,8 @@ test("LIVE public vote fields/DTO cannot manufacture owned state or table author
   );
   expect(() => e.room.SendGameTypeMod()).toThrow("Mod switch during vote");
   expect(() =>
-    e.table.OnPacket(Received(new CSendPacket(106)), e.clients[0]!),
-  ).toThrow("launch during vote");
+    fake.table.OnPacket(Received(new CSendPacket(106)), fake.clients[0]!),
+  ).toThrow("Unowned");
   const outsider = new MemoryClient();
   closes.push(() => outsider.Close());
   const u = new CUser(UserInfo("NewVoter"), 0xfedcba98);
