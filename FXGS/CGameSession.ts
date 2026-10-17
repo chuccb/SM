@@ -1,3 +1,14 @@
+import {
+  PlanHostAskBanPlayer,
+  PlanRespondToBanPlayer,
+  MakeBanPlayerPacket,
+  type BanPlayerObservation,
+  type BanPlayerPlan,
+} from "./BanPlayer.ts";
+import {
+  PlanBanPlayerCascade,
+  type BanPlayerCascadePlan,
+} from "./BanPlayerCascade.ts";
 import { randomInt, randomUUID } from "node:crypto";
 import { CListSession } from "./CListSession.ts";
 import { MissionInfo } from "./MissionInfo.ts";
@@ -176,6 +187,9 @@ export interface GameResultPreview {
 /** Modern injection of the native table-owned removal/195/pool4 boundary.
  * No hook means graph consumption remains unavailable, not an imaginary lobby. */
 export interface GameSessionRemovalServices {
+  /** Opaque constructor-bound table issuer; never returned by plan/inspection. */
+  readonly TableAuthority?: object;
+  readonly EjectBanPlayer?: (room: CGameSession, socket: CClientSocket) => void;
   readonly EjectPlayerForUDP: (
     room: CGameSession,
     socket: CClientSocket,
@@ -287,6 +301,22 @@ export interface GameUpdatePublicationFailures {
   readonly ServerDie: number;
 }
 
+interface PreparedBanPlayerDeparture {
+  readonly Socket: CClientSocket;
+  readonly Policy: Readonly<BanPlayerCascadePlan>;
+  readonly Sockets: readonly CClientSocket[];
+  readonly Players: readonly (CUser | undefined)[];
+  readonly Messages: readonly {
+    Packet: CSendPacket;
+    Targets: readonly CClientSocket[];
+  }[];
+  FinalChiefState?: Readonly<BanChiefState>;
+}
+interface BanPlayerRemovalEntry {
+  readonly Socket: CClientSocket;
+  readonly Reset: Readonly<BanChiefState> | undefined;
+  readonly Departure: PreparedBanPlayerDeparture | undefined;
+}
 /** Audited ordinary native launch/loading/recovery and durable result tail.
  * Normal waiting-chief/Loading/Running/Result Update is scheduled; special
  * modes and remaining events are NOT a complete playable/client-verified game. */
@@ -303,6 +333,26 @@ export class CGameSession extends CListSession {
   );
   m_nGhostCount = 0; // native+936; leaving destruction notably does NOT decrement
   private m_bGameTransition = false;
+  #liveBanPlayer:
+    | {
+        Target: number;
+        Votes: readonly number[];
+        Players: readonly (CUser | undefined)[];
+      }
+    | undefined;
+  #banPlayerOperation = false;
+  #expectedBanRemoval:
+    | {
+        Socket: CClientSocket;
+        Reset: Readonly<BanChiefState> | undefined;
+        Consumed: boolean;
+        Active: boolean;
+        Guard: () => void;
+      }
+    | undefined;
+  #tableRemovalStack: BanPlayerRemovalEntry[] = [];
+  #waitingBanDeparture: PreparedBanPlayerDeparture | undefined;
+
   private m_nativeLaunchToken: object | undefined;
   private m_dwLaunchTime = 0;
   private m_dwGhostStart = 0;
@@ -832,7 +882,7 @@ export class CGameSession extends CListSession {
     if (this.m_ulBanTargetSerialNo)
       throw new CUnsupportedOperation(
         "launch during vote",
-        "pending vote cascade remains unported",
+        "launch with pending waiting vote is not enabled",
       );
     return this.launchServices;
   }
@@ -1118,6 +1168,418 @@ export class CGameSession extends CListSession {
     this.BindResultRound(false);
     this.SendPacket(packet);
   }
+  #HasConsistentBanPlayerState(): boolean {
+    const live = this.#liveBanPlayer;
+    return this.m_ulBanTargetSerialNo === 0
+      ? !live
+      : !!live &&
+          live.Target === this.m_ulBanTargetSerialNo &&
+          this.m_anBanPlayerVote.every((v, i) => v === live.Votes[i]) &&
+          this.m_rgPlayer.every((u, i) => u === live.Players[i]);
+  }
+  HasActiveBanPlayerVote(): boolean {
+    return (
+      this.m_ulBanTargetSerialNo !== 0 && this.#HasConsistentBanPlayerState()
+    );
+  }
+  #AssertOwnedBanPlayerState(): void {
+    if (!this.#HasConsistentBanPlayerState())
+      throw new CUnsupportedOperation(
+        "Unowned or changed vote-ban state",
+        "public fields/read-only DTOs cannot install an active vote",
+      );
+  }
+  #RequireLiveBanPlayerScope(): void {
+    if (
+      this.m_bPlaying ||
+      this.m_nGameType !== GameType.Normal ||
+      this.channelType === ChannelType.Guild ||
+      this.IsBangPok() ||
+      this.m_nIdx < 0 ||
+      this.m_nIdx >= SessionLimit.GameSessions
+    )
+      throw new CUnsupportedOperation(
+        "Vote-ban outside ordinary waiting room",
+        "playing/special-mode vote cascades remain unavailable",
+      );
+    if (
+      this.IsResultCommitPending() ||
+      this.IsGameplayCommitPending() ||
+      this.m_resultRound?.Applying ||
+      this.m_resultRound?.Returning
+    )
+      throw new CProtocolError(
+        "Vote-ban during frozen financial/result transition",
+      );
+    if (
+      !this.removalServices?.TableAuthority ||
+      !this.removalServices.EjectBanPlayer ||
+      !this.removalServices.IsCurrentSession?.(this)
+    )
+      throw new CUnsupportedOperation(
+        "Vote-ban without current table service",
+        "no public plan/boolean authorizes removal",
+      );
+  }
+  #WithBanPlayerTransition<T>(action: () => T): T {
+    if (
+      this.#banPlayerOperation ||
+      this.m_bGameTransition ||
+      this.m_bRemovingPlayer ||
+      this.m_bUpdating
+    )
+      throw new CProtocolError("Reentrant vote-ban transition");
+    this.#banPlayerOperation = true;
+    try {
+      return this.WithGameTransition(action);
+    } finally {
+      this.#banPlayerOperation = false;
+    }
+  }
+  #PrepareBanPlayerMessages(
+    plan: Readonly<BanPlayerPlan>,
+    sockets: readonly CClientSocket[],
+  ) {
+    return plan.Messages.map((m) => ({
+      Packet: MakeBanPlayerPacket(m.Message, this.text),
+      Targets: m.Recipients.map((key) => {
+        const s = sockets[key];
+        if (!s) throw new CProtocolError("Missing captured vote socket");
+        return s;
+      }),
+    }));
+  }
+  #PublishBanPlayerState(plan: Readonly<BanPlayerPlan>): void {
+    this.m_anBanPlayerVote.set(plan.After.Votes);
+    this.m_ulBanTargetSerialNo = plan.After.TargetSerialNo;
+    this.#liveBanPlayer = plan.After.TargetSerialNo
+      ? {
+          Target: plan.After.TargetSerialNo,
+          Votes: Object.freeze([...plan.After.Votes]),
+          Players: Object.freeze(this.m_rgPlayer.slice()),
+        }
+      : undefined;
+  }
+  #PrepareBanPlayerDeparture(
+    socket: CClientSocket,
+    observation: Readonly<BanPlayerObservation>,
+    sockets: readonly CClientSocket[],
+    before: CBanChief,
+    time: () => number,
+  ): PreparedBanPlayerDeparture {
+    const key = sockets.indexOf(socket);
+    if (key < 0)
+      throw new CProtocolError("Vote departure outside captured group");
+    this.ValidatePlayerRemoval(socket, { PlanningBatch: true });
+    const policy = PlanBanPlayerCascade(observation, key, before, time),
+      eject = policy.Departure.Decision?.Eject;
+    if (eject)
+      this.ValidatePlayerRemoval(sockets[eject.SocketKey]!, {
+        PlanningBatch: true,
+      });
+    const messages = policy.Departure.Decision
+      ? this.#PrepareBanPlayerMessages(policy.Departure.Decision, sockets)
+      : [];
+    // Clocks and codecs are fallible injected ports. Revalidate the WHOLE ghost
+    // image/candidate tuple AFTER them, before the table may clear any IDs.
+    this.ValidatePlayerRemoval(socket, { PlanningBatch: true });
+    if (eject)
+      this.ValidatePlayerRemoval(sockets[eject.SocketKey]!, {
+        PlanningBatch: true,
+      });
+    return {
+      Socket: socket,
+      Policy: policy,
+      Sockets: [...sockets],
+      Players: this.m_rgPlayer.slice(),
+      Messages: messages,
+    };
+  }
+  #EjectLiveBanPlayer(
+    socket: CClientSocket,
+    reset: Readonly<BanChiefState> | undefined,
+  ): void {
+    const capture = this.CaptureBanPlayerPreparation(),
+      fingerprint = this.WaitingChiefFingerprint(),
+      guard = () => {
+        capture.Stable();
+        this.#RequireLiveBanPlayerScope();
+        this.#AssertOwnedBanPlayerState();
+        if (this.WaitingChiefFingerprint() !== fingerprint)
+          throw new CProtocolError(
+            "Vote ejection source changed before consumption",
+          );
+      },
+      previous = this.#expectedBanRemoval,
+      entry = {
+        Socket: socket,
+        Reset: reset,
+        Consumed: false,
+        Active: true,
+        Guard: guard,
+      };
+    this.#expectedBanRemoval = entry;
+    try {
+      this.removalServices!.EjectBanPlayer!(this, socket);
+      if (
+        !entry.Consumed ||
+        socket.m_aUser.some(
+          (u) =>
+            u.GetSessionIdx() !== SessionLimit.NoSession ||
+            u.GetSessionSerialNo() !== IntegerRange.UInt32Maximum ||
+            u.m_nSlotIdx !== SessionLimit.NoSlot,
+        ) ||
+        socket.m_nPoolType !== "SessionRemoved" ||
+        this.m_rgPlayer.some((u) => u?.m_pClientSocket === socket)
+      )
+        throw new CProtocolError(
+          "Vote table service did not consume exact removal",
+        );
+    } finally {
+      entry.Active = false;
+      this.#expectedBanRemoval = previous;
+    }
+  }
+  #ApplyPreparedBanPlayerDeparture(prepared: PreparedBanPlayerDeparture): void {
+    const { Remaining, Decision } = prepared.Policy.Departure;
+    if (
+      this.m_nChiefSlotidx !== Remaining.ChiefSlot ||
+      this.m_ulBanTargetSerialNo !== Remaining.TargetSerialNo ||
+      this.m_anBanPlayerVote.some((v, i) => v !== Remaining.Votes[i]) ||
+      this.m_rgPlayer.some(
+        (u, i) =>
+          u !==
+          (prepared.Players[i]?.m_pClientSocket === prepared.Socket
+            ? undefined
+            : prepared.Players[i]),
+      )
+    )
+      throw new CProtocolError(
+        "Vote departure does not match prepared remaining state",
+      );
+    if (Decision) {
+      this.#PublishBanPlayerState(Decision);
+      if (Decision.Eject) {
+        const key = Decision.Eject.SocketKey,
+          target = prepared.Sockets[key]!;
+        this.#EjectLiveBanPlayer(
+          target,
+          prepared.Policy.Resets.find((r) => r.SocketKey === key)?.State,
+        );
+      }
+      for (const m of prepared.Messages)
+        this.QueuePacketTo(m.Packet, m.Targets);
+    }
+    if (prepared.FinalChiefState)
+      this.m_banChief.InstallSnapshot(prepared.FinalChiefState);
+  }
+  /** Called ONLY by the constructor-bound table issuer. A public DTO/target,
+   * reflective modern flags or a retained service callback cannot enter this
+   * scope. Each native ejection entry is consumed once and revoked on return. */
+  IsTableRemovalIssuer(authority: object): boolean {
+    return (
+      !!this.removalServices?.TableAuthority &&
+      authority === this.removalServices.TableAuthority
+    );
+  }
+  ValidateUnboundTableRemoval(): void {
+    if (
+      this.#liveBanPlayer ||
+      this.m_ulBanTargetSerialNo ||
+      this.#banPlayerOperation ||
+      this.#tableRemovalStack.length
+    )
+      throw new CProtocolError(
+        "Vote removal cannot use unbound legacy table adapter",
+      );
+  }
+  WithTablePlayerRemoval(
+    authority: object,
+    socket: CClientSocket,
+    action: () => boolean,
+  ): boolean {
+    if (
+      !this.removalServices?.TableAuthority ||
+      authority !== this.removalServices.TableAuthority ||
+      !this.removalServices.IsCurrentSession?.(this)
+    )
+      throw new CProtocolError("Invalid table removal issuer/generation");
+    const expected = this.#expectedBanRemoval;
+    if (
+      this.#tableRemovalStack.length &&
+      (!expected?.Active || expected.Consumed || expected.Socket !== socket)
+    )
+      throw new CProtocolError("Unissued nested vote removal");
+    const execute = (departure?: PreparedBanPlayerDeparture): boolean => {
+      if (expected) {
+        if (!expected.Active || expected.Consumed || expected.Socket !== socket)
+          throw new CProtocolError("Expired/reused vote removal");
+        expected.Guard();
+        expected.Consumed = true;
+      }
+      const key = departure?.Sockets.indexOf(socket),
+        entry: BanPlayerRemovalEntry = {
+          Socket: socket,
+          Departure: departure,
+          Reset:
+            expected?.Reset ??
+            (key !== undefined
+              ? departure?.Policy.Resets.find((r) => r.SocketKey === key)?.State
+              : undefined),
+        };
+      this.#tableRemovalStack.push(entry);
+      try {
+        return action();
+      } finally {
+        if (this.#tableRemovalStack.pop() !== entry)
+          throw new CProtocolError("Corrupt table removal stack");
+      }
+    };
+    if (expected) return execute();
+    this.#AssertOwnedBanPlayerState();
+    if (!this.m_ulBanTargetSerialNo) return execute();
+    this.#RequireLiveBanPlayerScope();
+    if (this.#waitingBanDeparture) {
+      if (
+        this.#waitingBanDeparture.Socket !== socket ||
+        !this.m_bUpdating ||
+        this.m_pRegulatingSocket !== socket
+      )
+        throw new CProtocolError("Expired waiting vote departure");
+      return execute(this.#waitingBanDeparture);
+    }
+    return this.#WithBanPlayerTransition(() => {
+      const prepared = this.WithBanPlayerPreparation((capture) => {
+        const fingerprint = this.WaitingChiefFingerprint(),
+          stable = () => {
+            capture.Stable();
+            this.#RequireLiveBanPlayerScope();
+            this.#AssertOwnedBanPlayerState();
+            if (this.WaitingChiefFingerprint() !== fingerprint)
+              throw new CProtocolError(
+                "Vote departure changed during preparation",
+              );
+          };
+        const prepared = this.#PrepareBanPlayerDeparture(
+          socket,
+          capture.Observation,
+          capture.Sockets,
+          this.m_banChief,
+          () => {
+            stable();
+            const value = this.m_gameClock.GetCurrentTime();
+            stable();
+            return value;
+          },
+        );
+        stable();
+        return prepared;
+      });
+      return execute(prepared);
+    });
+  }
+  ValidateBanPlayerEjection(authority: object, socket: CClientSocket): void {
+    const e = this.#expectedBanRemoval;
+    if (
+      !this.removalServices?.TableAuthority ||
+      authority !== this.removalServices.TableAuthority ||
+      !e?.Active ||
+      e.Consumed ||
+      e.Socket !== socket
+    )
+      throw new CProtocolError("Expired/unissued vote ejection");
+    e.Guard();
+  }
+  #OnBanPlayerPacket(
+    packet: CReceivedPacketBase,
+    socket: CClientSocket,
+    host: boolean,
+  ): void {
+    this.#RequireLiveBanPlayerScope();
+    this.#AssertOwnedBanPlayerState();
+    this.#WithBanPlayerTransition(() => {
+      const prepared = this.WithBanPlayerPreparation((capture) => {
+        const fingerprint = this.WaitingChiefFingerprint(),
+          stable = () => {
+            capture.Stable();
+            this.#RequireLiveBanPlayerScope();
+            this.#AssertOwnedBanPlayerState();
+            if (this.WaitingChiefFingerprint() !== fingerprint)
+              throw new CProtocolError("Vote room changed during preparation");
+          },
+          sender = capture.Sockets.indexOf(socket),
+          source = capture.Observation;
+        const plan = host
+          ? PlanHostAskBanPlayer(
+              source,
+              sender,
+              {
+                get TargetSerialNo() {
+                  return packet.Decode4();
+                },
+                get Immediate() {
+                  const n = packet.Decode1();
+                  packet.AssertEnd();
+                  return n;
+                },
+              },
+              (slot, attribute) => {
+                stable();
+                const found = capture.Query(slot, attribute);
+                stable();
+                return found;
+              },
+            )
+          : PlanRespondToBanPlayer(source, sender, {
+              get TargetSerialNo() {
+                return packet.Decode4();
+              },
+              get Answer() {
+                const n = packet.Decode1();
+                packet.AssertEnd();
+                return n;
+              },
+            });
+        const messages = this.#PrepareBanPlayerMessages(plan, capture.Sockets);
+        let departure: PreparedBanPlayerDeparture | undefined;
+        if (plan.Eject) {
+          departure = this.#PrepareBanPlayerDeparture(
+            capture.Sockets[plan.Eject.SocketKey]!,
+            { ...source, ...plan.After },
+            capture.Sockets,
+            this.m_banChief,
+            () => {
+              stable();
+              const value = this.m_gameClock.GetCurrentTime();
+              stable();
+              return value;
+            },
+          );
+        }
+        stable();
+        return { plan, messages, departure };
+      });
+      const { plan, messages, departure } = prepared;
+      this.#PublishBanPlayerState(plan);
+      if (plan.Eject)
+        this.#EjectLiveBanPlayer(
+          departure!.Socket,
+          departure!.Policy.Resets.find(
+            (r) => r.SocketKey === plan.Eject!.SocketKey,
+          )?.State,
+        );
+      for (const m of messages) this.QueuePacketTo(m.Packet, m.Targets);
+    });
+  }
+  OnHostAskBanPlayer(packet: CReceivedPacketBase, socket: CClientSocket): void {
+    this.#OnBanPlayerPacket(packet, socket, true);
+  }
+  OnRespondToBanPlayer(
+    packet: CReceivedPacketBase,
+    socket: CClientSocket,
+  ): void {
+    this.#OnBanPlayerPacket(packet, socket, false);
+  }
   protected override GetBanPlayerObservationContext(): string {
     return JSON.stringify([
       super.GetBanPlayerObservationContext(),
@@ -1141,14 +1603,14 @@ export class CGameSession extends CListSession {
     return super.PrepareBanPlayerAfterDeparture(socket);
   }
   /** Ordinary nonplaying rooms, independent of UDP launch opt-in. Special
-   * strategies / vote cascades stay explicitly unsupported, not silently run. */
+   * strategies and unowned/changed vote fields stay unsupported, not silently run. */
   IsWaitingChiefScheduled(): boolean {
     return (
       !this.m_bPlaying &&
       this.m_nGameType === GameType.Normal &&
       this.channelType !== ChannelType.Guild &&
       !this.IsBangPok() &&
-      !this.m_ulBanTargetSerialNo &&
+      this.#HasConsistentBanPlayerState() &&
       !this.IsResultCommitPending() &&
       !this.IsGameplayCommitPending() &&
       Number.isInteger(this.m_nChiefSlotidx) &&
@@ -1181,6 +1643,12 @@ export class CGameSession extends CListSession {
       Manner: this.m_nManner,
       BangPok: this.m_bBangPok,
       BanTarget: this.m_ulBanTargetSerialNo,
+      BanVotes: Array.from(this.m_anBanPlayerVote),
+      Ghosts: {
+        Count: this.m_nGhostCount,
+        ByPlayer: Array.from(this.m_anSlotGhost),
+        ByGhost: Array.from(this.m_anGhostSlot),
+      },
       Maps: [this.m_nMapIdx, this.m_nMapIdxPlaying],
       Modified: this.m_nModified,
       Slots: this.m_rgSlotInfo.map((s) => s.toString("hex")),
@@ -1229,12 +1697,13 @@ export class CGameSession extends CListSession {
       this.m_nGameType !== GameType.Normal ||
       this.channelType === ChannelType.Guild ||
       this.IsBangPok() ||
-      this.m_ulBanTargetSerialNo
+      (this.m_ulBanTargetSerialNo !== 0 && !this.#HasConsistentBanPlayerState())
     )
       throw new CUnsupportedOperation(
         "DeferBanChief special/vote recovery",
         "only ordinary normal waiting rooms are enabled",
       );
+    this.#AssertOwnedBanPlayerState();
     const slot = this.m_nChiefSlotidx,
       chief =
         Number.isInteger(slot) && slot >= 0 && slot < SessionLimit.Players
@@ -1320,6 +1789,7 @@ export class CGameSession extends CListSession {
         !this.m_bPlaying &&
         chief!.HasFunctionalItem(BanChiefRule.SuperChiefAttribute);
       assertStable(); // also catches same-value native/pre reinstall inside codec
+      let voteDeparture: PreparedBanPlayerDeparture | undefined;
       const plan = PlanDeferBanChief(
         this.m_banChief,
         {
@@ -1337,7 +1807,24 @@ export class CGameSession extends CListSession {
           assertStable();
           return result;
         },
+        this.m_ulBanTargetSerialNo
+          ? (next) => {
+              this.#RequireLiveBanPlayerScope();
+              this.#AssertOwnedBanPlayerState();
+              assertStable();
+              voteDeparture = this.#PrepareBanPlayerDeparture(
+                chiefSocket!,
+                this.CaptureBanPlayerObservation(),
+                targets,
+                next,
+                readTime,
+              );
+              next.InstallSnapshot(voteDeparture.Policy.After);
+              assertStable();
+            }
+          : undefined,
       );
+      if (voteDeparture) voteDeparture.FinalChiefState = plan.After;
       const packets = plan.Notices.map((n) => ({
         ChiefOnly: n.ChiefOnly,
         Packet: MakeBanChiefPacket(n, this.text),
@@ -1371,11 +1858,13 @@ export class CGameSession extends CListSession {
                 consumed = true;
                 this.m_pRegulatingSocket = chiefSocket;
                 this.m_plannedChiefReset = plan.After;
+                this.#waitingBanDeparture = voteDeparture;
                 try {
                   return destroy();
                 } finally {
                   this.m_pRegulatingSocket = undefined;
                   this.m_plannedChiefReset = undefined;
+                  this.#waitingBanDeparture = undefined;
                 }
               },
             );
@@ -1532,7 +2021,12 @@ export class CGameSession extends CListSession {
       (this.m_bRemovingPlayer && !this.m_bDeletingPlayerRecords) ||
       this.m_bPublishingUpdate ||
       (this.m_bUpdating && !this.m_bDeletingPlayerRecords) ||
-      this.m_bGameTransition ||
+      (this.m_bGameTransition && !this.m_bDeletingPlayerRecords) ||
+      ((this.m_ulBanTargetSerialNo !== 0 || !!this.#liveBanPlayer) &&
+        !(
+          this.m_bDeletingPlayerRecords &&
+          this.#tableRemovalStack.at(-1)?.Socket === socket
+        )) ||
       this.m_resultRound?.Applying ||
       this.m_resultRound?.Returning ||
       this.IsResultCommitPending() ||
@@ -1560,26 +2054,41 @@ export class CGameSession extends CListSession {
     else super.SendPacket(packet, except);
   }
   IsRemovingPlayer(): boolean {
-    return this.m_bRemovingPlayer;
+    return (
+      this.m_bRemovingPlayer ||
+      this.#banPlayerOperation ||
+      this.#tableRemovalStack.length !== 0
+    );
   }
   /** Modern PRE-MUTATION structural/scope validation for table batches. Closed
    * sockets / marked-free users can leave; they must not receive195 afterward.
-   * Uncommitted loading / vote / BangPok / guild remain fail-closed.
+   * Uncommitted loading / unowned vote / BangPok / guild remain fail-closed.
    * PlanningBatch ignores only update ownership while doing NO mutation;
    * SessionIdsCleared validates the native table's already-detached ID tuple. */
   ValidatePlayerRemoval(
     socket: CClientSocket,
     options: { PlanningBatch?: boolean; SessionIdsCleared?: boolean } = {},
   ): void {
+    const entry = this.#tableRemovalStack.at(-1),
+      expected = this.#expectedBanRemoval,
+      issued =
+        entry?.Socket === socket ||
+        !!(
+          expected?.Active &&
+          !expected.Consumed &&
+          expected.Socket === socket
+        );
     if (
       this.m_bUpdating &&
+      !issued &&
       this.m_pRegulatingSocket !== socket &&
       !options.PlanningBatch
     )
       throw new CProtocolError("Player removal during a round update");
     if (
-      this.m_bRemovingPlayer ||
-      this.m_bGameTransition ||
+      ((this.m_bRemovingPlayer || this.m_bGameTransition) &&
+        !issued &&
+        !options.PlanningBatch) ||
       this.m_bPublishingUpdate ||
       this.m_resultRound?.Applying ||
       this.m_resultRound?.Returning ||
@@ -1592,11 +2101,11 @@ export class CGameSession extends CListSession {
     if (
       this.channelType === ChannelType.Guild ||
       this.IsBangPok() ||
-      this.m_ulBanTargetSerialNo
+      (this.m_ulBanTargetSerialNo !== 0 && !this.#HasConsistentBanPlayerState())
     )
       throw new CUnsupportedOperation(
         "DestroyPlayer special/vote recovery",
-        "guild, BangPok and pending vote cascades are not enabled",
+        "guild, BangPok and unowned pending vote cascades are not enabled",
       );
     if (
       this.m_bPlaying &&
@@ -1738,7 +2247,13 @@ export class CGameSession extends CListSession {
       SessionIdsCleared: sessionIdsCleared,
     });
     const primarySlot = socket.m_aUser[0]!.m_nSlotIdx,
-      chiefLeft = this.IsChief(socket);
+      chiefLeft = this.IsChief(socket),
+      removingBefore = this.m_bRemovingPlayer,
+      removalEntry = this.#tableRemovalStack.at(-1);
+    if (this.m_ulBanTargetSerialNo && removalEntry?.Socket !== socket)
+      throw new CProtocolError(
+        "Active vote departure requires issued table scope",
+      );
     this.m_bRemovingPlayer = true;
     this.BeginPacketBatch();
     try {
@@ -1747,18 +2262,21 @@ export class CGameSession extends CListSession {
         this.m_aUDPHost[user.m_nSlotIdx]!.fill(invalidHost);
       }
       this.DoDealWithGhostOfLeavingPlayer(socket);
+      const deletingBefore = this.m_bDeletingPlayerRecords;
       this.m_bDeletingPlayerRecords = true;
       try {
         super.DestroyPlayer(socket, includeSelf);
       } finally {
-        this.m_bDeletingPlayerRecords = false;
+        this.m_bDeletingPlayerRecords = deletingBefore;
       }
       this.m_pStrategy.DestroyPlayer(socket); // ordinary ret4
       this.m_syncGameObjMan.OnPlayerLeave(primarySlot); // ONLY first local player
       if (chiefLeft) {
         // Waiting-chief ejection preflights BOTH native clock resets before
         // sending121. Do not sample a fallible clock after roster consumption.
-        if (this.m_plannedChiefReset)
+        if (removalEntry?.Reset)
+          this.m_banChief.InstallSnapshot(removalEntry.Reset);
+        else if (this.m_plannedChiefReset)
           this.m_banChief.InstallSnapshot(this.m_plannedChiefReset);
         else this.m_banChief.Init();
         this.SetNewChief();
@@ -1767,6 +2285,8 @@ export class CGameSession extends CListSession {
       this.FlushPacket(); // deferred until final state under the modern batch
       this.DeleteAllSlotidx(socket);
       this.m_pStrategy.SendSessionInfo(); // ordinary ret4
+      if (removalEntry?.Departure)
+        this.#ApplyPreparedBanPlayerDeparture(removalEntry.Departure);
       // 0041BBC4: removing the unready last peer may start ready survivors.
       if (this.m_bPlaying && this.m_nGameState === GameStage.Loading)
         this.WithGameTransition(() => this.TryStartGame());
@@ -1776,7 +2296,7 @@ export class CGameSession extends CListSession {
       try {
         this.EndPacketBatch();
       } finally {
-        this.m_bRemovingPlayer = false;
+        this.m_bRemovingPlayer = removingBefore;
       }
     }
   }
@@ -4268,6 +4788,7 @@ export class CGameSession extends CListSession {
     if (
       this.m_bPlaying ||
       this.m_resultRound ||
+      this.m_ulBanTargetSerialNo ||
       this.m_bRemovingPlayer ||
       this.m_bGameTransition ||
       this.m_bUpdating
@@ -4337,6 +4858,11 @@ export class CGameSession extends CListSession {
     else this.SendPacket(p);
   }
   SendGameTypeMod(socket?: CClientSocket): void {
+    if (this.m_ulBanTargetSerialNo)
+      throw new CUnsupportedOperation(
+        "Mod switch during vote",
+        "waiting vote cannot enter unsupported playing/strategy scope",
+      );
     if (
       this.m_bGameTransition ||
       this.m_bUpdating ||
@@ -4476,6 +5002,12 @@ export class CGameSession extends CListSession {
         "Room is frozen pending durable gameplay commit",
       );
     switch (packet.Decode1()) {
+      case ClientRequest.HostAskBanPlayer:
+        this.OnHostAskBanPlayer(packet, socket);
+        return;
+      case ClientRequest.RespondToBanPlayer:
+        this.OnRespondToBanPlayer(packet, socket);
+        return;
       case ClientRequest.SetPlayerReady: {
         const ready = packet.Decode1();
         packet.AssertEnd();

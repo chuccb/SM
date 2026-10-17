@@ -38,7 +38,7 @@ export class CListSession extends CBaseSession {
   m_nMaxPlayer: number = SessionLimit.Players;
   m_nModified = 0;
   // Native +828 is the vote-ban TARGET GLOBAL SERIAL (OnRespondToBanPlayer),
-  // not a ready-count or generic dirty flag. Vote-ban dispatch remains unported.
+  // not a ready-count or generic dirty flag. CGameSession owns waiting vote dispatch.
   m_ulBanTargetSerialNo = 0;
   private m_bPreparingBanPlayer = false;
   m_bBangPok = false;
@@ -56,8 +56,8 @@ export class CListSession extends CBaseSession {
     text.AssertSize(m_strPassword, SessionLimit.PasswordBytes, "room password");
   }
   /** Detached modern observations, NOT permission to install a vote or execute
-   * numeric SocketKey intents later.104/105 network dispatch stays disabled
-   * until ordinary departure/deferred nested cascades are integrated. */
+   * numeric SocketKey intents later. Ordinary waiting104/105 dispatch uses
+   * separate private issuance/table scopes, NEVER these returned DTOs. */
   CaptureBanPlayerObservation(): Readonly<BanPlayerObservation> {
     const sockets = this.GetSockets();
     for (const socket of sockets) {
@@ -114,7 +114,7 @@ export class CListSession extends CBaseSession {
       this.m_bBangPok,
     ]);
   }
-  private CaptureBanPlayerPreparation() {
+  protected CaptureBanPlayerPreparation() {
     const context = this.GetBanPlayerObservationContext(),
       users = this.m_rgPlayer.slice(),
       players = this.m_rgPlayer,
@@ -191,7 +191,7 @@ export class CListSession extends CBaseSession {
       },
     };
   }
-  private WithBanPlayerPreparation<T>(
+  protected WithBanPlayerPreparation<T>(
     action: (
       capture: ReturnType<CListSession["CaptureBanPlayerPreparation"]>,
     ) => T,

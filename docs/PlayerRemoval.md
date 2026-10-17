@@ -6,7 +6,7 @@
 
 - 已還原 ordinary `CBaseSession → CListSession → CGameSession → CGameSessionTable` 的 `DestroyPlayer` 分層。`DeleteAllUser` 回到低階 pointer／slot flag 移除，不再混入整條離房流程。Session IDX／serial由table在呼叫game前清除；直接game-layer呼叫不是完整table departure API，不代替此步驟。
 - 已接通可信 ordinary **Running** Update 的到期 UDP loss：不消耗 graph 的選人／整批 preflight → table-owned 移除 → primary safe-object／TCP 檢查 → 空 **195** → native pool4 → 最後消耗 graph，再跑本次 bomb／death timers。
-- 有效的等待房間與 Result 也能使用普通離房鏈；ordinary Mod 的這條移除本身沒有 mode-specific hook，因此不額外偽造 Mod 死亡／結算。**Mod Update／判勝仍不支援。** Guild strategy、RoomTicket／Supreme 建房路徑、BangPok、pending ban vote cascades 仍未開放。
+- 有效的等待房間與 Result 也能使用普通離房鏈；ordinary Mod 的這條移除本身沒有 mode-specific hook，因此不額外偽造 Mod 死亡／結算。**Mod Update／判勝仍不支援。** Guild strategy、RoomTicket／Supreme 建房路徑、BangPok、Playing／special-mode vote cascades及unowned public target狀態仍未開放。
 - **已commit的ordinary native Loading**支援完整移除／survivors `DeferStartGame`／真正150；只有手改playing flags、缺少token／statistics／services的Loading仍先拒絕。候選與可能start的survivors在任何批次移除之前preflight，不先踢一半再跳過開局。見[GameLaunch](GameLaunch.md)。
 - `CTimerThreadNormal`排程private native Loading及native／可信ordinary Running／Result，另排普通waiting-chief，不排practice／特殊流程。network request106／deferred150須ordinary scope、UDP opt-in及durable wiring；仍不能推論整場可玩或特殊模式已接通。
 
@@ -48,7 +48,7 @@ table 先把整組 users 的 session IDX／serial設 sentinel，game 再清 peer
 
 新 chief 的其他 local slots 先排107，再舊 chief slot（即使已空），最後新 chief slot；不是重發所有人的107。遊戲中交接不清 ready bits；等待房交接才清新 chief 的整個 local group。
 
-`CBanChief` 已有真正 state object、Init、warning／odd flags與timestamps，不是 reset placeholder。`IsBanChief(full, manner, multiplier)` 在所附 build **沒有使用 manner argument**；full 使用10000×multiplier，其他20000×multiplier，strict unsigned `>`；warning10000、odd-slot5000，以 DWORD 乘法 overflow。constructor 以外的 native `Init` 是 `SetOddSlot(false) → SetCanStart(false)`。後續[WaitingChief](WaitingChief.md)已接通ordinary DeferBanChief／121／整組自動移除。native HasAuthority0041688A任何參數均回傳0，**不將SQLite Authority22解釋成權限**；capacity+833的Manner parity／非Manner<=1與current+832的full比較分開。native SuperChief採當下chief local的Category2／exact bytes，延長三種期限至3倍，不消耗庫存或grant。特殊模式／vote recovery仍缺。
+`CBanChief` 已有真正 state object、Init、warning／odd flags與timestamps，不是 reset placeholder。`IsBanChief(full, manner, multiplier)` 在所附 build **沒有使用 manner argument**；full 使用10000×multiplier，其他20000×multiplier，strict unsigned `>`；warning10000、odd-slot5000，以 DWORD 乘法 overflow。constructor 以外的 native `Init` 是 `SetOddSlot(false) → SetCanStart(false)`。後續[WaitingChief](WaitingChief.md)已接通ordinary DeferBanChief／121／整組自動移除。native HasAuthority0041688A任何參數均回傳0，**不將SQLite Authority22解釋成權限**；capacity+833的Manner parity／非Manner<=1與current+832的full比較分開。native SuperChief採當下chief local的Category2／exact bytes，延長三種期限至3倍，不消耗庫存或grant。特殊模式vote recovery仍缺；ordinary waiting vote cascade另已接通。
 
 ## pool4 不是 Lobby 或新網路 pool
 
@@ -80,11 +80,13 @@ TCP真正斷線則不能為了房間拒絕而漏掉其他清理：`CFxServerApp`
 
 Type99的pending money與house161的pending house均使用同樣的pre-mutation departure／DeleteAllUser guard；即使receipt已提交但SQL ACK遺失，尚未確認並安裝live wallet／claim前也不改roster。money／house driver會在clock／result／UDP前重試；terminal detach／其他peer斷線會停在state-changed，不把錢安裝至新user、不重付。SQLite已提交wallet不因斷線回滾，但這不是room restart／orphan recovery。HTTP另有`pendingMoneyPickups`／`pendingHouseClaims`；house board／allocator＋wallet協調見[HouseClaim](HouseClaim.md)；細節與可能因pending protocol guard斷線的可用性界線見[MoneyPickup](MoneyPickup.md)。
 
-## 投票離房重算：目前只有唯讀預測
+## 普通等待房投票離房重算：已接通nested table scope
 
 來源`0041BBB2..BE`在ordinary group deletion／chief reset-succession／pool1／flush／清slotidx與strategy update後，active target再同步呼叫vtable+144的`DeferBanPlayer00424F78`。分母縮小可踢出另一整組、甚至剛繼任的chief，產生兩次不同的Init；不能簡單略過，也不能開新vote卻讓物理disconnect永遠卡在現有pending-vote拒絕。
 
-[BanPlayer](BanPlayer.md)新增immutable `PlanBanPlayerAfterDeparture`與真正room `Prepare*`，只觀測remaining roster／votes、deferred decision與可歸因Init次數。**不呼叫table、ghost／sync／strategy、clock、pool／ID setter或financial API**；移除intent及其假設成功後的recipients不是callback權限或最終roster。TS nested packet-depth不等於removal boolean／table generation／one-shot ownership已支援nested cascade，故live104／105、pending-vote removal／waiting／launch fences皆保留。
+[BanPlayer](BanPlayer.md)在既有immutable policy之上已接ordinary等待房live104／105與synchronous departure cascade。清任何ID前，root／conditional second target皆preflight ghost、113114碼頁／body及獨立chief Init clocks；private table issuer／一用entry綁exact socket／generation，nested restore外層removing bool與batch depth，沒有中間86或195／自動15。Waiting-chief的ready最終SetCanStart sample必須在double Init之後，odd最終SetOdd不讀clock；fault皆在121／roster mutation之前。
+
+合法live vote由私有state綁target／exact votes／actual player refs；public target-vote fields／prepared DTO不能建立它。Unowned／changed state、financial freeze、Playing／special-mode及active-vote join／launch／Mod transitions仍拒絕；unbound trusted kernel table adapter僅維持原nonvote用途。原snapshot／同codec peers不是original-client或durable offline settlement證據。
 
 ## 驗證與重建
 

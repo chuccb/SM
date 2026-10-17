@@ -16,7 +16,7 @@ import { RuntimePolicy } from "./Common/RuntimePolicy.ts";
 
 export const UnportedFeatures = [
   "Center TCP registration/negotiation",
-  "live vote-ban104/105 and synchronous departure cascades (read-side policy/113/114 preparation only)",
+  "playing/special-mode vote-ban, pending-vote joins/launch/mode transitions and restart restoration",
   "special-mode waiting-chief recovery/remaining battle events/special-mode launch/result restart recovery",
   "full GS MTUDP host/queue/clock synchronization",
   "practice/ladder/mission/guild",
@@ -106,6 +106,8 @@ export class CServerApp {
         launchEnabled: this.config.FXGS.UDPEnabled,
         loadingRooms: game.m_gameSessionTable.GetLoadingSessionCount(),
         scheduledRounds: game.m_gameSessionTable.GetScheduledRoundCount(),
+        voteBanScope: "ordinary-waiting" as const,
+        pendingVoteRooms: game.m_gameSessionTable.GetPendingBanPlayerCount(),
         waitingChiefRooms:
           game.m_gameSessionTable.GetWaitingChiefSessionCount(),
         waitingChiefWarningFailures:

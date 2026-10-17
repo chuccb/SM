@@ -127,3 +127,7 @@ money144與house161的耐久協調是**明示現代前置屏障**，不是native
 ## Special-item frozen time／inventory重試
 
 146 case0正quantity共用pre-clock freeze：SQL／ACK失敗時inventory／Shop／Nice／Type22 state-time全留Before；只重試原plan／ordinal／time／159，不再讀clock。成功也不在同tick前進frame。全部live install先於detached159，sender整個TCP排除。Type22只是延後state3 expiry起點，不是復活；qty0只在必要時一次ElapsedTime，不產生inventory receipt。HTTP新增`pendingSpecialItemUses`。來源與201／native映射限制見[SpecialItemUse](SpecialItemUse.md)。
+
+## Active waiting vote
+
+合法private-issued ordinary waiting vote現仍列入400ms／8-stripe waiting-chief排程；[BanPlayer](BanPlayer.md)記錄121→root離房→deferred target整組移除／double Init→outer final setter。Public target-votes drift不被當作合法vote或新增財務權限；status另有`voteBanScope=ordinary-waiting`／`pendingVoteRooms`，completion／client flags仍false。Playing／特殊模式vote與active-vote join／launch／mode transitions仍拒絕，native其餘Update分支未因此完成。

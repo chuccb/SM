@@ -291,24 +291,28 @@ test("prepared busy response never reads request getters; rejected current/nonch
   expect(state(e)).toEqual(before);
 });
 
-test("104/105 NETWORK DISPATCH STILL FAIL-CLOSED: prepared DTO is NOT installed,endpoint activation,authority token or delayed live ejection", () => {
+test("read-only prepared DTO remains NOT installed or authority; copying its public fields cannot issue a live105/departure", () => {
   const e = create(),
     before = state(e),
     p = e.room.PrepareHostAskBanPlayer(e.clients[0]!, request(e));
-  for (const [opcode, socket] of [
-    [ClientRequest.HostAskBanPlayer, e.clients[0]!],
-    [ClientRequest.RespondToBanPlayer, e.clients[2]!],
-  ] as const) {
-    expect(() =>
-      e.room.OnPacket(
-        Received(new CSendPacket(opcode).Encode4(target(e)).Encode1(1)),
-        socket,
-      ),
-    ).toThrow("Room request");
-  }
   expect(p.After.TargetSerialNo).toBe(target(e));
   expect(e.room.m_ulBanTargetSerialNo).toBe(0);
   expect(state(e)).toEqual(before);
+  e.room.m_anBanPlayerVote.set(p.After.Votes);
+  e.room.m_ulBanTargetSerialNo = p.After.TargetSerialNo;
+  const copied = state(e);
+  expect(() =>
+    e.room.OnPacket(
+      Received(
+        new CSendPacket(ClientRequest.RespondToBanPlayer)
+          .Encode4(target(e))
+          .Encode1(1),
+      ),
+      e.clients[2]!,
+    ),
+  ).toThrow("Unowned");
+  expect(() => e.table.DestroyPlayer(e.clients[2]!)).toThrow();
+  expect(state(e)).toEqual(copied);
 });
 
 test("existing live pending-vote removal and launch fences remain: observation does NOT authorize a table cascade or bypass unavailable native playing path", () => {
@@ -581,7 +585,7 @@ test("phase/BangPok/strategy-context drift rejects observational preparation wit
   }
 });
 
-test("cold real-app diagnostics explicitly retain live vote-ban/cascade unported and both completion/client flagsfalse; read-side preparation adds NO activation flag", async () => {
+test("cold real-app diagnostics explicitly retain unsupported vote scopes and both completion/client flagsfalse; ordinary waiting-only integration adds NO completion flag", async () => {
   const { CServerApp } = await import("../CServerApp.ts"),
     { TestConfig } = await import("./helpers/Accounts.ts"),
     app = new CServerApp(TestConfig());
@@ -591,7 +595,7 @@ test("cold real-app diagnostics explicitly retain live vote-ban/cascade unported
     expect(status.officialClientVerified).toBe(false);
     expect(status.processReady).toBe(false);
     expect(status.unported).toContain(
-      "live vote-ban104/105 and synchronous departure cascades (read-side policy/113/114 preparation only)",
+      "playing/special-mode vote-ban, pending-vote joins/launch/mode transitions and restart restoration",
     );
     expect(
       status.gameUpdate.every(

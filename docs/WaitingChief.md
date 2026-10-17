@@ -2,9 +2,9 @@
 
 ## 已接通的範圍
 
-`CGameSession.DeferBanChief` 已接入 **ordinary Normal、非 Guild／BangPok／pending vote** 的等待房，由正式 `CGameSessionTable.UpdateGameSessions`／`CTimerThreadNormal` 的 400ms／8-stripe 排程驅動。沒有 native launch token／round UUID 也可處理等待房；**不需要啟用 GS UDP discovery**。戰鬥仍須自己的 private native launch／bound round 門檻，不能由等待房資格取得。
+`CGameSession.DeferBanChief` 已接入 **ordinary Normal、非 Guild／BangPok（含合法issued pending vote）** 的等待房，由正式 `CGameSessionTable.UpdateGameSessions`／`CTimerThreadNormal` 的 400ms／8-stripe 排程驅動。沒有 native launch token／round UUID 也可處理等待房；**不需要啟用 GS UDP discovery**。戰鬥仍須自己的 private native launch／bound round 門檻，不能由等待房資格取得。
 
-已接上既有 `CBanChief`、可信 native resident 的 `Item/SuperChief` 查詢、原生 response **121**、整組普通 table departure／房主交接及 pool4。沒有新增 SQL、receipt、購買、給付、權限角色或自動 lobby 成功。practice／Mod／Guild／BangPok／vote cascades、native flush／collector／restart 與原 client 整場驗證仍未完成；completion／client flags 保持 false。
+已接上既有 `CBanChief`、可信 native resident 的 `Item/SuperChief` 查詢、原生 response **121**、整組普通 table departure／房主交接及 pool4。沒有新增 SQL、receipt、購買、給付、權限角色或自動 lobby 成功。practice／Mod／Guild／BangPok／Playing vote cascades、native flush／collector／restart 與原 client 整場驗證仍未完成；completion／client flags 保持 false。
 
 ## 來源與欄位：不能把 capacity 當 player count
 
@@ -97,6 +97,8 @@ helper欄位發布之間不呼叫callback。這些 guards 不是任意外部 JS�
 
 完整suite與重複／乾淨樹檢查見 [Coverage](Coverage.md)。人工C++、共用codec測試peer、未加速時間驗證都**不是執行原EXE／Windows WinMM、原client相容／完整可玩對局／長時間壓測或native SQL給付證明**。沒有執行供給EXE／DAT／carved SQL，不改host clock，不連舊官方／billing端點。
 
-## 與未開放的vote cascade銜接
+## 與ordinary等待房live vote cascade銜接
 
-[BanPlayer](BanPlayer.md)已完成104／105的唯讀decision／113114 body與ordinary離房重算觀測，**沒有移除本頁pending-vote eligibility guard**。native普通chief離房後可重算並踢掉繼任chief，第二次Init仍在outer `DeferBanChief`最後setter之前。下一階段須維持這些獨立clock讀取、nested removal／batch ownership與one-shot callback退役，不能以read-only plan直接授權table mutation。新observer另外fingerprint整份votes；本頁原waiting fingerprint仍不能當vote執行fence。
+[BanPlayer](BanPlayer.md)已將104／105的既有policy接入ordinary等待房；合法issued vote不再停止本頁scheduler。Native普通chief離房後可重算並踢掉繼任chief，second Init仍在outer最後setter之前：新detached removal hook在該位置preflight整條cascade，ready保留ENTRY／IsBan／兩Init／final SetCanStart五次分開samples，odd只ENTRY／兩Init。整份votes現加入waiting fingerprint，並有private vote-state／table issuer、one-use／return revoke及nested bool／batch ownership；public fields／plan不能授權。
+
+本頁現代preflight／final helper先發布的callback時序差異仍在；clock fault、post121 drift先拒絕，不假rollback。真TCP pending disconnect／BanReflex另已驗證，但double-Init時計使用合法packet flow＋顯式clock provider的lifecycle證據，不冒充原client或真WinMM動態oracle。

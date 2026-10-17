@@ -112,3 +112,7 @@ key是room初始化時的一次15-bit draw；sequence從room serial起算，每�
 ## 下一輪不回補paid inventory
 
 146 case0已接真native-generation gate、獨立inventory receipt、Type22 timer與201 snapshot修正，見[SpecialItemUse](SpecialItemUse.md)。106重建statistics／清Shop／Nice但不重載或回補消耗；150給新UUID與ordinal0，下一paid use才ordinal1。真TCP第二局耗盡同一resident SN，SQL刪除而live201保留Amount0，close／reopen無row。庫存在login／transfer前seed並由真正CConnectPool載入，不用手改Running／庫存或時鐘通過整合。native ItemSn／StockSn與日期／catalog mapping仍未還原，不把非空201封包測試當完整shop／client相容性。
+
+## 與ordinary等待房投票的界線
+
+[BanPlayer](BanPlayer.md)已接ordinary等待房104／105及離房同步cascade。**pending vote仍拒絕106**，沒有藉vote DTO取得private launch／financial authority；Playing／特殊模式vote及active-vote join／mode transitions仍缺。這是明示現代scope差異，不宣稱native launch與vote的全部交互已還原。

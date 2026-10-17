@@ -45,6 +45,8 @@ export function PlanDeferBanChief(
   observation: Readonly<WaitingChiefObservation>,
   timeGetTime: () => number,
   canStartGame: () => number,
+  /** Detached removal preparation at the native Init position. No live effects. */
+  prepareRemoval?: (next: CBanChief) => void,
 ): Readonly<WaitingChiefPlan> {
   const next = before.Fork(timeGetTime),
     notices: Readonly<BanChiefNotice>[] = [];
@@ -80,7 +82,8 @@ export function PlanDeferBanChief(
   const remove = (Reason: 2 | 3) => {
     notice(Reason, true);
     eject = true;
-    next.Init(); // ordinary CGameSession::DestroyPlayer, chiefLeft branch
+    if (prepareRemoval) prepareRemoval(next);
+    else next.Init(); // ordinary CGameSession::DestroyPlayer, chiefLeft branch
     if (Reason === BanChiefRule.OddSlotEjection) next.SetOddSlot(false);
     else next.SetCanStart(false); // native tail AFTER table removal / pool4
     return finish();

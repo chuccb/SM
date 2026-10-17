@@ -42,6 +42,7 @@ export interface GameSessionUpdateFailure {
 export class CGameSessionTable {
   readonly m_rgGameSession = new Map<number, CGameSession>();
   private m_ulSerialNo = 0;
+  #removalAuthority: object = Object.freeze({});
   private readonly m_setDestroyingPlayer = new Set<CClientSocket>();
   private readonly m_setRecoveringPlayer = new Set<CClientSocket>();
   private readonly m_setRecoveryRemovalAllowed = new Set<CClientSocket>();
@@ -177,6 +178,11 @@ export class CGameSessionTable {
       room.GetResultRoundID(),
     ).length;
   }
+  GetPendingBanPlayerCount(): number {
+    return [...this.m_rgGameSession.values()].filter((r) =>
+      r.HasActiveBanPlayerVote(),
+    ).length;
+  }
   GetWaitingChiefSessionCount(): number {
     return [...this.m_rgGameSession.values()].filter((r) =>
       r.IsWaitingChiefScheduled(),
@@ -264,6 +270,9 @@ export class CGameSessionTable {
       this.launchResources?.CreateClock?.(),
       this.resultServices,
       {
+        TableAuthority: this.#removalAuthority,
+        EjectBanPlayer: (session, target) =>
+          this.EjectBanPlayer(session, target),
         EjectPlayerForUDP: (session, target, noticeUser) =>
           this.EjectPlayerForUDP(session, target, noticeUser),
         IsCurrentSession: (session) =>
@@ -306,6 +315,7 @@ export class CGameSessionTable {
     if (
       !room ||
       room.m_bPlaying ||
+      room.m_ulBanTargetSerialNo !== 0 ||
       socket.m_aUser.some((u) => u.m_nSessionIdx !== SessionLimit.NoSession) ||
       room.GetEmptySlotCount() < socket.GetUserCount()
     )
@@ -422,13 +432,33 @@ export class CGameSessionTable {
     room.ValidatePlayerRemoval(socket);
     this.m_setDestroyingPlayer.add(socket);
     try {
-      // 00421C32 clears these BEFORE the game virtual call; Native socket-shared
-      // fields are replicated on this deployment's CUsers. Slotidx stays live.
-      for (const user of socket.m_aUser) {
-        user.m_nSessionIdx = SessionLimit.NoSession;
-        user.m_nSessionSerialNo = IntegerRange.UInt32Maximum;
-      }
-      if (!room.DestroyPlayer(socket, includeSelf)) return false;
+      const remove = () => {
+        // Recheck after every fallible room/clock/codec preflight, before IDs.
+        if (
+          this.GetBaseSession(room.m_nIdx, room.m_ulSerialNo) !== room ||
+          this.GetSession(socket) !== room
+        )
+          throw new CProtocolError(
+            "Table room changed during removal preparation",
+          );
+        for (const user of socket.m_aUser) {
+          user.m_nSessionIdx = SessionLimit.NoSession;
+          user.m_nSessionSerialNo = IntegerRange.UInt32Maximum;
+        }
+        return room.DestroyPlayer(socket, includeSelf);
+      };
+      let removed: boolean;
+      if (room.IsTableRemovalIssuer(this.#removalAuthority))
+        removed = room.WithTablePlayerRemoval(
+          this.#removalAuthority,
+          socket,
+          remove,
+        );
+      else {
+        room.ValidateUnboundTableRemoval();
+        removed = remove();
+      } // existing trusted kernel fixtures, never a live vote
+      if (!removed) return false;
       if (
         !room.GetCurPlayer() &&
         this.GetBaseSession(room.m_nIdx, room.m_ulSerialNo) === room
@@ -487,12 +517,35 @@ export class CGameSessionTable {
       this.m_setRecoveringPlayer.delete(socket);
     }
   }
-  private DestroyRecoveringPlayer(socket: CClientSocket): boolean {
+  private DestroyRecoveringPlayer(
+    socket: CClientSocket,
+    includeSelf = false,
+  ): boolean {
     this.m_setRecoveryRemovalAllowed.add(socket);
     try {
-      return this.DestroyPlayer(socket);
+      return this.DestroyPlayer(socket, includeSelf);
     } finally {
       this.m_setRecoveryRemovalAllowed.delete(socket);
+    }
+  }
+  /**104/105 and deferred00424F78: native TRUE reset-to-last-local then pool4.
+   * Unlike UDP: no195/IsSetFree condition. Entry must be currently issued by
+   * the room; retaining this service cannot authorize a future ejection. */
+  private EjectBanPlayer(room: CGameSession, socket: CClientSocket): void {
+    room.ValidateBanPlayerEjection(this.#removalAuthority, socket);
+    if (
+      this.m_setRecoveringPlayer.has(socket) ||
+      this.GetBaseSession(room.m_nIdx, room.m_ulSerialNo) !== room ||
+      this.GetSession(socket) !== room
+    )
+      throw new CProtocolError("Vote ejection generation/reentry mismatch");
+    this.m_setRecoveringPlayer.add(socket);
+    try {
+      if (!this.DestroyRecoveringPlayer(socket, true))
+        throw new CProtocolError("Vote ejection did not remove exact group");
+      socket.m_nPoolType = "SessionRemoved";
+    } finally {
+      this.m_setRecoveringPlayer.delete(socket);
     }
   }
   /**0041C294 /0041C43D: chief TCP121 -> DestroyPlayer(group,false) -> pool4.
@@ -539,7 +592,7 @@ export class CGameSessionTable {
     } // committed departure is not replayed
   }
   private FlushModifiedInfo(room: CGameSession): void {
-    if (room.IsGameplayCommitPending()) return; // preserve frozen native dirty/state snapshot
+    if (room.IsGameplayCommitPending() || room.IsRemovingPlayer()) return; // preserve frozen native dirty/state snapshot
     // A due UDP batch can close the last-peer room INSIDE Update. Map presence
     // is native IsValid: never emit a stale86 after that generation's87, or
     // flush a replaced generation merely because its Update stack is unwinding.

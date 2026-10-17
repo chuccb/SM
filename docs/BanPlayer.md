@@ -1,12 +1,14 @@
-# 投票踢人104／105：唯讀規則與113／114封包準備
+# 投票踢人104／105：普通等待房接線與連鎖離房
 
 ## 現在可用的範圍
 
-**目前未放行104／105網路入口，也未接通live vote／departure cascade。** `CGameSession.OnPacket`仍fail-closed；準備出的DTO沒有Apply／Commit／Retry執行API、socket pointer、callback、lease或financial權限。`CServerApp.unported`明列此限制，completion／original-client flags仍false。
+**普通 Normal、非 Guild／Mod／BangPok／practice 的等待房已接通104／105。** 不需要GS UDP／private launch token。真正room／table使用前輪已驗證的native policy，發113／114、執行TRUE whole-socket removal／pool4，普通離房及真TCP disconnect會在native位置重新計票，也能同步踢出另一整組。waiting-chief仍排程active vote，不會靠停止timer避開連鎖問題。
 
-已新增 `FXGS/BanPlayer.ts` 的immutable純規則，以及真正 `CListSession` 的 `CaptureBanPlayerObservation`／四個 `Prepare*`讀取端。可準備host、respond、deferred tally與ordinary整組離房後的重新計票；`MakeBanPlayerPacket`只建立113／114 scalar body，不傳送。**不把準備成功當作native vote已安裝、已移除玩家或client已收到回覆。**
+Playing／特殊模式仍拒絕；目前**投票中不接受加入、106開局或103轉Mod**。Native沒有同樣的統一限制，這是明確的現代availability／移植scope差異，不宣稱已完成所有native transitions。沒有新增vote TTL、每socket weighting、SQL角色、給付或自動Lobby成功；completion／original-client flags仍false。
 
-沒有改SQLite schema6、四種v1 receipts、export v2、legacy owned-pre schema、GS conditional207／201、現有waiting-chief／removal／financial guards或任何給付。沒有新增道具、SQL角色、期限／timeout、財務重放或自動Lobby成功。
+前輪 `FXGS/BanPlayer.ts`、`CaptureBanPlayerObservation`／四個 `Prepare*`仍是純讀取端；`MakeBanPlayerPacket`仍只產生候選body。**Returned DTO／數字SocketKey／public target-vote fields都不能安裝active vote或授權table執行**。Live command有獨立JS-private issued state與constructor-bound opaque table issuer；它們不是財務／SQL replay權限。
+
+SQLite schema6、四種v1 receipts、export v2、legacy owned-pre schema、GS conditional207／201與既有financial freeze維持不變。
 
 ## 來源與欄位
 
@@ -62,13 +64,32 @@ Defer只計occupied且vote非0的locals；2是Yes、3是No，1及其他未知非
 
 body沿原scalar encoding與str byte長度，預設CRC8 degree；不是完整TCP framing／stream／CRC的另一個oracle。Big5中文及plain／scalar已逐case比較，UTF8只作明示選項。body／碼頁／長度錯誤在候選內拒絕，不向live socket發半包。
 
-## 為何還不能放行live104／105
+## 普通等待房的同步cascade與native時計
 
-ordinary離房不只刪除自己的票。native刪除整個socket、交接chief／reset helper之後，再重新計票；分母縮小可能**同步移除另一整組socket**。若新chief恰在該組，會在outer `DeferBanChief`最後setter之前出現**兩次不同的CBanChief.Init**。不能只預備一次reset、提前sample最終clock，或保留現有pending-vote removal拒絕卻開啟新vote——否則真斷線會留下無法清理的房間。
+ordinary離房不只刪自己的票。Native刪除整個socket、交接chief／reset helper之後，再重新計票；分母縮小可能**同步移除另一整組socket**。若該target恰為新chief，會在outer `DeferBanChief`最後setter之前再有一次 **CBanChief.Init**。
 
-`PlanBanPlayerAfterDeparture`只做ordinary first-occupied chief預測、移除observed actors／votes後的計票及可歸因的Init**次數觀測**，不執行clock／ghost／sync／strategy／pool／ID／table mutation。Guild／Mod／BangPok／practice succession不由此宣稱完成。現有live removal、launch與waiting eligibility對pending vote的拒絕保留。
+新增 `PlanBanPlayerCascade`只在detached helper上組合native departure／tally及零／一／兩次Init，保留原capture的socket labels。Live table在清ID前，先完成所有policy、result名字／碼頁、ghost validation與distinct時計preflight：
 
-現有TS packet batching雖有nested depth，removal boolean／table generation／group ownership與one-shot callback仍須真正支援nested cascade。`After`特指**policy在table destruction前**的票／target，不是移除後roster；Eject是資料intent、其後收件者是**假設整組成功移除**的候選，不代表table一定成功或fault可rollback。數字SocketKey只在本次capture內標示identity，**不得在未來房間重新解析成移除權限**。
+- 普通chief departure：Init的`SetOdd(false)`不讀clock，`SetCanStart(false)`讀一次。
+- 若deferred ejection再移除繼任chief，再獨立Init一次。
+- waiting ready121／2：ENTRY → IsBanChief自己的sample → first Init → conditional second Init → **最終SetCanStart(false)**自己的sample。
+- waiting odd121／3：ENTRY → first Init → conditional second Init；最後`SetOdd(false)`**不再讀clock**。
+
+所有fallible clocks／name codecs在首個roster consumption或121之前完成；clock錯誤不半清ID、不中途安裝helper或發121。這保留native的sample**順序與角色**，但現代預備把讀取提前，仍不是native callback timing／Windows API oracle。
+
+Root與nested removal各有private table scope，nested退出恢復**原先的removing bool**與batch ownership。Root106／sync／107 → deferred nested106／sync／107 →114的per-recipient順序保留，body和收件者在enqueue時detach；被後續踢出的target仍可能先收到outer departure的106，自己的雙local reset則只收到**最後一個106**。這不是保證收到、client ACK或exactly-once TCP。
+
+現代publication在整條狀態完成後才flush，callbacks看final state；121仍先送給舊chief，post121 whole-owner fence通過才允許消耗。完整final helper在121前先發布、移除中按已預備Init snapshots安裝，並在root flush前恢復final setter state。Transport錯誤只計數／不重播，不假裝外部drift或已完成移除能rollback。Nested table不提早清modified flags或發中途86；root再發當前86／87。
+
+`After`仍特指policy在table destruction前的票／target，不是最終roster。Pure Eject是資料intent、其recipients是假設成功移除的候選；只有Live dispatcher與目前table issuer的stack-bound entry能實際執行。
+
+## Issuance／不開放的範圍
+
+JS-private live state綁target、exact votes與actual player refs；讀取端DTO複製到public fields、同值field drift或reflecting modern flags都不會產生issued state。Critical publish／eject methods也是JS-private。Table issuer identity不從封包／plan回傳；沒有service／room generation不開104／105。每次ejection一用即消耗、返回即退役，retained callback不能在日後踢另一人。Actual native owned-pre refs／epochs與Center opaque generation亦在最後table service前再驗，晚期drift不回覆假成功。
+
+Opaque issuer是現代行程內的constructor-bound信任邊界，不是對任意惡意in-process JavaScript的sandbox。既有unbound trusted kernel fixtures只在**沒有active／issued vote**時沿原table adapter，不因此得到vote權限。
+
+Private active vote的ordinary departure已開通，包括closed socket在Center／rank／global detach前的清理；undurable result／money／house／paid freeze仍先拒絕membership mutation。**沒有新增offline financial settlement／restart repair或provider freshness**。Active waiting vote無法合法進入Playing／financial round；相關freeze測試明示scope fixture，不冒充實際financial-pending TCP。
 
 ## 現代觀測防護與驗證界線
 
@@ -83,6 +104,21 @@ ordinary離房不只刪除自己的票。native刪除整個socket、交接chief�
 ./node_modules/.bin/bun test tests/BanPlayer.test.ts tests/BanPlayerPreparation.test.ts
 ```
 
-新增**41 tests／32,405 assertions**：18個pure／packet／PE units與23個真正room read-side／fence／status案例。80／81／96由既有正式handlers建立；active vote狀態在少數觀測案例是**顯式可信fixture**，不是網路vote已接通。native item rows亦是可信讀取端fixture，不是SQL初始化。新案例沒有增加TCP投票成功證據；既有真TCP／UDP與未加速waiting timer另由全套回歸保留，不借用為live vote證明。
+新增**41 tests／32,405 assertions**：18個pure／packet／PE units與23個真正room read-side／fence／status案例。80／81／96由既有正式handlers建立；active vote狀態在少數觀測案例是**顯式可信fixture**，不是網路vote已接通。native item rows亦是可信讀取端fixture，不是SQL初始化。這是前輪讀取端的驗證範圍；後續新增的live／TCP證據見下一節。
 
-C++是我們的人工reference，不是執行官方EXE／Windows API／原client oracle；測試peer共用codec，也不是相容性證明。完整驗證／controls／fresh-export結果見[Coverage](Coverage.md)。後續仍須完成nested removal、distinct clock timing、callback revocation、financial pending／disconnect／ownership fences、真104／105 TCP cascade，以及完整server其餘缺口。
+C++是我們的人工reference，不是執行官方EXE／Windows API／原client oracle；測試peer共用codec，也不是相容性證明。完整驗證／controls／fresh-export結果見[Coverage](Coverage.md)。後續仍須完成Playing／特殊模式、active-vote join／launch／mode transitions、durable restoration與完整server其餘缺口。
+
+## Live／cascade新增驗證
+
+第**26份**人工C++ composition model：**25固定PE anchors／1792 cases／1397971-byte fixture**，比對remaining roster／votes／chief、missing／pass／fail／pending、原socket labels、reset對象與分開時計／unsigned rollover、helper所有DWORD角色。Observed states含network不一定可達的ballot組合，不把模型當網路可達性或原EXE證明；原25份fixtures不改。
+
+```sh
+./node_modules/.bin/bun run vectors:ban-player-cascade
+./node_modules/.bin/bun test tests/BanPlayerCascade.test.ts tests/BanPlayerLifecycle.test.ts tests/BanPlayerIntegration.test.ts
+```
+
+新增**35 tests**：5 pure composition／clock、28 live lifecycle／ownership與fault、2真正LS→GS TCP。合法104／105／ordinary table departure建立two-stage succession，**沒有直接注入active votes／Running／ready bits**，驗證new chief再被踢及native121兩分支的double Init／final setter。另驗codec／last-clock fault、private issuance、服務retention／重用、late epoch／Center ABA、coherent ghost-image drift、raw outer bool、publication重入／transport失敗與no financial mutation。
+
+真TCP第一例由105的同socket209作順序barrier，不以sleep猜測；pending vote中真正關閉另一條TCP，驗證同步踢target雙local、outer106先於target-own last106／survivor114／2，closed peer確實釋放Center／rank／global，而target保留TCP／pool4、209且沒有195／15、SQL changes或四類receipt。第二例target secondary帶**顯式可信native BanReflex row**，真正104使chief雙local離房、107交接／114／5、pool4與209不變；該row不是native SQL／client grant。
+
+測試peer仍共用codec；沒有原client、原binary oracle、完整可玩整場或金融restart證據。最新full／controls／fresh proof見[Coverage](Coverage.md)。
