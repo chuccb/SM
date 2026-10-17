@@ -6,9 +6,9 @@ import type { CGameSessionTable } from "./CGameSessionTable.ts";
  * Sleep BEFORE each traversal and schedule the next sleep AFTER synchronous
  * work, as native does; do not invent a 60Hz physics clock or catch-up frames.
  *
- * ONLY the table's explicitly bound ordinary Running/Result rounds are driven.
- * The native pool/room-cache/user/guild flush/logging jobs and waiting/loading/
- * practice Update paths remain unported. This timer cannot make a room playable.
+ * Drives the table's ordinary waiting-chief / native Loading / explicitly bound
+ * Running/Result paths. Native pool/room-cache/user/guild flush/logging jobs,
+ * practice/special modes remain unported. This cannot make a room playable.
  */
 export class CTimerThreadNormal {
   private m_timer: ReturnType<typeof setTimeout> | undefined;

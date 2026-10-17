@@ -481,6 +481,11 @@ export class CUser extends CSafeObject {
   GetExp(): number {
     return this.m_userInfo.Exp;
   }
+  /**0041688A is xor eax,eax; ret4 in THIS build. Do not reinterpret the
+   * SQLite Authority value as recovered permission bits/role exemptions. */
+  HasAuthority(_authority: number): number {
+    return 0;
+  }
   GetFakeLevel(): number {
     return this.m_nFakeLevel;
   }

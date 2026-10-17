@@ -145,6 +145,16 @@ export const BanChiefTiming = {
   WarningMilliseconds: 10_000,
   OddSlotMilliseconds: 5_000,
   SuperChiefMultiplier: 3,
+  MillisecondsPerSecond: 1000,
+} as const;
+/** DeferBanChief0041C15B:121 reason BYTE and exact functional-item bytes.
+ * Authority22 is NOT an exemption in this build: HasAuthority0041688A is0. */
+export const BanChiefRule = {
+  SuperChiefAttribute: "Item/SuperChief",
+  CanStartWarning: 0,
+  OddSlotWarning: 1,
+  CanStartEjection: 2,
+  OddSlotEjection: 3,
 } as const;
 // COSmartStream::CompressBuffernCalcCRC @ LS 0042B860; payload and length are LE.
 export const SmartStreamFormat = {

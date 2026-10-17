@@ -16,7 +16,7 @@ import { RuntimePolicy } from "./Common/RuntimePolicy.ts";
 
 export const UnportedFeatures = [
   "Center TCP registration/negotiation",
-  "waiting-chief recovery/remaining battle events/special-mode launch/result restart recovery",
+  "special-mode waiting-chief recovery/remaining battle events/special-mode launch/result restart recovery",
   "full GS MTUDP host/queue/clock synchronization",
   "practice/ladder/mission/guild",
   "native pre-inventory durable effects/billing; SQL-backed pre/owned initialization",
@@ -101,10 +101,14 @@ export class CServerApp {
       gameUpdate: this.m_gameServers.map((game) => ({
         channel: game.channel.Index,
         running: game.m_timerThreadNormal.IsRunning(),
-        scope: "ordinary-loading-running-result",
+        scope: "ordinary-waiting-chief-loading-running-result",
         launchEnabled: this.config.FXGS.UDPEnabled,
         loadingRooms: game.m_gameSessionTable.GetLoadingSessionCount(),
         scheduledRounds: game.m_gameSessionTable.GetScheduledRoundCount(),
+        waitingChiefRooms:
+          game.m_gameSessionTable.GetWaitingChiefSessionCount(),
+        waitingChiefWarningFailures:
+          game.m_gameSessionTable.GetWaitingChiefPublicationFailures(),
         pendingResults: game.m_gameSessionTable.GetPendingResultCount(),
         pendingHouseClaims: game.m_gameSessionTable.GetPendingHouseClaimCount(),
         pendingSpecialItemUses:

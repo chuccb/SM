@@ -105,6 +105,6 @@ receipt能耐久保存已提交的plan／wallet，但沒有完整round journal�
 ./node_modules/.bin/bun run verify
 ```
 
-實測全套、反覆測試、16份reference hash與98份原始供給檔完整性以[Coverage](Coverage.md)為準。人工模型和共用codec的測試client都不是官方dynamic oracle／原client相容／完整可玩整場的證據。其餘特殊道具／events、waiting-chief／practice／Mod等模式、shop／Util／interservice、flush／collector與conflict／restart恢復仍未完成。
+實測全套、反覆測試、16份reference hash與98份原始供給檔完整性以[Coverage](Coverage.md)為準。人工模型和共用codec的測試client都不是官方dynamic oracle／原client相容／完整可玩整場的證據。其餘特殊道具／events、特殊模式waiting-chief／practice／Mod等模式、shop／Util／interservice、flush／collector與conflict／restart恢復仍未完成。
 
 目前DB為schema6，保留原schema4 house receipt／version1不變。146 case0另有獨立inventory receipt；money／house／inventory pending共用world freeze（含inventory metadata／dirty），三個ordinal獨立，並與result交叉核對descriptor。Native ItemSn／StockSn／日期bridge與201修正界線詳見[SpecialItemUse](SpecialItemUse.md)，不是house drop triples的意義或spawn證據。

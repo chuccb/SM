@@ -8,7 +8,7 @@
 - 已接通可信 ordinary **Running** Update 的到期 UDP loss：不消耗 graph 的選人／整批 preflight → table-owned 移除 → primary safe-object／TCP 檢查 → 空 **195** → native pool4 → 最後消耗 graph，再跑本次 bomb／death timers。
 - 有效的等待房間與 Result 也能使用普通離房鏈；ordinary Mod 的這條移除本身沒有 mode-specific hook，因此不額外偽造 Mod 死亡／結算。**Mod Update／判勝仍不支援。** Guild strategy、RoomTicket／Supreme 建房路徑、BangPok、pending ban vote cascades 仍未開放。
 - **已commit的ordinary native Loading**支援完整移除／survivors `DeferStartGame`／真正150；只有手改playing flags、缺少token／statistics／services的Loading仍先拒絕。候選與可能start的survivors在任何批次移除之前preflight，不先踢一半再跳過開局。見[GameLaunch](GameLaunch.md)。
-- `CTimerThreadNormal`排程private native Loading及native／可信ordinary Running／Result，不排waiting-chief／practice。network request106／deferred150須ordinary scope、UDP opt-in及durable wiring；仍不能推論整場可玩或特殊模式已接通。
+- `CTimerThreadNormal`排程private native Loading及native／可信ordinary Running／Result，另排普通waiting-chief，不排practice／特殊流程。network request106／deferred150須ordinary scope、UDP opt-in及durable wiring；仍不能推論整場可玩或特殊模式已接通。
 
 ## 原碼位置與順序
 
@@ -48,7 +48,7 @@ table 先把整組 users 的 session IDX／serial設 sentinel，game 再清 peer
 
 新 chief 的其他 local slots 先排107，再舊 chief slot（即使已空），最後新 chief slot；不是重發所有人的107。遊戲中交接不清 ready bits；等待房交接才清新 chief 的整個 local group。
 
-`CBanChief` 已有真正 state object、Init、warning／odd flags與timestamps，不是 reset placeholder。`IsBanChief(full, manner, multiplier)` 在所附 build **沒有使用 manner argument**；full 使用10000×multiplier，其他20000×multiplier，strict unsigned `>`；warning10000、odd-slot5000，以 DWORD 乘法 overflow。constructor 以外的 native `Init` 是 `SetOddSlot(false) → SetCanStart(false)`。目前只接入初始化／chief departure reset，**未啟用 DeferBanChief、authority22、警告121或自動踢房長 scheduler**。
+`CBanChief` 已有真正 state object、Init、warning／odd flags與timestamps，不是 reset placeholder。`IsBanChief(full, manner, multiplier)` 在所附 build **沒有使用 manner argument**；full 使用10000×multiplier，其他20000×multiplier，strict unsigned `>`；warning10000、odd-slot5000，以 DWORD 乘法 overflow。constructor 以外的 native `Init` 是 `SetOddSlot(false) → SetCanStart(false)`。後續[WaitingChief](WaitingChief.md)已接通ordinary DeferBanChief／121／整組自動移除。native HasAuthority0041688A任何參數均回傳0，**不將SQLite Authority22解釋成權限**；capacity+833的Manner parity／非Manner<=1與current+832的full比較分開。native SuperChief採當下chief local的Category2／exact bytes，延長三種期限至3倍，不消耗庫存或grant。特殊模式／vote recovery仍缺。
 
 ## pool4 不是 Lobby 或新網路 pool
 
@@ -56,6 +56,7 @@ table 先把整組 users 的 session IDX／serial設 sentinel，game 再清 peer
 
 - Worker 對非0仍交 `CChannelPool`，不關閉 TCP、不建立新 listener，也不卸除 Center users／channel rank。
 - table removal 完成後，Running regulator檢查**第一位primary**，Loading檢查**遇到的未peer user**（可能secondary）；該user未 SetFree 且 TCP仍存活才送195；body只有opcode，scalar-obfuscated body為 `99`，沒有 slot／reason／endpoint／新 token。之後才轉4。
+- 普通waiting-chief另採121 reason2／3 **先通知chief**，再table整組移除、pool4；**不送195，也沒有UDP路徑的primary IsSetFree條件**。native resets的clock在現代preflight先準備；post121 owner drift／close阻擋stale removal，不假裝notice或外部變動rollback。詳細差異見[WaitingChief](WaitingChief.md)。
 - 不符合該通知條件的 closed／marked-free peer，仍完成普通房間移除，但不送195或轉4；native removal 已暫切pool1。
 - 合法已認證群組在無房／pool4 stale generation下的遲到房內封包被忽略，不重新綁 endpoint、不移除另一世代 occupant。明確83回Lobby送15與現有room83列表；16回Channel送13／14。**不自動送這些 stage packets。**
 - 這不新增「必須先83／16才准建房」的規則。原本80／81等已知建入房路由仍有各自檢查；Native `DoCreateSession/DoJoinSession`主要檢查 no-session／generation，沒有統一的 pool4 authentication pool。此行為另有測試。
@@ -66,7 +67,7 @@ table 先把整組 users 的 session IDX／serial設 sentinel，game 再清 peer
 1. **先完整 preflight，後修改。** Native session IDs 是 socket-shared；移植存在各 CUser，因此 stale/no-room path 也檢查1..2位、dense／unique users、ownership與相同tuple，避免第二位 user 被錯清到另一房。普通離房允許 owned closed／SetFree users，不能誤用只接受 live actors 的 battle validator。
 2. Native `GetSlotidx` 已恢復讀 stored slot；新 `FindPlayerSlot` 明確負責 pointer＋stored slot 的現代 membership validation，避免把106所需的殘留 slot 當成仍在房內。
 3. Native Put/Flush 使用 socket buffers；移植以**當下 recipients＋detached body**排隊，在整條 room state 更新完後才發布，每peer另建packet，維持各peer ghost166/167 → reset106 → sync176 → affected107 的順序。callback看到的是最終狀態，**不是 native callback timing parity**。
-4. Room／table／195 publication有 reentry guard；transport例外只計數，不回滾已完成移除、不重跑ghost/sync/chief、不重送195。沒有client ack、delivery guarantee或exactly-once傳送。room的 `GetPacketPublicationFailureCount` 與table的固定 `RecoveryNotice/RoomNotice` 計數不保存exception text。
+4. Room／table／121／195 publication有 reentry guard；transport例外只計數，不回滾已完成移除、不重跑ghost/sync/chief、不重送195。沒有client ack、delivery guarantee或exactly-once傳送。room的 `GetPacketPublicationFailureCount` 與table的固定 `RecoveryNotice/RoomNotice` 計數不保存exception text。
 5. 移植room-list為同步即時發布，native table另排 cache／modified flags。App排除仍在 removal boundary 的 transient-Lobby peer，不在195或明確15之前夾送room-list更新；Update途中已失效／換世代的room不再flush舊86，避免87後又冒出該房更新；這是**現代部署的時序防護**，沒有冒稱完整cache worker已還原。
 6. Running整批先用 `GetRegulationCandidates` 在 matrix copy上選人；所有候選的可預期scope／identity／mapping拒絕先檢查完，再逐socket由table執行。只有支持的batch完成才 `Init` 清graph；沒有table service時仍fail-closed，保留graph／未處理timer delta。這不是跨socket／任意注入callback的資料庫交易，也未模擬native `rand()%10` logging draw。
 7. Room table的update diagnostics仍只保存index／serial／固定code／consecutive count，一房失敗不阻止其他房。`/healthz`額外顯示移除publication的固定計數，不應視為原client成功收到的證明。

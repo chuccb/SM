@@ -17,6 +17,8 @@
 
 後續[GS resident／混合模式轉移](docs/ResidentInventoryHandoff.md)已讓正式GS保留明示可信native owned／pre與presentation：native空清單也不fallback legacy SQL，每個local分開選來源；整組非空201／207用目標碼頁預備，成功在同一live CUser保留兩epochs／dirty。第23份模型33 anchors／254完整wire images，另有雙local真TCP與209；不宣稱native SQL freshness／expiry refresh／給付或原client已完成。
 
+新增[普通等待房房主警告／移除](docs/WaitingChief.md)：正式400ms排程接上CBanChief與可信native `Item/SuperChief`，核對**capacity+833不是current count+832**、本build固定0的HasAuthority、strict DWORD期限、121 reason0..3、雙local整組移除／pool4與無195。第24份模型48 anchors／2356 cases，另以**未加速真TCP計時器**驗證SuperChief的實際15秒＋30秒；不新增道具／SQL／權限／financial replay或自動lobby成功，特殊模式waiting recovery仍缺。
+
 ## 安裝與執行
 
 從儲存庫根目錄執行；需要能安裝 npm 套件的 Node/npm，或已安裝的相同版本 Bun：
@@ -79,7 +81,7 @@ unset SM_PASSWORD
 
 HTTP另有`centerMaintenanceFailures`記錄被隔離的Center maintenance錯誤（不含帳密／SQL）；invalid／倒退clock會取消outstanding轉服權限。
 
-HTTP 的 `processReady` 只代表這批已實作的 listener 已啟動，**不代表可開局或官方相容**；狀態同時回報 `completeOfficialRewrite: false`、`officialClientVerified: false` 與缺漏功能。`gameUpdate`明示`ordinary-loading-running-result` scope、`launchEnabled`／`loadingRooms`、`pendingMoneyPickups`／`pendingHouseClaims`／`pendingSpecialItemUses`／`pendingResults`／failure及移除publication計數；launch opt-in不代表所有模式可玩或listener一定已ready。Arena 的 HTTP 預覽只供診斷，**不是原版客戶端需要的原生 TCP／UDP 通道**，也不是 Web 遊戲客戶端。
+HTTP 的 `processReady` 只代表這批已實作的 listener 已啟動，**不代表可開局或官方相容**；狀態同時回報 `completeOfficialRewrite: false`、`officialClientVerified: false` 與缺漏功能。`gameUpdate`明示`ordinary-waiting-chief-loading-running-result` scope、`launchEnabled`／`loadingRooms`／`waitingChiefRooms`／`waitingChiefWarningFailures`、`pendingMoneyPickups`／`pendingHouseClaims`／`pendingSpecialItemUses`／`pendingResults`／failure及移除publication計數；launch opt-in不代表所有模式可玩或listener一定已ready。Arena 的 HTTP 預覽只供診斷，**不是原版客戶端需要的原生 TCP／UDP 通道**，也不是 Web 遊戲客戶端。
 
 ## 結構與證據
 
@@ -89,7 +91,7 @@ HTTP 的 `processReady` 只代表這批已實作的 listener 已啟動，**不�
 - [`docs/Database.md`](docs/Database.md)：SQLite、匯入契約與尚未還原的 SQL Server 備份。
 - [`docs/Coverage.md`](docs/Coverage.md)：實作、測試與未實作的範圍，不能用函式數推算完成率。
 - [`docs/GameLaunch.md`](docs/GameLaunch.md)：106／116／173／109／discovery／150、Loading移除、room key／sequence與真正TCP+UDP連續兩輪驗證。
-- [`docs/GameUpdate.md`](docs/GameUpdate.md)：400ms timer、一般Loading／Running／Result時序、6／10秒死亡／grouped159與尚未接通的waiting-chief。
+- [`docs/GameUpdate.md`](docs/GameUpdate.md)：400ms timer、一般waiting-chief／Loading／Running／Result時序、6／10秒死亡／grouped159與未接通的特殊流程。
 - [`docs/Ghost.md`](docs/Ghost.md)：151／152與兩種166格式、unsigned時間／signed count、非owner銷毀、離房count及不捏造復活規則的界線。
 - [`docs/ItemPickup.md`](docs/ItemPickup.md)：144／145 claim仲裁、149完整CP949公告、未捏造153入口的throw核心，以及money signed32／cap來源。
 - [`docs/GameClaims.md`](docs/GameClaims.md)：Bula160／177的flat aliases、圈次155／170的unsigned64排名、case8兩個opaque bytes、真正C3復活hook與不捏造復活規則的界線。
@@ -103,6 +105,7 @@ HTTP 的 `processReady` 只代表這批已實作的 listener 已啟動，**不�
 - [`docs/HouseClaim.md`](docs/HouseClaim.md)：house161／178、5金錢／board／allocator獨立schema4 receipt、凍結重試、native殘缺body的明示安全差異。
 - [`docs/MoneyPickup.md`](docs/MoneyPickup.md)：Type99 durable144／156、schema3引入並由目前schema6保留的wallet CAS＋收據、一次RNG／lost-ack重試、box reset／結算協調與明確未完成的恢復。
 - [`docs/Airplane.md`](docs/Airplane.md)：156／171的absolute時間、future marker、opaque records、count0與>3的明示安全差異。
+- [`docs/WaitingChief.md`](docs/WaitingChief.md)：普通等待房的capacity／Manner、原版zero authority、native SuperChief×3、121與stack-bound整組移除、未加速真TCP及非financial界線。
 - [`docs/PlayerRemoval.md`](docs/PlayerRemoval.md)：原版DestroyPlayer分層、ghost／sync／chief、195／pool4、凍結結果與斷線安全界線。
 - [`docs/ResultLifecycle.md`](docs/ResultLifecycle.md)：結算尾段、原版時序與現代 receipt／失敗重試差異；不是完整對局。
 - `Common/OfficialValues.ts`、`Common/Protocol/PacketTypes.ts`：已辨識的協定數值及方向；`Common/RuntimePolicy.ts`：明確區分的現代操作限制。
@@ -142,7 +145,7 @@ HTTP 的 `processReady` 只代表這批已實作的 listener 已啟動，**不�
 ./node_modules/.bin/bun run vectors:inventory-initialization
 ```
 
-全部22份獨立參考builder位於 `Tools/Build*Vectors.ts`；最新實測數字與完整性紀錄見 [Coverage](docs/Coverage.md)。
+全部24份獨立參考builder位於 `Tools/Build*Vectors.ts`；最新實測數字與完整性紀錄見 [Coverage](docs/Coverage.md)。
 
 測試包含手工由反編譯轉寫的固定寬度 C++ 參考向量、實際資源檔、SQLite、真實 TCP／UDP、CLI 與啟動失敗清理。**C++ 參考不是執行原始官方程式，也不是原版客戶端錄包**；TCP 測試端使用本實作的 codec，不能單獨當作相容性的證明。
 

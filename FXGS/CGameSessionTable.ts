@@ -44,6 +44,7 @@ export class CGameSessionTable {
   private m_ulSerialNo = 0;
   private readonly m_setDestroyingPlayer = new Set<CClientSocket>();
   private readonly m_setRecoveringPlayer = new Set<CClientSocket>();
+  private readonly m_setRecoveryRemovalAllowed = new Set<CClientSocket>();
   private m_nRecoveryNoticeFailures = 0;
   private m_nRoomNoticeFailures = 0;
   private m_bUpdatingGameSessions = false;
@@ -103,8 +104,8 @@ export class CGameSessionTable {
       }
   }
   /** 004219A2 normal-room striped traversal, with an explicit modern scope
-   * gate: native ordinary Loading and bound Running/Result are scheduled.
-   * Waiting-chief/practice/special modes are NOT silently declared implemented.
+   * gate: ordinary waiting-chief, native Loading and bound Running/Result.
+   * Practice/special modes are NOT silently declared implemented.
    * A pending money plan retries inside the room before clock/world updates.
    * One room's SQL/unsupported/identity failure cannot stop all other rooms.
    * Failed frozen plans may retry on the next tick under the existing receipt
@@ -175,6 +176,17 @@ export class CGameSessionTable {
     return [...this.m_rgGameSession.values()].filter((room) =>
       room.GetResultRoundID(),
     ).length;
+  }
+  GetWaitingChiefSessionCount(): number {
+    return [...this.m_rgGameSession.values()].filter((r) =>
+      r.IsWaitingChiefScheduled(),
+    ).length;
+  }
+  GetWaitingChiefPublicationFailures(): number {
+    return [...this.m_rgGameSession.values()].reduce(
+      (n, r) => n + r.GetWaitingChiefPublicationFailures(),
+      0,
+    );
   }
   GetLoadingSessionCount(): number {
     return [...this.m_rgGameSession.values()].filter((room) =>
@@ -254,6 +266,10 @@ export class CGameSessionTable {
       {
         EjectPlayerForUDP: (session, target, noticeUser) =>
           this.EjectPlayerForUDP(session, target, noticeUser),
+        IsCurrentSession: (session) =>
+          this.GetBaseSession(session.m_nIdx, session.m_ulSerialNo) === session,
+        EjectChief: (session, target, notice, commitRemoval) =>
+          this.EjectChief(session, target, notice, commitRemoval),
       },
       this.launchResources,
     );
@@ -358,6 +374,11 @@ export class CGameSessionTable {
   /** 00421C32 ordinary normal-table generation/close boundary. Unsupported
    * room cascades preflight BEFORE identities or pointers are cleared. */
   DestroyPlayer(socket: CClientSocket, includeSelf = false): boolean {
+    if (
+      this.m_setRecoveringPlayer.has(socket) &&
+      !this.m_setRecoveryRemovalAllowed.has(socket)
+    )
+      throw new CProtocolError("Player removal during recovery publication");
     if (this.m_setDestroyingPlayer.has(socket))
       throw new CProtocolError("Nested table player removal");
     const primary = socket.GetUser(0),
@@ -445,7 +466,7 @@ export class CGameSessionTable {
       );
     this.m_setRecoveringPlayer.add(socket);
     try {
-      if (!this.DestroyPlayer(socket))
+      if (!this.DestroyRecoveringPlayer(socket))
         throw new CProtocolError("UDP ejection did not remove a player");
       if (noticeUser.IsSetFree() === 0 && socket.IsConnected()) {
         try {
@@ -462,6 +483,50 @@ export class CGameSessionTable {
           socket.m_nPoolType = "SessionRemoved";
         } // native+468 =4 AFTER send
       }
+    } finally {
+      this.m_setRecoveringPlayer.delete(socket);
+    }
+  }
+  private DestroyRecoveringPlayer(socket: CClientSocket): boolean {
+    this.m_setRecoveryRemovalAllowed.add(socket);
+    try {
+      return this.DestroyPlayer(socket);
+    } finally {
+      this.m_setRecoveryRemovalAllowed.delete(socket);
+    }
+  }
+  /**0041C294 /0041C43D: chief TCP121 -> DestroyPlayer(group,false) -> pool4.
+   * Unlike UDP loss, NO195, SetFree/closing predicate or automatic lobby reply.
+   * Failed notice is counted but is not a transport ACK/replay capability. */
+  EjectChief(
+    room: CGameSession,
+    socket: CClientSocket,
+    notice: CSendPacket,
+    commitRemoval: (destroy: () => boolean) => boolean,
+  ): void {
+    if (
+      this.m_setRecoveringPlayer.has(socket) ||
+      this.GetBaseSession(room.m_nIdx, room.m_ulSerialNo) !== room ||
+      this.GetSession(socket) !== room ||
+      !room.IsChief(socket) ||
+      notice.m_nPacketType !== ServerResponse.BanChief
+    )
+      throw new CProtocolError(
+        "Chief ejection room generation/notice mismatch/reentry",
+      );
+    room.ValidatePlayerRemoval(socket, { PlanningBatch: true });
+    this.m_setRecoveringPlayer.add(socket);
+    try {
+      try {
+        socket.SendPacket(notice);
+      } catch {
+        this.m_nRecoveryNoticeFailures++;
+      }
+      // One-shot room-owned fence/authorization only AFTER notice callbacks.
+      // Merely being the target of121 must not permit nested room/table removal.
+      if (!commitRemoval(() => this.DestroyRecoveringPlayer(socket)))
+        throw new CProtocolError("Chief ejection did not remove a player");
+      socket.m_nPoolType = "SessionRemoved"; // native+468 =4 AFTER table destruction
     } finally {
       this.m_setRecoveringPlayer.delete(socket);
     }

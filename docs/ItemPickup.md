@@ -169,7 +169,7 @@ TCP測試端仍共用本實作codec，不能排除雙方同錯或取代原client
 ./node_modules/.bin/bun run verify
 ```
 
-耐久money144／重放與reset協調已接；Bula／lap／case8亦另接，DeferResurrection已核對為真正C3空操作，見[GameClaims](GameClaims.md)。仍欠明確conflict／orphan恢復、原client復活玩法證據、其餘特殊道具、house claim的5money耐久協調、特殊mode／waiting-chief、shop／Util／interservice與restart恢復。不要把8999組人工images或已接拾取子集當完整server完成率。
+耐久money144／重放與reset協調已接；Bula／lap／case8亦另接，DeferResurrection已核對為真正C3空操作，見[GameClaims](GameClaims.md)。仍欠明確conflict／orphan恢復、原client復活玩法證據、其餘特殊道具、house claim的5money耐久協調、特殊mode／特殊模式waiting-chief、shop／Util／interservice與restart恢復。不要把8999組人工images或已接拾取子集當完整server完成率。
 
 ## 使用特殊道具不是拾取144
 

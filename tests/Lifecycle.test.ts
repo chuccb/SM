@@ -44,7 +44,7 @@ test("HTTP is read-only, accepts preview Host, and readiness explicitly does not
       body.gameUpdate.every(
         (s) =>
           s.running &&
-          s.scope === "ordinary-loading-running-result" &&
+          s.scope === "ordinary-waiting-chief-loading-running-result" &&
           s.scheduledRounds === 0 &&
           s.pendingResults === 0 &&
           s.failedRooms === 0 &&

@@ -144,3 +144,7 @@ money／house／legacy paid 的 shared world fingerprint 加入各 user **mode�
 ## 後續Center lease：正式資料仍是legacy
 
 新增[ConnectionAuthorization](ConnectionAuthorization.md)將正式GS的Center驗證移到account／inventory讀取之前，以private issued-pending registry、exclusive non-consuming lease與全組post-callback fence完成single-use handoff；DB rows先capture並重綁authorized ID，不alias待編201／live資料。native read-side與正quantity fail-closed不變。這一輪沒有把缺少的pre／calendar／native初始化或paid SQL假裝接上，schema6／四receipts與完整／原client旗標不變。
+
+## ordinary SuperChief consumer
+
+原有Category2／exact encoded attr功能查詢現由[WaitingChief](WaitingChief.md)的真正ordinary等待房排程消費；當下chief local的`Item/SuperChief`延長三種期限×3，不檢查Amount／Slot、不重驗raw DATE、不重解catalog、不寫SQL／清dirty。明示native carry仍沿用同一CUser／epochs；legacy ItemID／Verbose不提供此權利。native HasAuthority是獨立已核對的zero stub，不把SQL Authority22變成exemption。

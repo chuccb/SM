@@ -55,20 +55,21 @@ raw pure投影／36PE anchors／3444 cases與256個native inner-loop組合是我
 
 ## 房間／ordinary gameplay索引
 
-| request／response      | 角色／已實作子集                                                         | 文件                                                             |
-| ---------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------- |
-| 80／81／82／83         | create／join／autojoin／lobby，slot／serial／群組ownership               | [PlayerRemoval](PlayerRemoval.md)                                |
-| 96..109                | ready／map／color／bomber／slots／普通start與loading協商                 | [GameLaunch](GameLaunch.md)                                      |
-| 106→116／120／150      | ordinary native launch／discovery／109 agreement、fresh round generation | [GameLaunch](GameLaunch.md)                                      |
-| 144／145、156 response | item／obstacle claims與Type99 money                                      | [ItemPickup](ItemPickup.md)、[MoneyPickup](MoneyPickup.md)       |
-| 146→159                | BomberEvent，case0 special-use／case8 opaque echo等                      | [SpecialItemUse](SpecialItemUse.md)、[GameClaims](GameClaims.md) |
-| 149→raw公告            | local-self event／CP949原始文字，未擅改unknown欄位                       | [ItemPickup](ItemPickup.md)                                      |
-| 151／152→166／167      | ghost generate／destroy核心                                              | [Ghost](Ghost.md)                                                |
-| 156→171                | airplane request與future-marker／box-item reset                          | [Airplane](Airplane.md)                                          |
-| 160→177、155→170       | Bula與lap核心                                                            | [GameClaims](GameClaims.md)                                      |
-| 161→178                | house board／allocator／native5money與獨立durability                     | [HouseClaim](HouseClaim.md)                                      |
-| 163／164 responses     | 結果／普通回準備尾段，不是request146回覆                                 | [ResultLifecycle](ResultLifecycle.md)                            |
-| 185／187、195 response | UDP loss／普通移除／pool4                                                | [PlayerRemoval](PlayerRemoval.md)                                |
+| request／response      | 角色／已實作子集                                                             | 文件                                                             |
+| ---------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| 80／81／82／83         | create／join／autojoin／lobby，slot／serial／群組ownership                   | [PlayerRemoval](PlayerRemoval.md)                                |
+| 96..109                | ready／map／color／bomber／slots／普通start與loading協商                     | [GameLaunch](GameLaunch.md)                                      |
+| 106→116／120／150      | ordinary native launch／discovery／109 agreement、fresh round generation     | [GameLaunch](GameLaunch.md)                                      |
+| 144／145、156 response | item／obstacle claims與Type99 money                                          | [ItemPickup](ItemPickup.md)、[MoneyPickup](MoneyPickup.md)       |
+| 146→159                | BomberEvent，case0 special-use／case8 opaque echo等                          | [SpecialItemUse](SpecialItemUse.md)、[GameClaims](GameClaims.md) |
+| 149→raw公告            | local-self event／CP949原始文字，未擅改unknown欄位                           | [ItemPickup](ItemPickup.md)                                      |
+| 151／152→166／167      | ghost generate／destroy核心                                                  | [Ghost](Ghost.md)                                                |
+| 156→171                | airplane request與future-marker／box-item reset                              | [Airplane](Airplane.md)                                          |
+| 160→177、155→170       | Bula與lap核心                                                                | [GameClaims](GameClaims.md)                                      |
+| 161→178                | house board／allocator／native5money與獨立durability                         | [HouseClaim](HouseClaim.md)                                      |
+| 163／164 responses     | 結果／普通回準備尾段，不是request146回覆                                     | [ResultLifecycle](ResultLifecycle.md)                            |
+| response121            | ordinary waiting-chief reason0..3＋WORD warning seconds；非client grant／195 | [WaitingChief](WaitingChief.md)                                  |
+| 185／187、195 response | UDP loss／普通移除／pool4                                                    | [PlayerRemoval](PlayerRemoval.md)                                |
 
 各handler對actor、foreign／vacant targets、opaque bytes、time gate的規則並不相同；不能以通用owner-only／全部unsigned等方式「修正」來源。ordinary範圍／特殊mode拒絕及frozen世界／SQL retry見[Gameplay](Gameplay.md)／[GameUpdate](GameUpdate.md)。沒有可玩的整場或完整原client驗證。
 
@@ -90,3 +91,7 @@ opaque BYTE／WORD、catalog nAttr依Category／handler解讀，不自行當價�
 request `209` → response `201` 已使用真正channel handler消費兩個native local users；201為DWORD count、ItemSn DWORD、Slot BYTE、Amount DWORD、Verbose、raw8-byte LE DATE，不是StockSn／ItemID或Unix time。105 self BYTE來自首個equipped Category4的nAttr1 low BYTE（無則255），accessory採Category10 positions0..8、Category12 positions0..4及Category14 tail。capture同一native generation＋simple-info，不混codec callback重載前後資料。
 
 這些原生consumers需可信內部`InstallUserInventory`，不是已接native SQL→GS、裝備request／商城或授予endpoint。既有正式handoff仍讀legacy SQLite；正quantity native paid暫時fail-closed，quantity0仍relay。72 PE anchors／1768獨立C++模型、完整wire順序、400-counter／DATE與未完成界線見[UserInventory](UserInventory.md)。
+
+## 普通等待房121
+
+`0041C15B`：0／1 warning向全room sockets，2／3 kick只向chief TCP；後續由table移除chief整組locals、pool4，不送195或自動15。兩種reason配同一WORD full warning seconds（10或30），不是remaining／slot／token。capacity+833與current+832分開，native HasAuthority0041688A是固定0，不從SQL Authority推角色。可信resident `Item/SuperChief`延長3倍；ordinary正式timer已接線且有未加速真TCP，非native SQL／client完整性證明。見[WaitingChief](WaitingChief.md)。

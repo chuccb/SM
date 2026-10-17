@@ -33,6 +33,7 @@ export function GameLaunchFixture(
   options: {
     readonly UserNames?: readonly string[];
     readonly Items?: CItemAttr;
+    readonly Manner?: number;
   } = {},
 ) {
   if (
@@ -89,7 +90,7 @@ export function GameLaunchFixture(
       new CSendPacket(80)
         .EncodeStr("Native launch")
         .EncodeStr("")
-        .Encode1(0)
+        .Encode1(options.Manner ?? 0)
         .Encode1(counts[0]!)
         .EncodeBuffer(Buffer.alloc(counts[0]!)),
     ),

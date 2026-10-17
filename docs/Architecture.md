@@ -10,7 +10,7 @@
 | Center user／server tables      | `Center/CCenterServer`、`CGlobalUserTable`、`CLocalServerMan`、`CUser`                                            | **in-process**共享物件；不是原Center TCP、多程序、Win32 object layout  |
 | local Center facade             | `Common/CCenterProcess`                                                                                           | 明確server綁定與現代授權lease，沒有假的wire registration ACK           |
 | LS                              | `LS/CLoginServerApp`、`CLoginPool`、`CChannelCache`、`CMultiServer`                                               | 登入／轉服子集；密碼改Argon2id                                         |
-| FXGS pools／rooms               | `FXGS/CFxServerApp`、`CConnectPool`、`CChannelPool`、`CBaseSession`、`CGameSessionTable`、`CGameSession`          | ordinary子集；waiting-chief／practice／ladder／mission／guild仍缺      |
+| FXGS pools／rooms               | `FXGS/CFxServerApp`、`CConnectPool`、`CChannelPool`、`CBaseSession`、`CGameSessionTable`、`CGameSession`          | ordinary含waiting-chief；practice／ladder／mission／guild仍缺          |
 | 對局clock／context／物件／資源  | `CGameClock`、`CGameContext`、`CSyncGameObjMan`、`CItemAttr`、`CBomberAttr`、`CGameMapTmplList`等                 | 來源對照核心，不冒稱完整可玩world／反作弊                              |
 | DBSession／CDBMan               | `Common/DB`與`LS`／`FXGS`／`FXSS`原名類別                                                                         | SQLite取代OLEDB；原native procedures／billing未完成                    |
 | native owned inventory          | `Common/UserInventory`、`FXGS/UserInventory`、`Common/CUser`                                                      | trusted read-side／201／105；正式SQL仍legacy，native positive paid拒絕 |
@@ -87,3 +87,7 @@ GS UDP僅為已authenticated TCP群組、同IP／channel／room generation的dis
 `CUserItemMan.CaptureSnapshot` 提供穩定的 immutable definition generation，`PlanInitUserInventory` 以已觀測raw DATE／signed16 threshold依原順序投影，不碰SQL／host clock。`CUser.InstallUserInventory` 明確附掛immutable native vector，與legacy `m_aInventory`分開；原生mode封住空legacy view，舊array alias不能混入新layout。201／105與飾品讀取同一generation，105另clone simple-info抵抗codec callback混代。
 
 money／house／legacy paid與result的frozen fingerprints涵蓋native mode＋revision，byte-identical reload／ABA也不能重試舊plan；storage callback後再次檢查，若已root COMMIT但native generation改變，保留durable receipt並凍結live publication，不自動rebase／重付。這是現代可信內部防護，不是native paid SQL已完成或任意JS／外部SQL writer的全域原子fence。正式GS inventory loader仍是legacy SQLite bridge，native positive paid明確拒絕；pre正式effects／完整初始化、完整Windows calendar／provider整合／native persistence／flush／collector未完成。另有[PreInventory](PreInventory.md)純觀測投影／CUser讀取端207；其獨立generation亦加入Center及pending fingerprints，其[整組讀取端207發布](InventoryHandoff.md)亦已接正式GS，但沒有據此授予financial replay或full initialization權限。詳見[UserInventory](UserInventory.md)。另有[Calendar](Calendar.md)的timestamp-copy／CTime／嚴格DATE子集與隔離CDBClock，不使用JS Date／SetLocalTime，不改native負DATE數值比較、不把clock revision視為financial grant；尚未自動接正式GS或native provider。
+
+## 普通等待房房主期限
+
+[WaitingChief](WaitingChief.md)接上正式400ms／8-stripe，與battle private launch／round gate分開；即使UDP未opt-in仍可處理普通等待房。Manner parity讀capacity+833，current count+832只用來判斷full；native SuperChief查Category2／exact attr，HasAuthority在本build為固定0。121先通知chief，再以stack-bound single-use callback執行原table整組departure／pool4，不用195，不授予SQLite Authority或financial replay。已發布helper／notice或外部mutation不冒稱rollback，特殊mode與orphan／restart recovery仍缺。

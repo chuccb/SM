@@ -126,6 +126,6 @@ native allocator耗盡會break卻patch原requested count；移植明示為whole-
 ./node_modules/.bin/bun run verify
 ```
 
-最新全套數字、反覆測試、15份reference穩定性與98份供給檔完整性見[Coverage](Coverage.md)。其餘特殊道具／Mod／practice／waiting-chief／shop／Util／interservice／restart及原client驗證仍須繼續。
+最新全套數字、反覆測試、15份reference穩定性與98份供給檔完整性見[Coverage](Coverage.md)。其餘特殊道具／Mod／practice／特殊模式waiting-chief／shop／Util／interservice／restart及原client驗證仍須繼續。
 
 case0與case8共用146但額外欄位完全不同；case0正quantity有request-only SN，case8兩opaque bytes沒有inventory用途。201 Amount／Verbose／rawdate修正與native ItemSn／StockSn、Unix-date bridge的未完成映射，見[SpecialItemUse](SpecialItemUse.md)，不能從本文件的case8證據推論完整商店。

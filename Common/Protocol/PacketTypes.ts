@@ -155,6 +155,8 @@ export const ServerResponse = {
   // LaunchGameStage 00420BB3 is 116, NOT the settlement result.
   LaunchGameStage: 116,
   UDPPeerInfo: 120,
+  // DeferBanChief0041C15B: BYTE reason0..3 + WORD full warning delay in seconds.
+  BanChief: 121,
   // DoStartGame 0041BDCF; running-battle event makers follow their native IDs.
   BeginGame: 150,
   BombTimer: 152,

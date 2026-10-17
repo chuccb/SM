@@ -111,6 +111,6 @@ stored read-back是有用的防呆，**不是對任意外部SQL／任意trusted 
 ./node_modules/.bin/bun run verify
 ```
 
-最新全套數字、反覆測試及原始檔完整性見[Coverage](Coverage.md)。其他道具裁決／特殊模式／waiting-chief／shop／Util／interservice／原client與restart驗證仍須繼續，Bula／lap／case8與已證實的C3復活hook另見[GameClaims](GameClaims.md)；house5money／board／allocator已另用schema4獨立receipt協調，見[HouseClaim](HouseClaim.md)；money／house／special inventory pending互斥、與result共同核對descriptor，不能把這些持久化子集當完整server。
+最新全套數字、反覆測試及原始檔完整性見[Coverage](Coverage.md)。其他道具裁決／特殊模式／特殊模式waiting-chief／shop／Util／interservice／原client與restart驗證仍須繼續，Bula／lap／case8與已證實的C3復活hook另見[GameClaims](GameClaims.md)；house5money／board／allocator已另用schema4獨立receipt協調，見[HouseClaim](HouseClaim.md)；money／house／special inventory pending互斥、與result共同核對descriptor，不能把這些持久化子集當完整server。
 
 後續第15份[SpecialItemUse](SpecialItemUse.md)人工模型獨立新增，舊14份images不為inventory收據改寫。146 case0不是Type99：paid扣inventory、設Shop／Nice，Type22必要時刷新time；qty0不讀inventory、不留receipt。其schema5 ordinal／159與money的ordinal／156各自獨立；shared fingerprint亦涵蓋inventory，不能在money凍結時改庫存再安裝舊plan。201修正及native ItemSn／StockSn／date mapping界線另見該文。

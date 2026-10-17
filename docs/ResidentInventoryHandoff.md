@@ -96,3 +96,7 @@ Request7 的 identity／integrity／initialized 語意與 [210／202／207／201
 ```
 
 一般 suite 只讀版本化 fixtures，g++ 僅 opt-in builders 使用。完整回歸／重複／fresh export 證據見 [Coverage](Coverage.md)。原EXE／DAT／carved SQL／Windows API不執行，不改 host clock、不連舊官方或 billing 端點。Native SQL 初始化／irreversible effects recovery、完整 calendar／DST、paid persistence／flush／collector／restart、獨立 Center TCP／其他未完服務與原版 client 尚未完成。
+
+## 已接的resident功能使用者
+
+[WaitingChief](WaitingChief.md)已在ordinary正式400ms等待房排程使用`HasFunctionalItem("Item/SuperChief")`，只查當下chief local的已保留native vector，不從legacy ItemID／Verbose或現在catalog猜屬性。獨立新增的未加速真TCP測試，明示native row從LS→GS保留後，觀察實際15秒warning＋30秒expiry／121、整組移除／pool4，再209仍為相同201；沒有SQL changes或四類receipt。這是carried read-side的具體consumer，**不是native SQL初始化／expiry refresh／道具消耗／grant／原client已完成**。

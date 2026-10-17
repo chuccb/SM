@@ -537,7 +537,7 @@ describe("native Update blocks and guarded ordinary timed driver (NETWORK start 
     e.time(10100);
     e.room.m_nGameState = GameStage.Loading;
     const before = timerState(e);
-    expect(() => e.room.Update()).toThrow("loading/waiting");
+    expect(() => e.room.Update()).toThrow("unbound loading");
     expect(timerState(e)).toEqual(before);
     e.room.m_nGameState = GameStage.Running;
     e.room.m_bBangPok = true;
@@ -812,7 +812,7 @@ describe("partial native table/timer wiring, not full launch/waiting/loading sch
       );
       expect(app.GetStatus().gameUpdate[0]!.running).toBe(true);
       expect(app.GetStatus().gameUpdate[0]!.scope).toBe(
-        "ordinary-loading-running-result",
+        "ordinary-waiting-chief-loading-running-result",
       );
       await deadline(done.promise);
       expect(env.room.m_nGameState).toBe(GameStage.Result);

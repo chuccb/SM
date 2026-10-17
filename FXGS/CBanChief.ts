@@ -5,11 +5,23 @@ import {
   IntegerRange,
 } from "../Common/OfficialValues.ts";
 
+/** Detached modern copy of the eight native DWORD roles, NOT a capability,
+ * native pointer layout or restart journal. Boolean fields are canonicalized. */
+export interface BanChiefState {
+  readonly CanStartTime: number;
+  readonly CanStart: boolean;
+  readonly OddSlot: boolean;
+  readonly LastTimeEvenSlot: number;
+  readonly WarnedBan: boolean;
+  readonly WarnedTime: number;
+  readonly WarnedBanOddSlot: boolean;
+  readonly WarnedTimeOddSlot: number;
+}
+
 /** Native CBanChief 00401000..00401115 / getters0041ABA3..0041ABBB.
- * Only the state/timing object; this does NOT enable the room's DeferBanChief
- * scheduler, authority22, SuperChief lookup, warnings121 or automatic removal.
- * Member names describe the recovered getters; +0 native vptr is not emulated.
- */
+ * DeferBanChief's guarded ordinary scheduler uses detached state preparation;
+ * this object itself does not authorize removal, SQL or financial effects.
+ * Member names describe recovered getters; +0 vptr is not emulated. */
 export class CBanChief {
   private m_dwCanStartTime = 0; // +4
   private m_bCanStart = false; // +8
@@ -22,6 +34,54 @@ export class CBanChief {
   constructor(
     private readonly timeGetTime: () => number = () => performance.now(),
   ) {}
+  CaptureSnapshot(): Readonly<BanChiefState> {
+    return Object.freeze({
+      CanStartTime: this.m_dwCanStartTime,
+      CanStart: this.m_bCanStart,
+      OddSlot: this.m_bOddSlot,
+      LastTimeEvenSlot: this.m_dwLastTimeEvenSlot,
+      WarnedBan: this.m_bWarnedBan,
+      WarnedTime: this.m_dwWarnedTime,
+      WarnedBanOddSlot: this.m_bWarnedBanOddSlot,
+      WarnedTimeOddSlot: this.m_dwWarnedTimeOddSlot,
+    });
+  }
+  /** Trusted data copy; latch/validate ALL fields before synchronous publish.
+   * Never samples the clock or changes the receiving object's clock provider. */
+  InstallSnapshot(source: Readonly<BanChiefState>): void {
+    const {
+      CanStartTime,
+      CanStart,
+      OddSlot,
+      LastTimeEvenSlot,
+      WarnedBan,
+      WarnedTime,
+      WarnedBanOddSlot,
+      WarnedTimeOddSlot,
+    } = source;
+    if (
+      [CanStartTime, LastTimeEvenSlot, WarnedTime, WarnedTimeOddSlot].some(
+        (v) => !Number.isInteger(v) || v < 0 || v > IntegerRange.UInt32Maximum,
+      ) ||
+      [CanStart, OddSlot, WarnedBan, WarnedBanOddSlot].some(
+        (v) => typeof v !== "boolean",
+      )
+    )
+      throw new CProtocolError("Invalid chief timing snapshot");
+    this.m_dwCanStartTime = CanStartTime;
+    this.m_bCanStart = CanStart;
+    this.m_bOddSlot = OddSlot;
+    this.m_dwLastTimeEvenSlot = LastTimeEvenSlot;
+    this.m_bWarnedBan = WarnedBan;
+    this.m_dwWarnedTime = WarnedTime;
+    this.m_bWarnedBanOddSlot = WarnedBanOddSlot;
+    this.m_dwWarnedTimeOddSlot = WarnedTimeOddSlot;
+  }
+  Fork(timeGetTime: () => number): CBanChief {
+    const next = new CBanChief(timeGetTime);
+    next.InstallSnapshot(this.CaptureSnapshot());
+    return next;
+  }
   Init(): void {
     this.SetOddSlot(false);
     this.SetCanStart(false);

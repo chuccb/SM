@@ -1,10 +1,10 @@
-# FXGS Loading／Running／Result 更新迴圈與部分計時器接線
+# FXGS waiting-chief／Loading／Running／Result 更新迴圈與部分計時器接線
 
 ## 實作範圍與入口限制
 
-`CGameSession.Update()` 現在串起**一般 Normal、非 Guild／BangPok 房間的 Loading／Running／Result 分支**：終局判斷、既有 SQLite 結算尾段、爆彈計時、受困死亡計時、152／159 發布、ordinary DestroyPlayer／UDP loss的195／pool4及延遲164回準備。`CGameSessionTable.UpdateGameSessions()` 與 `CTimerThreadNormal` 已接進 `CFxServerApp` 的啟動／清理。
+`CGameSession.Update()` 現在串起**一般 Normal、非 Guild／BangPok 房間的 waiting-chief／Loading／Running／Result 分支**：終局判斷、既有 SQLite 結算尾段、爆彈計時、受困死亡計時、152／159 發布、ordinary DestroyPlayer／UDP loss的195／pool4及延遲164回準備。`CGameSessionTable.UpdateGameSessions()` 與 `CTimerThreadNormal` 已接進 `CFxServerApp` 的啟動／清理。
 
-**這不是完整 `Update`或可玩的整場遊戲。** 定時器接受完成private native launch commit的ordinary Loading，及native start或可信`BeginResultLifecycle()`建立的Running／Result；任意改public flags仍不能取得資格。一般network106／109／discovery已接真正`DoStartGame`與Loading timeout移除；production須明確開啟UDP discovery。waiting `DeferBanChief`、practice、特殊模式與其餘事件仍缺。詳見[GameLaunch](GameLaunch.md)／[PlayerRemoval](PlayerRemoval.md)；舊kernel測試仍用trusted fixture，另有真正TCP+UDP連續兩輪整合，**沒有原client整場證據**。
+**這不是完整 `Update`或可玩的整場遊戲。** 定時器接受完成private native launch commit的ordinary Loading，及native start或可信`BeginResultLifecycle()`建立的Running／Result；任意改public flags仍不能取得資格。一般network106／109／discovery已接真正`DoStartGame`與Loading timeout移除；production須明確開啟UDP discovery。普通waiting `DeferBanChief`已另接[WaitingChief](WaitingChief.md)，沒有battle token也可排程，且不要求UDP opt-in；practice、特殊模式與其餘事件仍缺。詳見[GameLaunch](GameLaunch.md)／[PlayerRemoval](PlayerRemoval.md)；舊kernel測試仍用trusted fixture，另有真正TCP+UDP連續兩輪整合，**沒有原client整場證據**。
 
 ## 來源、常數與命名
 
@@ -24,13 +24,14 @@
 
 `GameUpdateTiming`、`PlayerStateTimerRule`、`SessionTableRule` 位於 `Common/OfficialValues.ts`。stripe數與玩家容量雖恰好同為8，意思不同，不共用錯誤命名的常數。新getter、failure counters、`AdvancePlayerStateTimers`、timer Start／Stop等為明確的**現代移植API**，不冒稱原PE中有同名方法。
 
-完整閱讀table兩個body後另確認：`UpdateGameSessions`先遍歷255個normal，再遍歷255個practice，兩邊各8 stripes；門檻是session+140的`IsValid`（`00402DF7`），**不是playing或player count**。本移植的Map presence對應有效room，並額外加private native launch／可信round gate，省略一般waiting及practice。
+完整閱讀table兩個body後另確認：`UpdateGameSessions`先遍歷255個normal，再遍歷255個practice，兩邊各8 stripes；門檻是session+140的`IsValid`（`00402DF7`），**不是playing或player count**。本移植的Map presence對應有效room，ordinary waiting另有scope／owner guard；battle額外加private native launch／可信round gate，practice仍省略。
 
 `UpdateGameEtc 00421A5A`僅遍歷normal255個，沒有IsValid或round gate；它呼叫的 **`CGameSession::UpdateGameEtc 0041B193`確實只有`C3`（ret）**，在`.c`未呈現不能當作遺失的物理引擎／恢復任務。兩個同名方法已保留此無副作用行為，另外核對PE/vtable。Native Normal Proc並不呼叫這個Etc hook，沒有新增猜測的定時工作。
 
 ## 一次受限Update的順序
 
 ```text
+ordinary waiting scope → DeferBanChief／121／table整組移除／pool4（不進battle tail）
 native launch commit或可信ordinary round gate
   native Running有pending money／house／special inventory？
     是：在任何clock sample前重試原receipt／wallet或inventory計畫
@@ -93,11 +94,11 @@ money144與house161的耐久協調是**明示現代前置屏障**，不是native
 
 - Bun以unref的`setTimeout`替換Windows thread／Sleep。先等400ms，執行同步table traversal，完成後再等下一個400ms；沒有60Hz、catch-up tick或跨worker原子鎖的承諾。同步SQLite仍會阻塞同一event loop，未做長時間／負載測試。
 - `CFxServerApp.CleanUp`先Stop timer，再關閉UDP／TCP；共用SQLite最後才關。啟動rollback也會停止timer／撤回online狀態。Stop在tick callback中呼叫，不得再次排程。
-- table保留native normal stripe順序，但**只排程已commit的native Loading或可信／native Running／Result**，不呼叫未實作的waiting-chief／practice分支。native同一Proc還有pool、room-cache、user／guild flush等工作，此class並未全部移植。
+- table保留native normal stripe順序，排程**普通waiting-chief、已commit的native Loading或可信／native Running／Result**；practice／特殊策略不會因此取得資格。native同一Proc還有pool、room-cache、user／guild flush等工作，此class並未全部移植。
 - timer的room modified info目前由移植table在Update後flush；native Proc另於Update前做相關flush。不要把此部分接線宣稱為原整個worker時序parity。
 - table逐房捕捉例外，下一次tick可重試**同一plan**，不讓單房錯誤中止其餘房間。這只提供重試機會，不會rebase衝突、修補identity、建立新round或恢復crash後房間。沒有table service或scope／identity拒絕時保留graph；支持的Running ejection完成後才消耗。claims／總時限仍先於UDP。
 - `GetUpdateFailures()`只有room index／serial、固定error類別及consecutive count；不保存exception text／SQL／帳號／packet／UUID。每index一筆、成功或房間消失後清除。
-- `/healthz`的`gameUpdate`逐GS回報timer是否running、`scope: ordinary-loading-running-result`、`launchEnabled`與`loadingRooms`、scheduled round／pending result／failed room／failed outer tick數，以及移除publication的固定RecoveryNotice／RoomNotice計數。**CAS conflict不拋錯，但pendingResults仍顯示被凍結的result**；failedRooms不是傳送成功率或完整健康證明。
+- `/healthz`的`gameUpdate`逐GS回報timer是否running、`scope: ordinary-waiting-chief-loading-running-result`、`launchEnabled`／`loadingRooms`／`waitingChiefRooms`／`waitingChiefWarningFailures`、scheduled round／pending result／failed room／failed outer tick數，以及移除publication的固定RecoveryNotice／RoomNotice計數。**CAS conflict不拋錯，但pendingResults仍顯示被凍結的result**；failedRooms不是傳送成功率或完整健康證明。
 - 152／159先固定bytes及targets，每peer建立獨立packet。傳送例外只增加固定兩欄的failure計數，不重跑timers、不重送死亡、不阻擋其他peer；無client ack。發布期間拒絕battle事件／直接end或return重入，避免在兩包之間另結算。
 - 只有測試／trusted `BeginResultLifecycle`把lastUpdate seed為start tick；正式native start保留先前Loading Update tick。Native DoStart不重設此DWORD，不能把trusted seed套進network start。
 
@@ -115,7 +116,7 @@ money144與house161的耐久協調是**明示現代前置屏障**，不是native
 8. DoStart只清空slot的UDP endpoint records、重設`CBanChief`等；不能把整房peer與所有保留的context欄位任意清零。
 9. loading Update逐slot移除逾時socket；移除途中playing改變可能改採30000ms，而非一份固定25000ms候選snapshot。195、marked-free/live TCP及pool4已在ordinary Running recovery核對／接入；Loading已接DoStartGame／DeferStartGame後續，且notice user保留第一個未peer local，不強行改為Running regulator的primary。
 
-以上ordinary實作／2756組launch參考與真正TCP+UDP重複開局見[GameLaunch](GameLaunch.md)；不是特殊模式、waiting-chief或完整事件已完成的清單。native硬編碼意義未確定者仍以offset／opaque記錄，不散佈猜測的feature名稱。
+以上ordinary實作／2756組launch參考與真正TCP+UDP重複開局見[GameLaunch](GameLaunch.md)；本段不是特殊模式或完整事件已完成的清單；ordinary waiting-chief另見[WaitingChief](WaitingChief.md)。native硬編碼意義未確定者仍以offset／opaque記錄，不散佈猜測的feature名稱。
 
 ## 獨立參考與測試界線
 

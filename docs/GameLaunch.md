@@ -4,7 +4,7 @@
 
 已接通所附 FXGS build 的一般 Normal 房間：**106 → 115／116／選用173 → TCP109 與 UDP discovery → 150 → 既有 Running／SQLite163／延遲164 → 下一輪**。不再靠測試專用的 `BeginResultLifecycle()` 才能從網路建立 round。
 
-這**不是完整遊戲或原版 client 相容證明**：剩餘角色／其他道具事件、waiting-chief 自動恢復、practice／Mod／Guild／BangPok 特殊流程、crash 後房間重建等仍缺。151／152→166／167已另接真native Running，並未擅加死亡／map限制；見[Ghost](Ghost.md)。`173` 本身只設定飛機道具機率；`156／171`另已接排程／box-item state重設，仍不是完整飛機／道具引擎，見[Airplane](Airplane.md)。144／145拾取與149原始CP949公告已另接線，Type99 money耐久協調見[MoneyPickup](MoneyPickup.md)；153未猜成throw，來源見[ItemPickup](ItemPickup.md)；載入 mission metadata 不表示任務引擎已完成。Bula160／177、155／170與case8亦已接；DeferResurrection已核對為C3空操作，原client復活玩法不能憑名稱推論，見[GameClaims](GameClaims.md)。`completeOfficialRewrite`、`officialClientVerified` 仍為 false。
+這**不是完整遊戲或原版 client 相容證明**：剩餘角色／其他道具事件、practice／Mod／Guild／BangPok／特殊模式waiting-chief 自動恢復、crash 後房間重建等仍缺。151／152→166／167已另接真native Running，並未擅加死亡／map限制；見[Ghost](Ghost.md)。`173` 本身只設定飛機道具機率；`156／171`另已接排程／box-item state重設，仍不是完整飛機／道具引擎，見[Airplane](Airplane.md)。144／145拾取與149原始CP949公告已另接線，Type99 money耐久協調見[MoneyPickup](MoneyPickup.md)；153未猜成throw，來源見[ItemPickup](ItemPickup.md)；載入 mission metadata 不表示任務引擎已完成。Bula160／177、155／170與case8亦已接；DeferResurrection已核對為C3空操作，原client復活玩法不能憑名稱推論，見[GameClaims](GameClaims.md)。`completeOfficialRewrite`、`officialClientVerified` 仍為 false。
 
 Production 只在 `FXGS.UDPEnabled = true` 時供給開局所需的 discovery／資源／durable-result service；預設 false 時106仍先拒絕，不發成功115／116。這是**現代部署界線**，不是原版的 feature switch。即使開啟，也只應在隔離環境測試，不應作可玩的公網服務。
 
@@ -74,7 +74,7 @@ key是room初始化時的一次15-bit draw；sequence從room serial起算，每�
 
 ## Loading timeout與移除
 
-`Update`在已commit的ordinary Loading traversal按slot檢查**join time**，不是launch／116時間：unsigned(now−join)>25000才移除。恰好25000仍保留；DWORD wrap／underflow按原比較。所有候選先preflight，且逐筆重新檢查membership、peer與當下playing門檻；若移除callback改成非playing，本次後續slot改用30000。這**不表示一般waiting-chief／BangPok driver已完成**。
+`Update`在已commit的ordinary Loading traversal按slot檢查**join time**，不是launch／116時間：unsigned(now−join)>25000才移除。恰好25000仍保留；DWORD wrap／underflow按原比較。所有候選先preflight，且逐筆重新檢查membership、peer與當下playing門檻；若移除callback改成非playing，本次後續slot改用30000。普通waiting-chief已另由[WaitingChief](WaitingChief.md)接通121／整組移除，與本25s Loading分支分開；BangPok／特殊recovery仍未完成。
 
 移除經真正table-owned `DestroyPlayer`；可能讓其餘ready survivors當場start，再接195／native pool4。Loading傳給notice guard的是**遇到的第一位未peer user**，不強行改成primary；Running loss regulator則仍選primary。普通network discovery對雙local原子發布，所以partial-peer secondary案例是明示的trusted狀態邊界測試，不宣稱正常client一定能到達。
 

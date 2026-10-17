@@ -32,7 +32,7 @@
 | `OnRequestEatItem / EatObstacle / EventItem` | native Running144／145 claim與149→raw30，Type99另有durable wallet／receipt，完整group與body防護     | money協調見[MoneyPickup](MoneyPickup.md)；throw沒有ordinary153入口，來源見[ItemPickup](ItemPickup.md) |
 | `OnReqEatBula / OnLapInfo / event8`          | native160／177 flat state、155／170 unsigned64排名、146 case8雙opaque echo                          | 不捏造actor／進度／復活授權；house5money仍需durability，見[GameClaims](GameClaims.md)                 |
 | `DeferResurrection 0041B5C8`                 | 與PE相同的C3／無副作用                                                                              | 不是遺漏body，不額外從Update呼叫；原client復活玩法尚無證據                                            |
-| `Update 0041DC31` Loading                    | join-relative strict25s、mid-loop非playing30s、整批preflight／table移除／survivor start／195／pool4 | waiting-chief／practice／特殊恢復仍缺                                                                 |
+| `Update 0041DC31` Loading                    | join-relative strict25s、mid-loop非playing30s、整批preflight／table移除／survivor start／195／pool4 | practice／特殊恢復仍缺；ordinary waiting見[WaitingChief](WaitingChief.md)                             |
 | `CUdpLossRegulator 004161AC..004165C0`       | 64-entry graph、8秒batch、non-consuming選人／Running table移除／195／pool4                          | 沒有service或scope不支持仍保留graph先拒絕；非可靠故障偵測                                             |
 
 細節、2756組新reference及真TCP+UDP連續兩輪見[GameLaunch](GameLaunch.md)；**不等於原client或整場可玩**。
@@ -95,7 +95,7 @@ Native `RegulateConnection` 每批另外消耗一次 `rand()%10` 判斷是否印
 - `CSafeObject` 只移植 terminal mark／一次性 virtual hook；Bun 單 event-loop 下同步檢查，不假稱跨 worker 原子指令或完整 native collection lists／dirty-user DB flush。行程內 Center 共用同一 CUser 轉服，故 `ClearAttachedUsers` 刻意僅 detach；最終 global-table deletion 才 SetFree。原各行程會 SetFree 自己的 service-local copies，不能直接照抄到共享實例。
 - `m_aPlayerState`／endpoint records 在進入 network handler 前先定義初始化；這不假裝重現 native pre-launch 未初始化記憶體。已核實的 0..7 分支見後節；state4 的起始語意與完整 timer／event driver 仍待核對或移植。
 - `CGameClock.GetCurrentTime`、兩個 packet builders、timeout candidate helper 與 regulator 回傳候選 socket 是抽出的移植 API，不冒稱完整原方法。預設 `performance.now()` 與原 WinMM boot epoch 不相同，也尚未完成 native 網路 clock 同步。
-- `RequestStartGame`／`DeferStartGame`已支援ordinary native generation；只有手動建loading／缺private token或service的情況仍先拒絕。production launch需UDP opt-in；active網路103進入未移植Mod先拒絕，而native原碼允許，這是明確scope差異。400ms timer涵蓋ordinary Loading／Running／Result，waiting-chief仍缺；見[GameLaunch](GameLaunch.md)／[GameUpdate](GameUpdate.md)。
+- `RequestStartGame`／`DeferStartGame`已支援ordinary native generation；只有手動建loading／缺private token或service的情況仍先拒絕。production launch需UDP opt-in；active網路103進入未移植Mod先拒絕，而native原碼允許，這是明確scope差異。400ms timer涵蓋ordinary waiting-chief／Loading／Running／Result，waiting另見[WaitingChief](WaitingChief.md)；見[GameLaunch](GameLaunch.md)／[GameUpdate](GameUpdate.md)。
 
 ## `CDynInfoCalculator`：統計與獎勵核心
 
@@ -130,7 +130,7 @@ Win／Draw 在 clamp **之後**，若 explicit premium 非零 **或** premium ch
 - `GetGameDetailResult 0041CA78`：fallback=3 僅當 **FXGS authencode byte==1**。kill count>2 且等於 OtherTeamNo 時=1；再滿足 MyTeamNo>2 與 saveCount+1==MyTeamNo 時=2。`SetAuthenCode 00408148`／`GetAuthencode 00408E22` 已確認為 `CUser+2004` 的 byte，**不是 TicketDate、是否過期或任意非零值**。
 - `GetGameEndDecision()` 為抽出的**純讀取 helper**，其本身不執行 `DeferHandleGameEnd` 的副作用。未 forced 且有 occupied state 0／3 時等待；occupied state 2／5／6 提出顏色，異色 claims 回 draw。實際 `0041D347..0041D354` 證實 force 條件是 `(occupied && state==5) || state==6`，連空 slot 殘留 6 都可 force。
 - native 遍歷中會 `IncGame`，但遇到不同色的第二個 claim 就中斷，因此不是「所有玩家一律先 +1」。helper 的 `CountedSlots` 只描述這個 prefix，**不真的遞增供 flush 排程使用的場數計數**。
-- 另有可信 `BeginResultLifecycle` 管理的一般 `DeferHandleGameEnd`／result-return tail，會在 SQLite 原子回執成功後才執行上述副作用；**純 helper 本身仍無副作用**，另已接ordinary native start及Loading／Running／Result Update，waiting-chief／practice／特殊模式scheduler仍缺。不以勝利宣告當作完整權威性／防作弊證據。
+- 另有可信 `BeginResultLifecycle` 管理的一般 `DeferHandleGameEnd`／result-return tail，會在 SQLite 原子回執成功後才執行上述副作用；**純 helper 本身仍無副作用**，另已接ordinary native start及Loading／Running／Result Update，ordinary waiting-chief另見[WaitingChief](WaitingChief.md)，practice／特殊模式scheduler仍缺。不以勝利宣告當作完整權威性／防作弊證據。
 
 ## 結果 163 預覽與使用者動態核心
 
@@ -242,7 +242,7 @@ TypeScript `CGameContext` 仍需明確呼叫 `Init()`；`CGameSession` 建構時
 - ignite fuse=2800 ms；moving=1，stationary=0。moving 炸彈即使 paused 也扣時間。
 - moving 到期先變 stationary 並取得 2000 ms fuse，emit landed=1；stationary 到期 emit landed=0 並以 **swap-last** 移除，不能使用穩定 `filter` 改變後續順序。
 - Update 的 152 為 `u8 count + repeated(u16 serial, u8 landed)`；沒有事件時不送空通知。
-- `UpdateBombTimers`仍是抽出的kernel API；新的guarded `Update()`共用其packet maker，已串起ordinary claims／timeout、爆彈、pending死亡及164回準備，並由400ms timer驅動**native／可信綁定round**。受困到期為6／10秒unsigned `>=`，全部狀態更新後才發布152→grouped159；最後死亡在下一tick才結算。ordinary Loading及UDP ejection亦已接通，waiting-chief／practice／特殊流程仍缺，不等於完整Update。[GameUpdate](GameUpdate.md)列出來源、現代差異與開局審核。
+- `UpdateBombTimers`仍是抽出的kernel API；新的guarded `Update()`共用其packet maker，已串起ordinary claims／timeout、爆彈、pending死亡及164回準備，並由400ms timer驅動**native／可信綁定round**。受困到期為6／10秒unsigned `>=`，全部狀態更新後才發布152→grouped159；最後死亡在下一tick才結算。ordinary Loading及UDP ejection亦已接通，ordinary waiting-chief另已接線，practice／特殊流程仍缺，不等於完整Update。[GameUpdate](GameUpdate.md)列出來源、現代差異與開局審核。
 
 ### 146 的已確認子集與限制
 
@@ -317,4 +317,4 @@ TypeScript `CGameContext` 仍需明確呼叫 `Init()`；`CGameSession` 建構時
 
 `GameResultStorage.test.ts`／`GameResultLifecycle.test.ts`／`ChannelRank.test.ts` 再驗證原子receipt、ABA/no-op、兩個真實Bun子程序同key競爭與migration競爭、schema1升級／DDL rollback、SQL失敗／lost commit acknowledgement、固定plan、native rank interleaving、可信reload、164前後狀態／重入。這不是原client、native executable或完整gameplay oracle。
 
-ordinary selected-map／launch／Loading timeout／pool recovery／result-return與Bula／lap／case8已接通；house161的board／allocator＋5money耐久協調亦已接通；下一批主要缺漏是特殊道具與剩餘client events、waiting-chief與各特殊模式。DeferResurrection是已證實的原版noop，不憑名稱再捏造重生引擎。完整native flush／collector、conflict後明確恢復、crash後round重建、原client復活／完整對局證據與傳送確認仍缺。不得以空結算、固定勝者或零獎勵假裝完成。
+ordinary selected-map／launch／Loading timeout／pool recovery／result-return與Bula／lap／case8已接通；house161的board／allocator＋5money耐久協調亦已接通；下一批主要缺漏是特殊道具與剩餘client events、各特殊模式及其waiting recovery。DeferResurrection是已證實的原版noop，不憑名稱再捏造重生引擎。完整native flush／collector、conflict後明確恢復、crash後round重建、原client復活／完整對局證據與傳送確認仍缺。不得以空結算、固定勝者或零獎勵假裝完成。

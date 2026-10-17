@@ -2,7 +2,8 @@ import { randomInt, randomUUID } from "node:crypto";
 import { CListSession } from "./CListSession.ts";
 import { MissionInfo } from "./MissionInfo.ts";
 import type { CItemAttr, ItemAttr } from "./CItemAttr.ts";
-import { CBanChief } from "./CBanChief.ts";
+import { CBanChief, type BanChiefState } from "./CBanChief.ts";
+import { PlanDeferBanChief, MakeBanChiefPacket } from "./WaitingChief.ts";
 import { CUdpLossRegulator } from "./CUdpLossRegulator.ts";
 import { HOSTHANDLE, invalidHost } from "../Common/HOSTHANDLE.ts";
 import type { CUser, UserDynamicSnapshot } from "../Common/CUser.ts";
@@ -64,6 +65,7 @@ import {
   ItemThrowRule,
   SyncGameObjectRule,
   SpecialItemRule,
+  BanChiefRule,
 } from "../Common/OfficialValues.ts";
 import type { _USERINVENTORY } from "../Common/DB/Rows.ts";
 import { NormalizeID } from "../Common/CIDCompare.ts";
@@ -179,6 +181,13 @@ export interface GameSessionRemovalServices {
     socket: CClientSocket,
     noticeUser?: CUser,
   ) => void;
+  readonly IsCurrentSession?: (room: CGameSession) => boolean;
+  readonly EjectChief?: (
+    room: CGameSession,
+    socket: CClientSocket,
+    notice: CSendPacket,
+    commitRemoval: (destroy: () => boolean) => boolean,
+  ) => void;
 }
 
 export interface GameResultServices {
@@ -279,7 +288,7 @@ export interface GameUpdatePublicationFailures {
 }
 
 /** Audited ordinary native launch/loading/recovery and durable result tail.
- * Normal Loading/Running/Result Update is scheduled; waiting-chief, special
+ * Normal waiting-chief/Loading/Running/Result Update is scheduled; special
  * modes and remaining events are NOT a complete playable/client-verified game. */
 export class CGameSession extends CListSession {
   readonly m_pStrategy = new CGameSessionStrategy();
@@ -321,6 +330,8 @@ export class CGameSession extends CListSession {
   private m_bRemovingPlayer = false;
   private m_bDeletingPlayerRecords = false;
   private m_pRegulatingSocket: CClientSocket | undefined;
+  private m_plannedChiefReset: Readonly<BanChiefState> | undefined;
+  private m_nChiefWarningPublicationFailures = 0;
   // Native session+12548. Native start retains the last Loading Update tick;
   // ONLY the trusted Begin adapter supplies an explicit start-time anchor.
   private m_dwLastUpdateTime = 0;
@@ -1107,7 +1118,277 @@ export class CGameSession extends CListSession {
     this.BindResultRound(false);
     this.SendPacket(packet);
   }
+  /** Ordinary nonplaying rooms, independent of UDP launch opt-in. Special
+   * strategies / vote cascades stay explicitly unsupported, not silently run. */
+  IsWaitingChiefScheduled(): boolean {
+    return (
+      !this.m_bPlaying &&
+      this.m_nGameType === GameType.Normal &&
+      this.channelType !== ChannelType.Guild &&
+      !this.IsBangPok() &&
+      !this.m_ulBanTargetSerialNo &&
+      !this.IsResultCommitPending() &&
+      !this.IsGameplayCommitPending() &&
+      Number.isInteger(this.m_nChiefSlotidx) &&
+      this.m_nChiefSlotidx >= 0 &&
+      this.m_nChiefSlotidx < SessionLimit.Players &&
+      !!this.m_rgPlayer[this.m_nChiefSlotidx]?.m_pClientSocket
+    );
+  }
+  GetWaitingChiefPublicationFailures(): number {
+    return this.m_nChiefWarningPublicationFailures;
+  }
+  /** Real deployment owners are Center CUsers with opaque connection epochs.
+   * Standalone Common CUser kernels have no Center owner/transfer generation.
+   * This read-only epoch is a fence, NEVER permission to transfer or replay. */
+  private ChiefConnectionGeneration(user: CUser): object | undefined {
+    return (
+      user as CUser & { GetConnectionGeneration?: () => object }
+    ).GetConnectionGeneration?.();
+  }
+  private WaitingChiefFingerprint(): string {
+    return JSON.stringify({
+      Index: this.m_nIdx,
+      Serial: this.m_ulSerialNo,
+      Playing: this.m_bPlaying,
+      Stage: this.m_nGameState,
+      Type: this.m_nGameType,
+      Chief: this.m_nChiefSlotidx,
+      Capacity: this.m_nMaxPlayer,
+      Count: this.GetCurPlayer(),
+      Manner: this.m_nManner,
+      BangPok: this.m_bBangPok,
+      BanTarget: this.m_ulBanTargetSerialNo,
+      Maps: [this.m_nMapIdx, this.m_nMapIdxPlaying],
+      Modified: this.m_nModified,
+      Slots: this.m_rgSlotInfo.map((s) => s.toString("hex")),
+      Ban: this.m_banChief.CaptureSnapshot(),
+      Clock: this.m_gameClock.GetStateSnapshot(),
+      Users: this.m_rgPlayer.map((u) =>
+        u
+          ? {
+              Info: u.m_userInfo,
+              Dynamic: u.GetDynamicInfoSnapshot(),
+              // Native rows are immutable and checked by vector identity AND
+              // epoch below; don't reserialize3200 native rows on each clock read.
+              Inventory: u.CaptureUserInventory()
+                ? null
+                : u.GetInventoryStateSnapshot(),
+              Generation: u.GetUserInventoryGeneration(),
+              PreGeneration: u.GetPreInventoryGeneration(),
+              Pool: u.m_pClientSocket?.m_nPoolType,
+              Connected: u.m_pClientSocket?.IsConnected(),
+              Free: u.IsSetFree(),
+              Self: u.GetSelfidx(),
+              Session: u.GetSessionIdx(),
+              Serial: u.GetSessionSerialNo(),
+              Slot: u.m_nSlotIdx,
+            }
+          : null,
+      ),
+    });
+  }
+  /**0041C15B ordinary waiting-chief branch. Snapshot/prepare ALL helper state,
+   * clocks and121 images before publishing. Native sends121 before table-owned
+   * departure/pool4; modern guards reject nested transitions and stale owners.
+   * No native SQL, financial grant, UDP195 or automatic lobby route is added. */
+  DeferBanChief(): void {
+    if (
+      this.m_bUpdating ||
+      this.m_bRemovingPlayer ||
+      this.m_bGameTransition ||
+      this.m_resultRound?.Applying ||
+      this.m_resultRound?.Returning ||
+      this.IsResultCommitPending() ||
+      this.IsGameplayCommitPending()
+    )
+      throw new CProtocolError("Chief update during frozen room transition");
+    if (
+      this.m_nGameType !== GameType.Normal ||
+      this.channelType === ChannelType.Guild ||
+      this.IsBangPok() ||
+      this.m_ulBanTargetSerialNo
+    )
+      throw new CUnsupportedOperation(
+        "DeferBanChief special/vote recovery",
+        "only ordinary normal waiting rooms are enabled",
+      );
+    const slot = this.m_nChiefSlotidx,
+      chief =
+        Number.isInteger(slot) && slot >= 0 && slot < SessionLimit.Players
+          ? this.m_rgPlayer[slot]
+          : undefined,
+      chiefSocket = chief?.m_pClientSocket;
+    // Native playing branch precedes chief lookup; absent chief/socket reads NO clock.
+    if (!this.m_bPlaying && (!chief || !chiefSocket)) return;
+    this.m_bUpdating = true;
+    try {
+      const occupants = this.m_rgPlayer.slice(),
+        slotBuffers = this.m_rgSlotInfo.slice(),
+        owners = occupants.map((u) =>
+          u
+            ? {
+                Info: u.m_userInfo,
+                Socket: u.m_pClientSocket,
+                Inventory: u.m_aInventory,
+                Rows: u.CaptureUserInventory()?.Rows,
+                PreRows: u.CapturePreInventory().Rows,
+                ConnectionGeneration: this.ChiefConnectionGeneration(u),
+              }
+            : undefined,
+        ),
+        targets = this.GetSockets(),
+        groups = targets.map((s) => ({
+          Array: s.m_aUser,
+          Users: s.m_aUser.slice(),
+        }));
+      let expected = this.WaitingChiefFingerprint();
+      const assertStable = () => {
+        if (
+          this.removalServices?.IsCurrentSession &&
+          !this.removalServices.IsCurrentSession(this)
+        )
+          throw new CProtocolError("Stale chief room generation");
+        for (let i = 0; i < SessionLimit.Players; i++) {
+          const u = this.m_rgPlayer[i],
+            owner = owners[i];
+          if (
+            u !== occupants[i] ||
+            this.m_rgSlotInfo[i] !== slotBuffers[i] ||
+            (u &&
+              (!owner ||
+                u.m_userInfo !== owner.Info ||
+                u.m_pClientSocket !== owner.Socket ||
+                u.m_aInventory !== owner.Inventory ||
+                u.CaptureUserInventory()?.Rows !== owner.Rows ||
+                u.CapturePreInventory().Rows !== owner.PreRows ||
+                this.ChiefConnectionGeneration(u) !==
+                  owner.ConnectionGeneration))
+          )
+            throw new CProtocolError(
+              "Chief room owner changed during preparation",
+            );
+        }
+        targets.forEach((s, i) => {
+          const g = groups[i]!;
+          if (
+            s.m_aUser !== g.Array ||
+            s.m_aUser.length !== g.Users.length ||
+            s.m_aUser.some((u, j) => u !== g.Users[j]) ||
+            !s.IsConnected()
+          )
+            throw new CProtocolError(
+              "Chief socket group changed during preparation",
+            );
+          this.SocketSlots(s);
+        });
+        if (this.WaitingChiefFingerprint() !== expected)
+          throw new CProtocolError(
+            "Chief room state changed during preparation/publication",
+          );
+      };
+      const readTime = () => {
+        assertStable();
+        const time = this.m_gameClock.GetCurrentTime();
+        assertStable();
+        return time;
+      };
+      assertStable();
+      const superChief =
+        !this.m_bPlaying &&
+        chief!.HasFunctionalItem(BanChiefRule.SuperChiefAttribute);
+      assertStable(); // also catches same-value native/pre reinstall inside codec
+      const plan = PlanDeferBanChief(
+        this.m_banChief,
+        {
+          Playing: this.m_bPlaying,
+          ChiefAvailable: !!chiefSocket,
+          SuperChief: superChief,
+          Manner: this.IsManner(),
+          Capacity: this.m_nMaxPlayer,
+          PlayerCount: this.GetCurPlayer(),
+        },
+        readTime,
+        () => {
+          assertStable();
+          const result = this.CanStartGame(true, this.m_nMapIdxPlaying);
+          assertStable();
+          return result;
+        },
+      );
+      const packets = plan.Notices.map((n) => ({
+        ChiefOnly: n.ChiefOnly,
+        Packet: MakeBanChiefPacket(n, this.text),
+      }));
+      if (plan.Eject) {
+        if (!chiefSocket || !this.removalServices?.EjectChief)
+          throw new CUnsupportedOperation(
+            "DeferBanChief table removal",
+            "native ordinary table-owned121/removal/pool4 service required",
+          );
+        this.ValidatePlayerRemoval(chiefSocket, { PlanningBatch: true });
+      }
+      assertStable();
+      this.m_banChief.InstallSnapshot(plan.After);
+      expected = this.WaitingChiefFingerprint();
+      for (const { ChiefOnly, Packet } of packets) {
+        if (ChiefOnly) {
+          let consumed = false,
+            active = true;
+          try {
+            this.removalServices!.EjectChief!(
+              this,
+              chiefSocket!,
+              Packet,
+              (destroy) => {
+                if (!active || consumed || !this.m_bUpdating)
+                  throw new CProtocolError(
+                    "Chief removal callback expired/reused",
+                  );
+                assertStable();
+                consumed = true;
+                this.m_pRegulatingSocket = chiefSocket;
+                this.m_plannedChiefReset = plan.After;
+                try {
+                  return destroy();
+                } finally {
+                  this.m_pRegulatingSocket = undefined;
+                  this.m_plannedChiefReset = undefined;
+                }
+              },
+            );
+          } finally {
+            active = false;
+          }
+          if (!consumed)
+            throw new CProtocolError("Chief removal service did not commit");
+        } else {
+          const bytes = Packet.GetBuffer();
+          for (const socket of targets) {
+            assertStable();
+            try {
+              socket.SendPacket(
+                new CSendPacket(
+                  ServerResponse.BanChief,
+                  Packet.GetCipherDegree(),
+                  this.text,
+                ).EncodeBuffer(bytes.subarray(1)),
+              );
+            } catch {
+              this.m_nChiefWarningPublicationFailures++;
+            }
+            assertStable();
+          }
+        }
+      }
+    } finally {
+      this.m_bUpdating = false;
+    }
+  }
   HasScheduledGame(): boolean {
+    return this.IsWaitingChiefScheduled() || this.HasScheduledRound();
+  }
+  HasScheduledRound(): boolean {
     return (
       !!this.m_resultRound ||
       (this.m_bPlaying &&
@@ -1453,7 +1734,11 @@ export class CGameSession extends CListSession {
       this.m_pStrategy.DestroyPlayer(socket); // ordinary ret4
       this.m_syncGameObjMan.OnPlayerLeave(primarySlot); // ONLY first local player
       if (chiefLeft) {
-        this.m_banChief.Init();
+        // Waiting-chief ejection preflights BOTH native clock resets before
+        // sending121. Do not sample a fallible clock after roster consumption.
+        if (this.m_plannedChiefReset)
+          this.m_banChief.InstallSnapshot(this.m_plannedChiefReset);
+        else this.m_banChief.Init();
         this.SetNewChief();
       }
       socket.m_nPoolType = "Lobby";
@@ -1823,9 +2108,10 @@ export class CGameSession extends CListSession {
     };
   }
 
-  /** Guarded ordinary Loading/Running/Result branches of Update 0041DC31.
-   * Only native loading or an explicitly bound result round is scheduled; this
-   * is NOT the waiting-chief/practice/special-mode driver. Frozen money/house retries
+  /** Guarded ordinary waiting/Loading/Running/Result Update0041DC31.
+   * Nonplaying ordinary rooms run the separate guarded DeferBanChief branch;
+   * native loading / bound result round remain required for battle. Practice
+   * and special-mode drivers stay unavailable. Frozen money/house retries
    * precede even clock sampling and end their tick. Otherwise: claims -> active
    * timeout -> UDP regulation -> bombs -> pending deaths -> queued publication.
    * Due UDP graphs require the native table removal/195/pool4 service; without
@@ -1833,13 +2119,12 @@ export class CGameSession extends CListSession {
    * Last-update time is the tick sampled at entry, NOT a later send/SQL sample.
    */
   Update(): void {
-    if (
-      this.m_bUpdating ||
-      this.m_bRemovingPlayer ||
-      this.m_bGameTransition ||
-      !this.m_bPlaying
-    )
+    if (this.m_bUpdating || this.m_bRemovingPlayer || this.m_bGameTransition)
       return;
+    if (!this.m_bPlaying) {
+      if (this.IsWaitingChiefScheduled()) this.DeferBanChief();
+      return;
+    }
     if (this.m_nGameState === GameStage.Loading && this.m_nativeLaunchToken) {
       this.UpdateLoading();
       return;
@@ -1849,8 +2134,8 @@ export class CGameSession extends CListSession {
       this.m_nGameState !== GameStage.Result
     )
       throw new CUnsupportedOperation(
-        "CGameSession::Update unbound loading/waiting",
-        "native loading generation required; waiting-chief/practice/special-mode recovery remains unported",
+        "CGameSession::Update unbound loading",
+        "native loading generation required; practice/special-mode recovery remains unported",
       );
     this.RequireOrdinaryResultLifecycle();
     const round = this.RequireResultRound();
@@ -3962,9 +4247,10 @@ export class CGameSession extends CListSession {
       this.m_bPlaying ||
       this.m_resultRound ||
       this.m_bRemovingPlayer ||
-      this.m_bGameTransition
+      this.m_bGameTransition ||
+      this.m_bUpdating
     )
-      throw new CProtocolError("Cannot join an active round/removal");
+      throw new CProtocolError("Cannot join an active round/removal/update");
     if (this.GetEmptySlotCount() < socket.GetUserCount())
       throw new CProtocolError("Room full");
     for (const [self, user] of socket.m_aUser.entries()) {
