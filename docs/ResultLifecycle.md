@@ -148,3 +148,5 @@ request `209` → response `201` 已使用真正channel handler消費兩個nativ
 ## Ordinary native carried vote
 
 [VoteLifecycle](VoteLifecycle.md)現讓native private vote從waiting／Loading保留到Running與durable Result。Undurable result conflict、Applying／Returning仍在105／membership mutation／clock／SQL之前拒絕；恢復後原receipt／duration不因投票重建。Durable Result的非financial105／ordinary table removal不改commit payload；普通164清target及modern issued state，**不重設票**。Synthetic `BeginResultLifecycle` hook仍不能提供private native launch token，不能因此開native vote或financial replay。
+
+Waiting mode103只改metadata不代表Mod result可用：[GameTypeTransition](GameTypeTransition.md)仍先拒絕Mod106及已commit ordinary round的網路103，active vote的result conflict亦在mode revision／92／93之前拒絕。原普通receipt／five-field CAS／timing及private native generation不因waiting Mod機能而改變。

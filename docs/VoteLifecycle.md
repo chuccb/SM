@@ -4,7 +4,7 @@
 
 合法private-issued waiting vote現在可沿**既有ordinary native106開局**進入Loading，再由真109＋peer discovery進Running；票與target不被擅自取消。普通native Loading／Running可新發104或回105，durable Result亦可處理非financial的vote／departure。所有房間／stage必須有對應private native launch／bound round，**單設Playing／stage、trusted Begin hook或read-only DTO不會給這個權限**。
 
-這輪不開放Guild／Mod／BangPok／practice vote、active-vote103切換、room restart／orphan restoration，也不開放Playing入房。[WaitingVoteJoin](WaitingVoteJoin.md)仍只在waiting工作；票控含私有target／exact votes／players及constructor table issuer，不授權financial replay。
+這輪不開放Guild／Mod／BangPok／practice vote、active native-round103切換、room restart／orphan restoration，也不開放Playing入房。[WaitingVoteJoin](WaitingVoteJoin.md)仍只在waiting工作；票控含私有target／exact votes／players及constructor table issuer，不授權financial replay。
 
 `gameUpdate.voteBanScope`明示`ordinary-waiting/native-loading-running/durable-result`，`voteLaunchScope=ordinary-native`，completion／original-client flags仍false。正式native launch仍需要原本的GS UDP opt-in、resources、durable result wiring；沒有架空106／150成功或放寬原生private round gate。
 
@@ -70,3 +70,7 @@ Modern detached publication仍等整條狀態完成後flush，callbacks看final 
 真TCP第一例讓issued vote穿過106／116／109／150→真162／163→**未加速8秒164**，確認target只在return清、votes retained、late105沒回覆且下一104合法。第二例在Loading以105踢未ready雙local，survivors透過真正discovery／109已ready，收到106→**actual150**→114，target只收own last106／pool4／209，沒有195／自動Lobby／SQL awards。
 
 測試peer共用codec，native inventory／clock fixtures的界線不變；未有原client、完整可玩整場、native financial SQL／flush／collector或restart恢復證據。Full／controls／fresh-export與全部舊fixture完整性見[Coverage](Coverage.md)。
+
+## 後續：waiting模式的額外範圍
+
+[GameTypeTransition](GameTypeTransition.md)已讓issued waiting vote102／103在Normal／Mod間切換，不清票或helper，Mod waiting仍可104／105／join／timer。這**不開本頁native Mod launch／Playing**：Known Mod106先拒絕，103在committed native Normal round仍拒絕。Mod captain cache／current raw XP／death cascade與完整result仍須另驗，不從一byte92授權。

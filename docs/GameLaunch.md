@@ -120,3 +120,7 @@ key是room初始化時的一次15-bit draw；sequence從room serial起算，每�
 Loading vote／departure可能先同步踢另一whole group才start survivors，prepared150綁目前native token／sequence／table-entry socket，start-marker與chief Init兩次clock在清ID前先準備。Actual109保留已解析／合法ready bits，start-clock fault不發150／不建UUID，可原deferred path重試；現代callback／preflight時序與原WinMM動態oracle的界線見該頁。
 
 Active-vote ordinary等待房join另見[WaitingVoteJoin](WaitingVoteJoin.md)；Playing join、103／特殊模式及restart仍缺，不能把已接子集當整場可玩／原client相容。
+
+## Waiting mode與Mod battle的明示區分
+
+[GameTypeTransition](GameTypeTransition.md)已接issued waiting vote的102／103、Normal／Mod等待房計票／加入／timer，setter本身只改mode+948與93／92，不改Manner／ready／votes／helper。Mode1等待房106仍在115 success／116之前拒絕，沒有繞過本頁Normal native token／resources／durable gates；先102回Normal可沿同一electorate launch。Native Mod116的captain DWORD+952、raw XP比較與OnBomberDie連鎖未移植，不當作一個可忽略的flag。

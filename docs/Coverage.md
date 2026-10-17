@@ -4,7 +4,26 @@
 
 **尚未滿足「完整官方伺服器」的驗收條件；沒有原版客戶端端到端驗證。** `Main.ts` 與診斷端點也會明確顯示此限制。
 
-## 本輪：ordinary issued vote跨native106／116／150／164（2026-10-17）
+## 本輪：普通Normal／Known Mod等待房模式切換（2026-10-17）
+
+從已發布`3ca18a4c29d658ab9d35687903477eefee5080de`繼續；424 tracked／乾淨HEAD。編輯前完整baseline **1285／0／835389 assertions／73檔、176.19s**，raw exit0、含compiler194.256s。Bun1.4.3／TypeScript7.1.0-dev.20261014.1／SQLite維持。
+
+- 新[GameTypeTransition](GameTypeTransition.md)：native0041B509／0041B567只store DWORD+948與opcode-only93／92；不改Manner、ready、票／target／chief、map／helper／clock／statistics／strategy或SQL。102／103 native chief handlers沒有Playing／vote gate，已釘完整images，不從名稱猜成另一個plugin。
+- 已開issued waiting vote的Normal↔Mod；Known Mod waiting可104／105／ordinary離房／nested cascade、81／82 snapshot92、native CanStart／CBanChief timer。Private waiting-mode marker／revision與context fence區分legit setter和reflect-only mode1；DTO／readonly getter／mode bit不授權Mod combat或financial replay。
+- 所有Mode packets prepare後沿guarded detached publication，callbacks看完成後mode／vote一致；same-mode再送亦不去重，private revision前進，mode snapshot只target該peer。Transport faults計數、不rollback／replay，Mode不污染room modified flags或Manner。
+- **明示scope差異**：Native setters可在Playing切換，但Mod116 captain flags＋952、current raw user XP＋212／cached eligibility與OnBomberDie death cascade／result未移植；網路103在native-bound round仍拒絕，Known Mod106在115 success／116／clock之前拒絕。先102回Normal可沿同一issued vote進原native開局。額外`MOD:%d`讀取點實為DumpLog，不是新獎勵API，不杜撰額外給付規則。
+- 第**29份**人工C++：**5完整images（94／97／65／65／447 bytes）＋23 literal PE anchors／2048 cases／1039092-byte fixture**。全部256 Manner／Playing true-false／mode signed-DWORD／target-vote edges、僅mode變更及one-byte plain/scalar93／92均比對；原PE只讀，model不import production policy／codec，非Mod combat／SQL／client oracle。
+- 新**26 tests／17772 assertions／3檔**：3 pure、21 actual-room lifecycle、2 real TCP。前輪一條「waiting vote103一律拒絕」負例改合法mode preservation，多一個electorate斷言、沒有刪tests；Normal native private token／result freeze／同值mode epoch及forged DTO仍負例。
+- **真TCP**：pending103／102不改Manner／electorate，later Mod pair完整snapshot92／0 new votes，原105仍踢同target；wallet／inventory／SQL／四receipts不變。另一例**未加速400ms timer** Mod＋issued vote＋Manner1／capacity5／current4，>5秒121 warning、>10秒121 kick→whole chief離房／pool4，原ballot仍繼續，No tie再1143；無195／自動15／financial effects。Peer共用codec不是原client。
+
+- 最終完整`bun run verify` **1311 pass／0 fail／853162 assertions／76檔、193.55s**，raw process exit0、含compiler214.126s。原1285項保留，新增26項／17772 assertions及既有scope一個electorate斷言。
+- 八類錯誤controls：清票、Mode污染Manner、Mod停止timer、漏same-value private epoch、join hardcoded93、reflection-only Mod被當issued、publish提早放reentry、略過Mod combat前置gate；**8 red→8 exact-source-restored green**／compiler exit0。初次Manner conflation mutant意外green，實際發現test state snapshot漏Manner，已補正確欄位、保留gap紀錄並完整重驗8類與full，不把未檢出的控制當成功。
+- **29 builders各重建2輪**（92.848／90.803s），每個builder之後全部29份SHA256一致，舊28份與本輪初始published tree相同；只執行我們C++，不執行原EXE／DAT／carved SQL／Windows API、不改host clock、不接舊官方／billing端點。
+- 新core兩檔**重跑3輪**，每輪**24／0／16615 assertions**；既有十二條＋新兩條network **重跑2輪**，每輪**14／0／6099 assertions／10檔**（83.94／84.33s），含既有15＋30秒／8秒及新Mod5＋10秒未加速timer。不是load／原client／所有financial-pending TCP證明。
+- 完整性：**98原始blobs＋modes、舊28fixtures、兩lock／TS config／runtime policy／schema6及四v1 receipts不變**；354 local links／fragments有效、secret-pattern0、runtime artifacts0；25個changed/new paths，納入後432 tracked。Cold app驗Bun1.4.3／SQLite3.53.4／schema6、五個empty catalogs各Revision1、drivers停止，waiting-mode scope明示／completion／client false。Pattern scan非完整security audit。
+- 發布門檻：**精確staged tree**全新432-file export，fresh npm ci／pinned Bun與TS／new builder／format／compiler＋完整suite／cold diagnostics後再驗432 blobs及modes；任一非零不算通過。只commit／push `arena/da679c90-sm`，不改master、不合併或部署完整遊戲。
+
+## 已推送前輪：ordinary issued vote跨native106／116／150／164（2026-10-17）
 
 從已發布`f66348915d58f43d64ba6f302040815d85bba9cc`繼續；416 tracked／乾淨HEAD，原始98不變。編輯前完整baseline **1255／0／788690 assertions／70檔、164.53s**，raw exit0、含compiler183.272s。Bun1.4.3／TypeScript7.1.0-dev.20261014.1／SQLite維持。
 
@@ -307,6 +326,7 @@ ignored `.analysis/tests/calendar-*`保留baseline／focused／full logs、五�
 - `Protocol.test.ts`：固定 C++ 參考向量、替換表逆排列、scalar endian、seed／sequence、所有切割點／合併、壞 CRC、SmartStream 兩分支、Big5、等級邊界及舊密碼演算法。
 - `Resources.test.ts`：直接讀附帶的 IDX／IDD，不以人工假地圖替代；檢查數目、順序、CRC、群組與原始不明欄位保存。
 - `GameContext.test.ts`：native context planes／Init／box-item indices、炸彈狀態與 swap-last、DWORD clock rollover／pause／end quirks；另以人工轉寫 C++ 固定向量核對 state／opcode-152 body。
+- `GameTypeTransition.test.ts`／`WaitingModeLifecycle.test.ts`／`WaitingModeIntegration.test.ts`：5 full images＋23 anchors／2048 C++ mode-only cases、opcode93／92、Native mode≠Manner／electorate／ready/helper／clock、Known waiting Mod vote／join92／nested chief/timer、callback/transport／epoch／financial boundaries與true TCP＋unaccelerated5+10秒121；**不開Mod combat／captain／result**。
 - `VoteLifecycle.test.ts`／`VoteLaunchLifecycle.test.ts`／`VoteLaunchIntegration.test.ts`：4 whole-function images＋24 anchors／2048 C++ cases、native-token-bound waiting→Loading→Running→durable Result票保留／164 target-only、prepared150／table socket品牌及clocks／map-source faults、Update cascade／actual native result conflict／no rebase、真正TCP＋UDP與未加速164；不等於特殊模式／Mod／restart／完整client。
 - `WaitingVoteJoin.test.ts`／`WaitingVoteJoinLifecycle.test.ts`／`WaitingVoteJoinIntegration.test.ts`：28固定PE anchors／1476 join projections／plain-scalar快照；actual issued vote中的whole-group81／82、原electorate／private roster adoption、incoming reservation／unsigned identity／native-pre與Center ABA／clock-codec atomic faults／transport重入；later雙local真TCP／105排除／舊ballotresolve及password-full重試。Playing與active-vote106／103仍缺。
 - `BanPlayerCascade.test.ts`／`BanPlayerLifecycle.test.ts`／`BanPlayerIntegration.test.ts`：25 PE anchors／1792 composition images、合法owned waiting104／105／whole-group departure／nested guard與double-Init／outer setter、clock／codec preflight faults／issuer-retention／late epoch／Center ABA／financial scope、真正TCP pending disconnect及secondary native BanReflex；Playing／special modes與active-vote joins／launch仍缺。

@@ -130,3 +130,7 @@ C++是我們的人工reference，不是執行官方EXE／Windows API／原client
 ## 後續：保留投票的ordinary native106／150／164
 
 [VoteLifecycle](VoteLifecycle.md)已釘完整native request／launch／begin／return bodies：106失敗、116 Loading與150 Running都保留原票及target，164只清target／撤銷private issued state、不重設票。普通native Loading／Running及durable Result的104／105有private launch／bound round proof；trusted/synthetic Playing不取得這個權限。Loading的root／nested removal會先預備survivor150 clocks／resources／body及one-use brand；financial pending／Applying／Returning仍拒絕，103／特殊模式／restart未接。
+
+## 後續：issued Normal／Mod等待房模式切換
+
+[GameTypeTransition](GameTypeTransition.md)已開active waiting vote的102／103，Mode DWORD+948與93／92不動Manner／ready／票／target／chief或helper。Known Mod等待房持續普通104／105／join／CBanChief timer／nested removal；反射Mod flag或pure plan不發給issued waiting資格。Playing／native committed round仍不得由網路103進未移植Mod battle，Mod106亦先拒絕；回102 Normal後同一投票可正常native開局。

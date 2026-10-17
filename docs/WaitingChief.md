@@ -2,7 +2,7 @@
 
 ## 已接通的範圍
 
-`CGameSession.DeferBanChief` 已接入 **ordinary Normal、非 Guild／BangPok（含合法issued pending vote）** 的等待房，由正式 `CGameSessionTable.UpdateGameSessions`／`CTimerThreadNormal` 的 400ms／8-stripe 排程驅動。沒有 native launch token／round UUID 也可處理等待房；**不需要啟用 GS UDP discovery**。戰鬥仍須自己的 private native launch／bound round 門檻，不能由等待房資格取得。
+`CGameSession.DeferBanChief` 已接入 **ordinary Normal／setter-issued Mod等待房、非 Guild／BangPok（含合法issued pending vote）** 的等待房，由正式 `CGameSessionTable.UpdateGameSessions`／`CTimerThreadNormal` 的 400ms／8-stripe 排程驅動。沒有 native launch token／round UUID 也可處理等待房；**不需要啟用 GS UDP discovery**。戰鬥仍須自己的 private native launch／bound round 門檻，不能由等待房資格取得。
 
 已接上既有 `CBanChief`、可信 native resident 的 `Item/SuperChief` 查詢、原生 response **121**、整組普通 table departure／房主交接及 pool4。沒有新增 SQL、receipt、購買、給付、權限角色或自動 lobby 成功。practice／Mod／Guild／BangPok／Playing vote cascades、native flush／collector／restart 與原 client 整場驗證仍未完成；completion／client flags 保持 false。
 
@@ -106,3 +106,5 @@ helper欄位發布之間不呼叫callback。這些 guards 不是任意外部 JS�
 [WaitingVoteJoin](WaitingVoteJoin.md)另開放active vote中的普通81／82；加入不重設CBanChief或其任何clock marker，後續自然400ms Update才依當時current count與capacity比較。Incoming與incumbent fence／table join reservation並未授權重入本頁121／移除；後續double Init／outer setter仍由既有private issuance與native-order preflight處理。
 
 後續[VoteLifecycle](VoteLifecycle.md)允許issued vote沿native106／116／150保留，ordinary Playing票控不從本頁waiting eligibility取得權限。Native DoStartGame另有自己的CBanChief.Init sample；若Loading移除先造成150，該sample在所有適用的leaving-chief Init後，再獨立預備／install，不折成同一timestamp。普通164撤銷target／private vote，不重設原票陣列。
+
+[GameTypeTransition](GameTypeTransition.md)已開Known Mod waiting排程；合法mode切換／same-mode snapshot不改helper或clock deadline。Native CanStart不讀mode+948，不能把Manner parity或room capacity誤當Mode flag；reflection-only mode1不取得issued waiting scope。Mod106仍拒絕是明示移植availability差異，回Normal後才可native開局，沒有為此新增vote TTL。

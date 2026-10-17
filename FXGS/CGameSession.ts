@@ -1,3 +1,4 @@
+import { PlanGameTypeTransition } from "./GameTypeTransition.ts";
 import {
   PlanNativeVoteTransition,
   type NativeVoteState,
@@ -423,6 +424,9 @@ export class CGameSession extends CListSession {
   private readonly m_departedRoundUsers = new Set<CUser>();
   private readonly m_resultPublicationFailures: ResultPublicationFailure[] = [];
   private m_nGameType: number = GameType.Normal;
+  // MODERN waiting-mode issuance/epoch. Never a native combat/financial token.
+  #waitingGameType: number = GameType.Normal;
+  #gameTypeRevision = 0;
   // Native has one CGameContext at +1184, selected by GetCurrentGameContext.
   private readonly m_gameContext = new CGameContext();
   readonly m_dynInfoCalculator = new CDynInfoCalculator(
@@ -1483,7 +1487,13 @@ export class CGameSession extends CListSession {
         for (const slot of plan.Slots)
           add(view.MakeSetPlayerPacket(slot, true), capture.Sockets);
         add(
-          new CSendPacket(ServerResponse.GameTypeNormal, undefined, this.text),
+          new CSendPacket(
+            this.m_nGameType === GameType.Mod
+              ? ServerResponse.GameTypeMod
+              : ServerResponse.GameTypeNormal,
+            undefined,
+            this.text,
+          ),
           [socket],
         );
         stable();
@@ -1726,9 +1736,34 @@ export class CGameSession extends CListSession {
         "public fields/read-only DTOs cannot install an active vote",
       );
   }
+  #HasSupportedWaitingGameType(): boolean {
+    return (
+      this.m_nGameType === GameType.Normal ||
+      (this.m_nGameType === GameType.Mod &&
+        this.#waitingGameType === GameType.Mod &&
+        !this.m_bPlaying &&
+        !this.m_nativeLaunchToken &&
+        !this.m_resultRound)
+    );
+  }
+  GetGameTypeState(): Readonly<{
+    Value: number;
+    WaitingIssued: boolean;
+    Revision: number;
+  }> {
+    return Object.freeze({
+      Value: this.m_nGameType,
+      WaitingIssued:
+        !this.m_bPlaying &&
+        !this.m_nativeLaunchToken &&
+        !this.m_resultRound &&
+        this.#HasSupportedWaitingGameType(),
+      Revision: this.#gameTypeRevision,
+    });
+  }
   #RequireLiveBanPlayerScope(): void {
     if (
-      this.m_nGameType !== GameType.Normal ||
+      !this.#HasSupportedWaitingGameType() ||
       this.channelType === ChannelType.Guild ||
       this.IsBangPok() ||
       this.m_nIdx < 0 ||
@@ -2158,6 +2193,7 @@ export class CGameSession extends CListSession {
       super.GetBanPlayerObservationContext(),
       this.channelType,
       this.m_nGameType,
+      this.#gameTypeRevision,
     ]);
   }
   /** Read-side prediction ONLY. Base policy models ordinary first-occupied
@@ -2167,7 +2203,7 @@ export class CGameSession extends CListSession {
   ): ReturnType<CListSession["PrepareBanPlayerAfterDeparture"]> {
     if (
       this.channelType === ChannelType.Guild ||
-      this.m_nGameType !== GameType.Normal
+      !this.#HasSupportedWaitingGameType()
     )
       throw new CUnsupportedOperation(
         "Nonordinary vote-departure observation",
@@ -2180,7 +2216,7 @@ export class CGameSession extends CListSession {
   IsWaitingChiefScheduled(): boolean {
     return (
       !this.m_bPlaying &&
-      this.m_nGameType === GameType.Normal &&
+      this.#HasSupportedWaitingGameType() &&
       this.channelType !== ChannelType.Guild &&
       !this.IsBangPok() &&
       this.#HasConsistentBanPlayerState() &&
@@ -2210,6 +2246,7 @@ export class CGameSession extends CListSession {
       Playing: this.m_bPlaying,
       Stage: this.m_nGameState,
       Type: this.m_nGameType,
+      GameTypeRevision: this.#gameTypeRevision,
       Chief: this.m_nChiefSlotidx,
       Capacity: this.m_nMaxPlayer,
       Count: this.GetCurPlayer(),
@@ -2267,7 +2304,7 @@ export class CGameSession extends CListSession {
     )
       throw new CProtocolError("Chief update during frozen room transition");
     if (
-      this.m_nGameType !== GameType.Normal ||
+      !this.#HasSupportedWaitingGameType() ||
       this.channelType === ChannelType.Guild ||
       this.IsBangPok() ||
       (this.m_ulBanTargetSerialNo !== 0 && !this.#HasConsistentBanPlayerState())
@@ -5423,8 +5460,10 @@ export class CGameSession extends CListSession {
       ),
     );
   }
-  /** 0041B509/0041B567. This flag does not change the Manner room-list byte. */
-  SendGameTypeNormal(socket?: CClientSocket): void {
+  /**0041B509/0041B567: mode+948 and one opcode only. Normal/Mod waiting
+   * includes issued vote; Mod native battle remains unavailable and cannot be
+   * authorized by a waiting-mode generation or its serialized inspection. */
+  #SetGameType(type: number, socket?: CClientSocket): void {
     if (
       this.m_bGameTransition ||
       this.m_bUpdating ||
@@ -5434,37 +5473,47 @@ export class CGameSession extends CListSession {
       throw new CProtocolError(
         "Game type during room transition/update/removal",
       );
-    this.m_nGameType = GameType.Normal;
-    const p = new CSendPacket(
-      ServerResponse.GameTypeNormal,
-      undefined,
-      this.text,
-    );
-    if (socket) socket.SendPacket(p);
-    else this.SendPacket(p);
+    this.#AssertOwnedBanPlayerState();
+    if (this.m_ulBanTargetSerialNo) {
+      if (
+        type === GameType.Mod &&
+        (this.m_bPlaying || this.m_nativeLaunchToken || this.m_resultRound)
+      )
+        throw new CUnsupportedOperation(
+          "Mod switch during native vote round",
+          "Mod combat/captain cascade and result remain unavailable",
+        );
+      this.#RequireLiveBanPlayerScope();
+    }
+    if (this.#gameTypeRevision >= IntegerRange.UInt32Maximum)
+      throw new CProtocolError("Waiting game-type revision exhausted");
+    const plan = PlanGameTypeTransition(
+        {
+          GameType: this.m_nGameType,
+          Playing: this.m_bPlaying,
+          Manner: this.m_nManner,
+          TargetSerialNo: this.m_ulBanTargetSerialNo,
+          Votes: Array.from(this.m_anBanPlayerVote),
+        },
+        type,
+      ),
+      packet = new CSendPacket(plan.Opcode, undefined, this.text),
+      targets = socket ? [socket] : this.GetSockets();
+    this.WithGameTransition(() => {
+      this.m_nGameType = plan.GameType;
+      this.#waitingGameType = plan.GameType;
+      this.#gameTypeRevision++;
+      this.QueuePacketTo(packet, targets);
+    });
+  }
+  SendGameTypeNormal(socket?: CClientSocket): void {
+    this.#SetGameType(GameType.Normal, socket);
   }
   SendGameTypeMod(socket?: CClientSocket): void {
-    if (this.m_ulBanTargetSerialNo)
-      throw new CUnsupportedOperation(
-        "Mod switch during vote",
-        "waiting vote cannot enter unsupported playing/strategy scope",
-      );
-    if (
-      this.m_bGameTransition ||
-      this.m_bUpdating ||
-      this.m_bRemovingPlayer ||
-      this.IsGameplayCommitPending()
-    )
-      throw new CProtocolError(
-        "Game type during room transition/update/removal",
-      );
-    this.m_nGameType = GameType.Mod;
-    const p = new CSendPacket(ServerResponse.GameTypeMod, undefined, this.text);
-    if (socket) socket.SendPacket(p);
-    else this.SendPacket(p);
+    this.#SetGameType(GameType.Mod, socket);
   }
   SendGameType(socket: CClientSocket): void {
-    if (this.m_nGameType === GameType.Mod) this.SendGameTypeMod(socket);
+    if (this.m_nGameType !== GameType.Normal) this.SendGameTypeMod(socket);
     else this.SendGameTypeNormal(socket);
   }
   /** 0041C47D: palette restriction preserves teams when possible. If too many

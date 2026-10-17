@@ -60,6 +60,7 @@ raw pure投影／36PE anchors／3444 cases與256個native inner-loop組合是我
 | 80／81／82／83         | create／join／autojoin／lobby，slot／serial／群組ownership                                                         | [PlayerRemoval](PlayerRemoval.md)                                |
 | 96..109                | ready／map／color／bomber／slots／普通start與loading；104105僅ordinary等待房                                       | [GameLaunch](GameLaunch.md)                                      |
 | 81／82 during vote     | ordinary issued waiting vote加入；原票／target／chief不改，無113／114／Defer                                       | [WaitingVoteJoin](WaitingVoteJoin.md)                            |
+| 102／103→93／92        | 普通Normal／Known Mod等待房（含issued vote），opcode-only；Mod battle未開                                          | [GameTypeTransition](GameTypeTransition.md)                      |
 | 104／105→113／114      | ordinary waiting／private native Loading-Running／durable Result，特殊模式拒絕；per-local／prefix／BanReflex／重算 | [BanPlayer](BanPlayer.md)                                        |
 | 106→116／120／150      | ordinary native launch／discovery／109 agreement、fresh round generation                                           | [GameLaunch](GameLaunch.md)                                      |
 | 144／145、156 response | item／obstacle claims與Type99 money                                                                                | [ItemPickup](ItemPickup.md)、[MoneyPickup](MoneyPickup.md)       |
@@ -107,3 +108,7 @@ request `209` → response `201` 已使用真正channel handler消費兩個nativ
 ## Carried vote across116／150／164
 
 Native普通106 failure／116 launch／150 begin都不清votes或target；164回準備只清target，不寫票陣列，也沒有新114 cancel ACK。新private native scope／prepared150、Loading106→150→114 order及真TCP＋UDP／未加速164見[VoteLifecycle](VoteLifecycle.md)。新版status不再把ordinary Playing／vote106列為未完成，但特殊模式／active-vote103／restart與原client仍缺。
+
+## Game type≠Manner
+
+Native102／103 chief gate後只寫DWORD+948、送93／92（scalar一byte07／06），無其他body／vote／target／ready／clock／strategy效果。Known Mod等待房現在可持續投票／入房／121排程；Mode1與Manner／odd capacity完全不同，且不能從SQL Authority推role。Private waiting-mode revision／registry只做一致性，不授權Mod combat／captain／financial result。網路103在已commit native round及Mod106仍先拒絕，來源／完整bytes／非client oracle界線見[GameTypeTransition](GameTypeTransition.md)。

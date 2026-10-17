@@ -16,7 +16,7 @@ import { RuntimePolicy } from "./Common/RuntimePolicy.ts";
 
 export const UnportedFeatures = [
   "Center TCP registration/negotiation",
-  "special-mode vote-ban, pending-vote Mod transitions and restart restoration",
+  "Mod combat/captain cascade/result; guild/BangPok/practice vote and restart restoration",
   "special-mode waiting-chief recovery/remaining battle events/special-mode launch/result restart recovery",
   "full GS MTUDP host/queue/clock synchronization",
   "practice/ladder/mission/guild",
@@ -107,8 +107,9 @@ export class CServerApp {
         loadingRooms: game.m_gameSessionTable.GetLoadingSessionCount(),
         scheduledRounds: game.m_gameSessionTable.GetScheduledRoundCount(),
         voteBanScope:
-          "ordinary-waiting/native-loading-running/durable-result" as const,
+          "ordinary-normal-mod-waiting/native-normal-loading-running/durable-result" as const,
         voteLaunchScope: "ordinary-native" as const,
+        waitingGameTypeScope: "normal-mod/issued-vote" as const,
         voteJoinScope: "ordinary-issued-waiting" as const,
         pendingVoteRooms: game.m_gameSessionTable.GetPendingBanPlayerCount(),
         waitingChiefRooms:

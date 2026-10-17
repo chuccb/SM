@@ -29,7 +29,8 @@
     "vectors:ban-player": "bun run Tools/BuildBanPlayerVectors.ts",
     "vectors:ban-player-cascade": "bun run Tools/BuildBanPlayerCascadeVectors.ts",
     "vectors:waiting-vote-join": "bun run Tools/BuildWaitingVoteJoinVectors.ts",
-    "vectors:vote-lifecycle": "bun run Tools/BuildVoteLifecycleVectors.ts"
+    "vectors:vote-lifecycle": "bun run Tools/BuildVoteLifecycleVectors.ts",
+    "vectors:game-type-transition": "bun run Tools/BuildGameTypeTransitionVectors.ts"
   },
   "dependencies": {
     "iconv-lite": "0.7.2"

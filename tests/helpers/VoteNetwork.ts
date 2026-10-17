@@ -16,6 +16,7 @@ export async function networkRoom(
   counts: readonly number[],
   password = "",
   nativeUDPPort?: number,
+  manner = 0,
 ) {
   const config = TestConfig();
   if (nativeUDPPort !== undefined) {
@@ -69,7 +70,7 @@ export async function networkRoom(
         const p = new CSendPacket(80)
           .EncodeStr("Native live vote")
           .EncodeStr(password)
-          .Encode1(0)
+          .Encode1(manner)
           .Encode1(count);
         for (let j = 0; j < count; j++) p.Encode1(0);
         peer.Send(p);
@@ -77,7 +78,7 @@ export async function networkRoom(
         expect(made.Decode1()).toBe(0);
         index = made.Decode2();
         serial = made.Decode4();
-        expect(made.Decode1()).toBe(0);
+        expect(made.Decode1()).toBe(manner);
         made.AssertEnd();
       } else {
         const p = new CSendPacket(81)

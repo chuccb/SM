@@ -595,7 +595,7 @@ test("cold real-app diagnostics explicitly retain unsupported vote scopes and bo
     expect(status.officialClientVerified).toBe(false);
     expect(status.processReady).toBe(false);
     expect(status.unported).toContain(
-      "special-mode vote-ban, pending-vote Mod transitions and restart restoration",
+      "Mod combat/captain cascade/result; guild/BangPok/practice vote and restart restoration",
     );
     expect(
       status.gameUpdate.every(

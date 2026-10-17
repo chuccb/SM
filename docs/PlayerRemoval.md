@@ -108,3 +108,5 @@ Type99的pending money與house161的pending house均使用同樣的pre-mutation 
 [VoteLifecycle](VoteLifecycle.md)已開ordinary native phases的104／105與issued departures；Playing來源必須有真正private committed launch／bound round，不靠public bool。Loading預測root及conditional second target後final survivors的peer／ready，預備nativeStart clock→CBanChief.Init clock與150／resource body，再綁內部one-use brand／token／sequence／table-entry socket；vote clears即使令private target先變0，也仍沿該prepared start而不在清ID後重讀clock。
 
 若nested target先離房而令survivors可start，150是在inner tail且先於該投票114；caller已持transition batch不另進互斥wrapper。Update owner限定目前regulating socket，financial pending／undurable result／Applying／Returning仍先拒絕。Durable Result非financial removal不改receipt；164只清target／private issuance，保留票。No195仍是vote ejection分支，原UDP root另有自己的195／pool4，兩者不能混淆。
+
+Known Mod **waiting**的private vote已沿同一ordinary table／empty strategy處理whole-group departure、nested denominator變化與double chief Init；它不把Mode DWORD1當成Mod Playing／captain authority。模式setter不換strategy，不清Matrix／helper／票；來源及true timer證據見[GameTypeTransition](GameTypeTransition.md)。

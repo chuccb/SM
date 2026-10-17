@@ -139,3 +139,7 @@ money144與house161的耐久協調是**明示現代前置屏障**，不是native
 [VoteLifecycle](VoteLifecycle.md)新增active vote的native106／150世代驗證；private table issuer已指定的regulating socket才可進Update中的vote transition，不能靠一般flag／重入放行。Loading timeout可root→deferred second target→survivor150→114→195，Running regulation沿同一owned batch，statistics cohort／round UUID不重建。Financial retry仍先於clock／vote／roster變更；durable Result允許非financial vote，普通164撤銷issued target／private vote而保留票陣列。
 
 Status `voteBanScope=ordinary-waiting/native-loading-running/durable-result`、`voteLaunchScope=ordinary-native`、`voteJoinScope=ordinary-issued-waiting`，不是complete／client成功旗標。Native tokens／receipts／callback時序與完整source驗證界線見該頁。
+
+## Known Mod waiting排程
+
+[GameTypeTransition](GameTypeTransition.md)將合法setter-issued Mod waiting納入既有400ms排程，不以mode1停掉CBanChief。完整native CanStart body不讀mode+948；Manner、capacity833／current832及獨立clock維持既有語意。真TCP已驗Manner1／capacity5／current4在Mod且vote pending時實際>5秒warn、>10秒kick／pool4，私有ballot繼續，無195／SQL／自動stage。`waitingGameTypeScope=normal-mod/issued-vote`不是Mod battle／result更新器已完成。
