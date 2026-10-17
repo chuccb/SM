@@ -25,7 +25,8 @@
     "vectors:calendar": "bun run Tools/BuildCalendarVectors.ts",
     "vectors:inventory-initialization": "bun run Tools/BuildInventoryInitializationVectors.ts",
     "vectors:resident-inventory-handoff": "bun run Tools/BuildResidentInventoryHandoffVectors.ts",
-    "vectors:waiting-chief": "bun run Tools/BuildWaitingChiefVectors.ts"
+    "vectors:waiting-chief": "bun run Tools/BuildWaitingChiefVectors.ts",
+    "vectors:ban-player": "bun run Tools/BuildBanPlayerVectors.ts"
   },
   "dependencies": {
     "iconv-lite": "0.7.2"

@@ -156,6 +156,21 @@ export const BanChiefRule = {
   CanStartEjection: 2,
   OddSlotEjection: 3,
 } as const;
+/** CListSession::OnHostAskBanPlayer00424A3B / OnRespond00423C70 /
+ * DeferBanPlayer00424F78. Votes and114 result codes are DIFFERENT domains. */
+export const BanPlayerRule = {
+  Excluded: 0,
+  Pending: 1,
+  Yes: 2,
+  No: 3,
+  Started: 0,
+  Busy: 1,
+  Passed: 2,
+  Failed: 3,
+  MissingOrImmediate: 4,
+  Reflected: 5,
+  BanReflexAttribute: "Item/BanReflex",
+} as const;
 // COSmartStream::CompressBuffernCalcCRC @ LS 0042B860; payload and length are LE.
 export const SmartStreamFormat = {
   Magic: 24,

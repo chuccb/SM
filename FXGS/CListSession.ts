@@ -1,3 +1,14 @@
+import {
+  CaptureBanPlayerObservation,
+  PlanHostAskBanPlayer,
+  PlanRespondToBanPlayer,
+  PlanDeferBanPlayer,
+  PlanBanPlayerAfterDeparture,
+  type BanPlayerObservation,
+  type BanPlayerPlan,
+  type BanPlayerDepartureObservation,
+} from "./BanPlayer.ts";
+import type { CUser } from "../Common/CUser.ts";
 import { CBaseSession } from "./CBaseSession.ts";
 import type { CClientSocket } from "../Common/CClientSocket.ts";
 import { CSendPacket } from "../Common/CSendPacket.ts";
@@ -8,6 +19,7 @@ import {
   SessionModified,
   ChatFormat,
   ListSessionLayout,
+  UserCount,
 } from "../Common/OfficialValues.ts";
 import type { CTextCodec } from "../Common/CTextCodec.ts";
 import { RuntimePolicy } from "../Common/RuntimePolicy.ts";
@@ -28,6 +40,7 @@ export class CListSession extends CBaseSession {
   // Native +828 is the vote-ban TARGET GLOBAL SERIAL (OnRespondToBanPlayer),
   // not a ready-count or generic dirty flag. Vote-ban dispatch remains unported.
   m_ulBanTargetSerialNo = 0;
+  private m_bPreparingBanPlayer = false;
   m_bBangPok = false;
   protected m_dwStartChatTimeTick = 0;
   constructor(
@@ -41,6 +54,209 @@ export class CListSession extends CBaseSession {
     super(index, serial, text);
     text.AssertSize(m_strName, SessionLimit.TitleBytes, "room title");
     text.AssertSize(m_strPassword, SessionLimit.PasswordBytes, "room password");
+  }
+  /** Detached modern observations, NOT permission to install a vote or execute
+   * numeric SocketKey intents later.104/105 network dispatch stays disabled
+   * until ordinary departure/deferred nested cascades are integrated. */
+  CaptureBanPlayerObservation(): Readonly<BanPlayerObservation> {
+    const sockets = this.GetSockets();
+    for (const socket of sockets) {
+      const locals = Array.from(socket.m_aUser);
+      if (
+        locals.length < UserCount.Minimum ||
+        locals.length > UserCount.Maximum ||
+        locals.some(
+          (user, self) =>
+            !user ||
+            user.m_pClientSocket !== socket ||
+            user.GetSelfidx() !== self ||
+            this.m_rgPlayer[user.m_nSlotIdx] !== user,
+        )
+      )
+        throw new CProtocolError(
+          "Ban-player observation has an incomplete local group",
+        );
+    }
+    return CaptureBanPlayerObservation({
+      Actors: this.m_rgPlayer.map((user, slot) => {
+        if (!user) return null;
+        const socket = user.m_pClientSocket,
+          self = user.GetSelfidx();
+        if (
+          !socket ||
+          socket.m_aUser[self] !== user ||
+          user.m_nSlotIdx !== slot ||
+          user.IsSetFree() !== 0 ||
+          user.GetSessionIdx() !== this.m_nIdx ||
+          user.GetSessionSerialNo() !== this.m_ulSerialNo
+        )
+          throw new CProtocolError(
+            "Ban-player observation has a stale room owner",
+          );
+        return {
+          SerialNo: user.GetGlobalSerialNo(),
+          SocketKey: sockets.indexOf(socket),
+          Self: self,
+          Name: user.GetName(),
+        };
+      }),
+      Votes: Array.from(this.m_anBanPlayerVote),
+      TargetSerialNo: this.m_ulBanTargetSerialNo,
+      ChiefSlot: this.m_nChiefSlotidx,
+    });
+  }
+  /** Modern synchronous observation fence, NOT an execution/financial lease. */
+  protected GetBanPlayerObservationContext(): string {
+    return JSON.stringify([
+      this.m_nIdx,
+      this.m_ulSerialNo,
+      this.m_bPlaying,
+      this.m_bBangPok,
+    ]);
+  }
+  private CaptureBanPlayerPreparation() {
+    const context = this.GetBanPlayerObservationContext(),
+      users = this.m_rgPlayer.slice(),
+      players = this.m_rgPlayer,
+      groups = this.GetSockets().map((socket) => ({
+        Socket: socket,
+        Array: socket.m_aUser,
+        Users: socket.m_aUser.slice(),
+        Connected: socket.IsConnected(),
+        Pool: socket.m_nPoolType,
+      })),
+      epoch = (user: CUser) =>
+        (
+          user as CUser & { GetConnectionGeneration?: () => object }
+        ).GetConnectionGeneration?.(),
+      owners = users.map((user) =>
+        user
+          ? {
+              Info: user.m_userInfo,
+              Native: user.CaptureUserInventory()?.Rows,
+              Pre: user.CapturePreInventory().Rows,
+              OwnedEpoch: user.GetUserInventoryGeneration(),
+              PreEpoch: user.GetPreInventoryGeneration(),
+              ConnectionEpoch: epoch(user),
+              Legacy: user.m_aInventory,
+            }
+          : null,
+      ),
+      observation = this.CaptureBanPlayerObservation(),
+      fingerprint = JSON.stringify(observation);
+    const stable = () => {
+      if (
+        this.GetBanPlayerObservationContext() !== context ||
+        this.m_rgPlayer !== players ||
+        this.m_rgPlayer.some((u, i) => u !== users[i]) ||
+        groups.some(
+          (g) =>
+            g.Socket.m_aUser !== g.Array ||
+            g.Socket.m_aUser.length !== g.Users.length ||
+            g.Socket.m_aUser.some((u, i) => u !== g.Users[i]) ||
+            g.Socket.IsConnected() !== g.Connected ||
+            g.Socket.m_nPoolType !== g.Pool,
+        )
+      )
+        throw new CProtocolError("Ban-player observation ownership changed");
+      users.forEach((u, i) => {
+        const o = owners[i];
+        if (
+          u &&
+          (!o ||
+            u.m_userInfo !== o.Info ||
+            u.m_aInventory !== o.Legacy ||
+            u.CaptureUserInventory()?.Rows !== o.Native ||
+            u.CapturePreInventory().Rows !== o.Pre ||
+            u.GetUserInventoryGeneration().Native !== o.OwnedEpoch.Native ||
+            u.GetUserInventoryGeneration().Revision !== o.OwnedEpoch.Revision ||
+            u.GetPreInventoryGeneration() !== o.PreEpoch ||
+            epoch(u) !== o.ConnectionEpoch)
+        )
+          throw new CProtocolError("Ban-player observation generation changed");
+      });
+      if (JSON.stringify(this.CaptureBanPlayerObservation()) !== fingerprint)
+        throw new CProtocolError("Ban-player observation state changed");
+    };
+    stable();
+    return {
+      Observation: observation,
+      Stable: stable,
+      Sockets: groups.map((g) => g.Socket),
+      Query: (slot: number, attribute: string) => {
+        stable();
+        const found = users[slot]!.HasFunctionalItem(attribute);
+        stable();
+        return found;
+      },
+    };
+  }
+  private WithBanPlayerPreparation<T>(
+    action: (
+      capture: ReturnType<CListSession["CaptureBanPlayerPreparation"]>,
+    ) => T,
+  ): T {
+    if (this.m_bPreparingBanPlayer)
+      throw new CProtocolError("Reentrant ban-player preparation");
+    this.m_bPreparingBanPlayer = true;
+    try {
+      const capture = this.CaptureBanPlayerPreparation(),
+        result = action(capture);
+      capture.Stable();
+      return result;
+    } finally {
+      this.m_bPreparingBanPlayer = false;
+    }
+  }
+  PrepareHostAskBanPlayer(
+    socket: CClientSocket,
+    request: Readonly<{ TargetSerialNo: number; Immediate: number }>,
+  ): Readonly<BanPlayerPlan> {
+    return this.WithBanPlayerPreparation((capture) => {
+      const key = capture.Sockets.indexOf(socket);
+      if (key < 0)
+        throw new CProtocolError("Ban-player requester outside room");
+      return PlanHostAskBanPlayer(
+        capture.Observation,
+        key,
+        request,
+        capture.Query,
+      );
+    });
+  }
+  PrepareRespondToBanPlayer(
+    socket: CClientSocket,
+    response: Readonly<{ TargetSerialNo: number; Answer: number }>,
+  ): Readonly<BanPlayerPlan> {
+    return this.WithBanPlayerPreparation((capture) => {
+      const key = capture.Sockets.indexOf(socket);
+      if (key < 0)
+        throw new CProtocolError("Ban-player respondent outside room");
+      return PlanRespondToBanPlayer(capture.Observation, key, response);
+    });
+  }
+  PrepareDeferBanPlayer(): Readonly<BanPlayerPlan> {
+    return this.WithBanPlayerPreparation((capture) =>
+      PlanDeferBanPlayer(capture.Observation),
+    );
+  }
+  PrepareBanPlayerAfterDeparture(
+    socket: CClientSocket,
+  ): Readonly<BanPlayerDepartureObservation> {
+    return this.WithBanPlayerPreparation((capture) => {
+      const key = capture.Sockets.indexOf(socket);
+      if (key < 0)
+        throw new CProtocolError("Ban-player departure outside room");
+      if (
+        this.m_nIdx < 0 ||
+        this.m_nIdx >= SessionLimit.GameSessions ||
+        this.IsBangPok()
+      )
+        throw new CProtocolError(
+          "Only ordinary first-occupied chief departure is modeled",
+        );
+      return PlanBanPlayerAfterDeparture(capture.Observation, key);
+    });
   }
   /** CListSession::IsManner @ 0042173F; independent of normal/mod type. */
   IsManner(): boolean {

@@ -1118,6 +1118,28 @@ export class CGameSession extends CListSession {
     this.BindResultRound(false);
     this.SendPacket(packet);
   }
+  protected override GetBanPlayerObservationContext(): string {
+    return JSON.stringify([
+      super.GetBanPlayerObservationContext(),
+      this.channelType,
+      this.m_nGameType,
+    ]);
+  }
+  /** Read-side prediction ONLY. Base policy models ordinary first-occupied
+   * chief succession, not a Guild/Mod strategy or executable vote cascade. */
+  override PrepareBanPlayerAfterDeparture(
+    socket: CClientSocket,
+  ): ReturnType<CListSession["PrepareBanPlayerAfterDeparture"]> {
+    if (
+      this.channelType === ChannelType.Guild ||
+      this.m_nGameType !== GameType.Normal
+    )
+      throw new CUnsupportedOperation(
+        "Nonordinary vote-departure observation",
+        "only ordinary first-occupied chief succession is modeled",
+      );
+    return super.PrepareBanPlayerAfterDeparture(socket);
+  }
   /** Ordinary nonplaying rooms, independent of UDP launch opt-in. Special
    * strategies / vote cascades stay explicitly unsupported, not silently run. */
   IsWaitingChiefScheduled(): boolean {

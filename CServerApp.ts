@@ -16,6 +16,7 @@ import { RuntimePolicy } from "./Common/RuntimePolicy.ts";
 
 export const UnportedFeatures = [
   "Center TCP registration/negotiation",
+  "live vote-ban104/105 and synchronous departure cascades (read-side policy/113/114 preparation only)",
   "special-mode waiting-chief recovery/remaining battle events/special-mode launch/result restart recovery",
   "full GS MTUDP host/queue/clock synchronization",
   "practice/ladder/mission/guild",

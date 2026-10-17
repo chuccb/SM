@@ -58,7 +58,8 @@ raw pure投影／36PE anchors／3444 cases與256個native inner-loop組合是我
 | request／response      | 角色／已實作子集                                                             | 文件                                                             |
 | ---------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------- |
 | 80／81／82／83         | create／join／autojoin／lobby，slot／serial／群組ownership                   | [PlayerRemoval](PlayerRemoval.md)                                |
-| 96..109                | ready／map／color／bomber／slots／普通start與loading協商                     | [GameLaunch](GameLaunch.md)                                      |
+| 96..109                | ready／map／color／bomber／slots／普通start與loading；104105仍拒絕           | [GameLaunch](GameLaunch.md)                                      |
+| 104／105→113／114      | **唯讀policy／body準備，網路仍拒絕**；per-local／prefix／BanReflex／重算     | [BanPlayer](BanPlayer.md)                                        |
 | 106→116／120／150      | ordinary native launch／discovery／109 agreement、fresh round generation     | [GameLaunch](GameLaunch.md)                                      |
 | 144／145、156 response | item／obstacle claims與Type99 money                                          | [ItemPickup](ItemPickup.md)、[MoneyPickup](MoneyPickup.md)       |
 | 146→159                | BomberEvent，case0 special-use／case8 opaque echo等                          | [SpecialItemUse](SpecialItemUse.md)、[GameClaims](GameClaims.md) |
@@ -95,3 +96,9 @@ request `209` → response `201` 已使用真正channel handler消費兩個nativ
 ## 普通等待房121
 
 `0041C15B`：0／1 warning向全room sockets，2／3 kick只向chief TCP；後續由table移除chief整組locals、pool4，不送195或自動15。兩種reason配同一WORD full warning seconds（10或30），不是remaining／slot／token。capacity+833與current+832分開，native HasAuthority0041688A是固定0，不從SQL Authority推角色。可信resident `Item/SuperChief`延長3倍；ordinary正式timer已接線且有未加速真TCP，非native SQL／client完整性證明。見[WaitingChief](WaitingChief.md)。
+
+## 投票踢人113／114：讀取端，不是已開放handler
+
+104先busy後request、SuperChief immediate先於BanReflex；105按SELF逐local寫入，second非pending時保留prefix但不Defer。Tally是nonzero per-player分母、strict Yes majority／No tie失敗；113只做最後socket的連續去重。114 code0..5，只有2／3／5附name，4兼missing／immediate。native Socket.HasAuthority00406C66另有PE zero-stub證據，不從SQL Authority21推權利。
+
+`MakeBanPlayerPacket`／真正room `Prepare*`只產生immutable資料與候選body；native departure可能同步踢第二組／再次Init的live table／clock所有權未接，**104／105與pending vote removal／launch guards仍保持拒絕**。沒有新ACK、TTL、金融權限或TCP投票成功證據。詳見[BanPlayer](BanPlayer.md)。

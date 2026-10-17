@@ -80,6 +80,12 @@ TCP真正斷線則不能為了房間拒絕而漏掉其他清理：`CFxServerApp`
 
 Type99的pending money與house161的pending house均使用同樣的pre-mutation departure／DeleteAllUser guard；即使receipt已提交但SQL ACK遺失，尚未確認並安裝live wallet／claim前也不改roster。money／house driver會在clock／result／UDP前重試；terminal detach／其他peer斷線會停在state-changed，不把錢安裝至新user、不重付。SQLite已提交wallet不因斷線回滾，但這不是room restart／orphan recovery。HTTP另有`pendingMoneyPickups`／`pendingHouseClaims`；house board／allocator＋wallet協調見[HouseClaim](HouseClaim.md)；細節與可能因pending protocol guard斷線的可用性界線見[MoneyPickup](MoneyPickup.md)。
 
+## 投票離房重算：目前只有唯讀預測
+
+來源`0041BBB2..BE`在ordinary group deletion／chief reset-succession／pool1／flush／清slotidx與strategy update後，active target再同步呼叫vtable+144的`DeferBanPlayer00424F78`。分母縮小可踢出另一整組、甚至剛繼任的chief，產生兩次不同的Init；不能簡單略過，也不能開新vote卻讓物理disconnect永遠卡在現有pending-vote拒絕。
+
+[BanPlayer](BanPlayer.md)新增immutable `PlanBanPlayerAfterDeparture`與真正room `Prepare*`，只觀測remaining roster／votes、deferred decision與可歸因Init次數。**不呼叫table、ghost／sync／strategy、clock、pool／ID setter或financial API**；移除intent及其假設成功後的recipients不是callback權限或最終roster。TS nested packet-depth不等於removal boolean／table generation／one-shot ownership已支援nested cascade，故live104／105、pending-vote removal／waiting／launch fences皆保留。
+
 ## 驗證與重建
 
 `tests/reference/player-removal.cpp` 獨立翻譯280個departure cases（全部32種五人ghost subsets、正反local順序、playing／chief／notify／stopped組合、最後一人／雙人）與624個chief unsigned deadlines、10個state transitions。`Tools/BuildPlayerRemovalVectors.ts`先read-only核對29個PE錨點，再只編譯／執行我們自己的模型：

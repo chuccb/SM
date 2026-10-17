@@ -19,6 +19,8 @@
 
 新增[普通等待房房主警告／移除](docs/WaitingChief.md)：正式400ms排程接上CBanChief與可信native `Item/SuperChief`，核對**capacity+833不是current count+832**、本build固定0的HasAuthority、strict DWORD期限、121 reason0..3、雙local整組移除／pool4與無195。第24份模型48 anchors／2356 cases，另以**未加速真TCP計時器**驗證SuperChief的實際15秒＋30秒；不新增道具／SQL／權限／financial replay或自動lobby成功，特殊模式waiting recovery仍缺。
 
+新增[投票踢人唯讀準備](docs/BanPlayer.md)：核對104／105的雙local計票／prefix early-return、SuperChief先於BanReflex、113連續去重與114六種result codes、離房後同步重算／double Init觀測。第25份模型68 anchors／2625 cases，真正room只提供immutable `Prepare*`／113114 body候選；**104／105網路與nested table cascade仍未開放**，不把DTO當移除／financial權限。
+
 ## 安裝與執行
 
 從儲存庫根目錄執行；需要能安裝 npm 套件的 Node/npm，或已安裝的相同版本 Bun：
@@ -106,6 +108,7 @@ HTTP 的 `processReady` 只代表這批已實作的 listener 已啟動，**不�
 - [`docs/MoneyPickup.md`](docs/MoneyPickup.md)：Type99 durable144／156、schema3引入並由目前schema6保留的wallet CAS＋收據、一次RNG／lost-ack重試、box reset／結算協調與明確未完成的恢復。
 - [`docs/Airplane.md`](docs/Airplane.md)：156／171的absolute時間、future marker、opaque records、count0與>3的明示安全差異。
 - [`docs/WaitingChief.md`](docs/WaitingChief.md)：普通等待房的capacity／Manner、原版zero authority、native SuperChief×3、121與stack-bound整組移除、未加速真TCP及非financial界線。
+- [`docs/BanPlayer.md`](docs/BanPlayer.md)：104／105原生計票、SuperChief／BanReflex、113／114候選與ordinary離房重算的唯讀準備，live vote／cascade仍拒絕。
 - [`docs/PlayerRemoval.md`](docs/PlayerRemoval.md)：原版DestroyPlayer分層、ghost／sync／chief、195／pool4、凍結結果與斷線安全界線。
 - [`docs/ResultLifecycle.md`](docs/ResultLifecycle.md)：結算尾段、原版時序與現代 receipt／失敗重試差異；不是完整對局。
 - `Common/OfficialValues.ts`、`Common/Protocol/PacketTypes.ts`：已辨識的協定數值及方向；`Common/RuntimePolicy.ts`：明確區分的現代操作限制。

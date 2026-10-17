@@ -96,3 +96,7 @@ helper欄位發布之間不呼叫callback。這些 guards 不是任意外部 JS�
 - 六類錯誤實作 controls（capacity誤用count、漏×3、捏造Authority、漏opaque epoch、等待中join重入、closure不退役）有 **8 red→8 green**，還原原source exact bytes之後compiler通過。
 
 完整suite與重複／乾淨樹檢查見 [Coverage](Coverage.md)。人工C++、共用codec測試peer、未加速時間驗證都**不是執行原EXE／Windows WinMM、原client相容／完整可玩對局／長時間壓測或native SQL給付證明**。沒有執行供給EXE／DAT／carved SQL，不改host clock，不連舊官方／billing端點。
+
+## 與未開放的vote cascade銜接
+
+[BanPlayer](BanPlayer.md)已完成104／105的唯讀decision／113114 body與ordinary離房重算觀測，**沒有移除本頁pending-vote eligibility guard**。native普通chief離房後可重算並踢掉繼任chief，第二次Init仍在outer `DeferBanChief`最後setter之前。下一階段須維持這些獨立clock讀取、nested removal／batch ownership與one-shot callback退役，不能以read-only plan直接授權table mutation。新observer另外fingerprint整份votes；本頁原waiting fingerprint仍不能當vote執行fence。

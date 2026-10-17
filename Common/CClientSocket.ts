@@ -141,6 +141,11 @@ export class CClientSocket extends CPacketSocket {
   GetUserCount(): number {
     return this.m_aUser.length;
   }
+  /**00406C66: xor eax,eax; ret4. No this/Authority access in THIS build.
+   * Never infer socket permissions21 or other role bits from SQLite users. */
+  HasAuthority(_authority: number): number {
+    return 0;
+  }
   /** 00406BAD / 00406F68. Modern validation rejects invalid normal indices;
    * the native history does not include serial generations and is not auth. */
   CheckInBeforeJoinSession(index: number): boolean {

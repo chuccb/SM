@@ -148,3 +148,5 @@ money／house／legacy paid 的 shared world fingerprint 加入各 user **mode�
 ## ordinary SuperChief consumer
 
 原有Category2／exact encoded attr功能查詢現由[WaitingChief](WaitingChief.md)的真正ordinary等待房排程消費；當下chief local的`Item/SuperChief`延長三種期限×3，不檢查Amount／Slot、不重驗raw DATE、不重解catalog、不寫SQL／清dirty。明示native carry仍沿用同一CUser／epochs；legacy ItemID／Verbose不提供此權利。native HasAuthority是獨立已核對的zero stub，不把SQL Authority22變成exemption。
+
+[BanPlayer](BanPlayer.md)另以真正room的**唯讀準備**消費同一native功能查詢：immediate非0時依chief SELF查`Item/SuperChief`，否則依target SELF查`Item/BanReflex`；兩者Category2／exact bytes、不查Amount／Slot／expiry、不消耗。legacy／pre rows無此權利，whole-room owned-pre epochs與實際Center opaque generation在query前後fence；這不是live104／105、SQL freshness／grant或移除權限。

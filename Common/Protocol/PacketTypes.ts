@@ -151,6 +151,8 @@ export const ServerResponse = {
   PlayEmotion: 118,
   SelectMap: 112,
   BanPlayer: 113,
+  //00424A3B /00424F78: BYTE result0..5; only2/3/5 append name.
+  BanPlayerResult: 114,
   StartGame: 115,
   // LaunchGameStage 00420BB3 is 116, NOT the settlement result.
   LaunchGameStage: 116,
